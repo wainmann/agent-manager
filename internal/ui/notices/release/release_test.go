@@ -2,6 +2,8 @@ package release
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +19,11 @@ func TestDelegatedResult(t *testing.T) {
 	// back to execPath on any machine.
 	execPath := "/x/agent-manager-delegated-test"
 
-	msg := delegatedResult(manager, execPath, nil)
+	origUpgraded := Upgraded
+	t.Cleanup(func() { Upgraded = origUpgraded })
+	Upgraded = func(string, string) (bool, error) { return true, nil }
+
+	msg := delegatedResult(manager, execPath, "0.47.1", nil)
 	if msg.Err != nil {
 		t.Fatalf("success reported %v", msg.Err)
 	}
@@ -25,12 +31,48 @@ func TestDelegatedResult(t *testing.T) {
 		t.Fatalf("restart path = %q, want %q", msg.Path, execPath)
 	}
 
-	failed := delegatedResult(manager, execPath, errors.New("exit status 1"))
+	failed := delegatedResult(manager, execPath, "0.47.1", errors.New("exit status 1"))
 	if failed.Err == nil || !strings.Contains(failed.Err.Error(), "brew upgrade --cask yoanwai/tap/agent-manager") {
 		t.Fatalf("failure should name the command, got %v", failed.Err)
 	}
 	if failed.Path != "" {
 		t.Fatal("a failed upgrade must not restart")
+	}
+
+	Upgraded = func(string, string) (bool, error) { return false, nil }
+	unchanged := delegatedResult(manager, execPath, "0.47.1", nil)
+	if unchanged.Path != "" {
+		t.Fatal("an upgrade that changed nothing must not restart")
+	}
+	if unchanged.Err == nil || !strings.Contains(unchanged.Err.Error(), "Homebrew changed nothing, still on 0.47.1") {
+		t.Fatalf("an upgrade that changed nothing should say so, got %v", unchanged.Err)
+	}
+}
+
+func TestUseCachedWaitsForThePackageManagersChannel(t *testing.T) {
+	configDir := t.TempDir()
+	catalog := `{"checked_at":"2026-11-07T00:00:00Z","parser":2,"releases":[{"version":"v0.48.0","url":"https://github.com/x/releases/tag/v0.48.0"}]}`
+	if err := os.WriteFile(filepath.Join(configDir, "release-catalog.json"), []byte(catalog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origDetect := DetectManager
+	t.Cleanup(func() { DetectManager = origDetect })
+
+	DetectManager = func(string) update.Manager { return update.Manager{} }
+	direct := State{Version: "0.47.1"}
+	direct.UseCached(configDir)
+	if direct.Latest != "v0.48.0" {
+		t.Fatalf("direct install Latest = %q, want the cached release", direct.Latest)
+	}
+
+	DetectManager = func(string) update.Manager { return update.Manager{Name: "Homebrew"} }
+	managed := State{Version: "0.47.1"}
+	managed.UseCached(configDir)
+	if managed.Latest != "" {
+		t.Fatalf("package-manager install Latest = %q, want none until its channel answers", managed.Latest)
+	}
+	if len(managed.Releases) != 1 {
+		t.Fatal("the catalog must stay for the what's-new notes")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -155,6 +156,21 @@ func TestDetectManager(t *testing.T) {
 	}
 }
 
+func TestBrewUpgradesRefreshFirst(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	for _, path := range []string{
+		"/opt/homebrew/Caskroom/agent-manager/0.47.1/agent-manager",
+		"/opt/homebrew/Cellar/agent-manager/0.47.1/bin/agent-manager",
+	} {
+		env := strings.Join(DetectManager(path).UpgradeCommand().Env, "\n")
+		for _, want := range []string{"HOMEBREW_NO_AUTO_UPDATE=", "HOMEBREW_AUTO_UPDATE_SECS=0"} {
+			if !strings.Contains(env, want) {
+				t.Fatalf("%s: upgrade env lacks %s", path, want)
+			}
+		}
+	}
+}
+
 func TestDetectManagerFollowsSymlink(t *testing.T) {
 	stubSourceSeams(t, nil, false)
 	dir := t.TempDir()
@@ -219,7 +235,7 @@ func TestDetectScoopManager(t *testing.T) {
 			if manager.Name != "Scoop" || manager.Delegated() {
 				t.Fatalf("Scoop install must block the in-place update, got %+v", manager)
 			}
-			if manager.Advice != "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell." {
+			if manager.Advice != "installed with Scoop. Close agent-manager, then run: scoop update; scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell." {
 				t.Fatalf("Scoop advice = %q", manager.Advice)
 			}
 		})

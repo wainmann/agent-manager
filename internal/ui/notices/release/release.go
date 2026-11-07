@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -90,6 +89,10 @@ func setting(st Store, key string) string {
 // show before the first check returns.
 func (s *State) UseCached(configDir string) {
 	cached := update.Cached(configDir, s.Version)
+	// Only the first check knows what a package manager can deliver.
+	if cached.Latest != "" && !installsDirectly() {
+		cached.Latest, cached.URL = "", ""
+	}
 	s.Latest = cached.Latest
 	s.URL = cached.URL
 	s.Releases = cached.Releases
@@ -322,6 +325,10 @@ func fetchUpdates(version string, force bool) tea.Msg {
 	} else {
 		result, err = update.Check(context.Background(), dir, version)
 	}
+	result, channelErr := forInstall(dir, version, force, result)
+	if err == nil {
+		err = channelErr
+	}
 	if err != nil {
 		return UpdateMsg{
 			Latest: result.Latest, URL: result.URL, Releases: result.Releases,
@@ -329,6 +336,22 @@ func fetchUpdates(version string, force bool) tea.Msg {
 		}
 	}
 	return UpdateMsg{Latest: result.Latest, URL: result.URL, Releases: result.Releases, Manual: force}
+}
+
+func forInstall(dir, version string, force bool, result update.Result) (update.Result, error) {
+	if result.Latest == "" {
+		return result, nil
+	}
+	execPath, err := os.Executable()
+	if err != nil {
+		return update.Result{Releases: result.Releases}, err
+	}
+	return update.ForInstall(context.Background(), dir, version, DetectManager(execPath), force, result)
+}
+
+func installsDirectly() bool {
+	execPath, err := os.Executable()
+	return err == nil && DetectManager(execPath).Name == ""
 }
 
 func fetchFeed(version string, force bool) FeedMsg {
@@ -436,6 +459,9 @@ var RefreshForApply = update.Refresh
 // between the in-place swap and a delegated package manager.
 var DetectManager = update.DetectManager
 
+// Upgraded is the seam for checking what a delegated upgrade actually did.
+var Upgraded = update.Upgraded
+
 // Apply routes u by install source. A package-manager install hands the
 // terminal to that manager's upgrade command; a direct install downloads the
 // latest release off the event loop and swaps the running binary. Both
@@ -449,17 +475,19 @@ func (s *State) Apply() tea.Cmd {
 	if manager.Advice != "" {
 		return func() tea.Msg { return AppliedMsg{Err: errors.New(manager.Advice)} }
 	}
-	if manager.Delegated() {
-		return delegatedCmd(manager, execPath)
-	}
 	version := s.Version
+	if manager.Delegated() {
+		return delegatedCmd(manager, execPath, version)
+	}
 	return func() tea.Msg {
 		dir, err := config.Dir()
 		if err != nil {
 			return AppliedMsg{Err: err}
 		}
 		result, err := RefreshForApply(context.Background(), dir, version)
-		if err != nil {
+		// The download does not use the API a refresh does, so a refused
+		// refresh leaves the release the cached catalog already names reachable.
+		if err != nil && result.Latest == "" {
 			return AppliedMsg{Result: result, Err: err}
 		}
 		if result.Latest == "" {
@@ -475,16 +503,23 @@ func (s *State) Apply() tea.Cmd {
 // delegatedCmd suspends the TUI and runs the manager's upgrade command on
 // the real terminal, so its progress output and any password prompt work as
 // in a plain shell.
-func delegatedCmd(manager update.Manager, execPath string) tea.Cmd {
-	command := exec.Command(manager.Command[0], manager.Command[1:]...)
-	return uiterminal.ExecProcess(command, func(err error) tea.Msg {
-		return delegatedResult(manager, execPath, err)
+func delegatedCmd(manager update.Manager, execPath, version string) tea.Cmd {
+	return uiterminal.ExecProcess(manager.UpgradeCommand(), func(err error) tea.Msg {
+		return delegatedResult(manager, execPath, version, err)
 	})
 }
 
-func delegatedResult(manager update.Manager, execPath string, err error) AppliedMsg {
+func delegatedResult(manager update.Manager, execPath, version string, err error) AppliedMsg {
 	if err != nil {
 		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.String(), err)}
 	}
-	return AppliedMsg{Path: update.RestartTarget(execPath)}
+	target := update.RestartTarget(execPath)
+	upgraded, err := Upgraded(target, version)
+	if err != nil {
+		return AppliedMsg{Err: fmt.Errorf("%s: checking %s: %w", manager.String(), target, err)}
+	}
+	if !upgraded {
+		return AppliedMsg{Err: fmt.Errorf("%s changed nothing, still on %s", manager.Name, version)}
+	}
+	return AppliedMsg{Path: target}
 }

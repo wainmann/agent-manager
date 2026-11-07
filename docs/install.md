@@ -203,9 +203,9 @@ The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1
 
 ## Updating
 
-The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. After a successful update the manager restarts into the new build with every session still running.
+The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge once your install can receive that version. A package-manager install waits for its own channel: the Homebrew formula until homebrew-core has the release, mise until `mise latest` returns it (mise holds new releases back for a day by default), and the Homebrew cask, Scoop and the AUR until their packages land. A Nix install shows no badge, because the manager cannot see which version your Nix configuration offers. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. After a successful update the manager restarts into the new build with every session still running.
 
-Scoop refuses to update a running app. For a Scoop install, the manager shows instructions instead of replacing the binary or running an update that Scoop would skip. Close agent-manager, run `scoop update agent-manager`, then start it again. For a global install, use `scoop update agent-manager --global` in an elevated PowerShell. Agent sessions keep running while the manager is closed.
+Scoop refuses to update a running app. For a Scoop install, the manager shows instructions instead of replacing the binary or running an update that Scoop would skip. Close agent-manager, run `scoop update`, then `scoop update agent-manager`, then start it again. For a global install, use `scoop update agent-manager --global` in an elevated PowerShell. Agent sessions keep running while the manager is closed.
 
 Two cases update by hand. A pacman-owned install needs an AUR helper (`yay` or `paru`) on PATH, and without one the manager runs nothing and prints the command to use instead: `yay -S agent-manager-bin`. A Nix install lives in the read-only store, so the manager runs nothing and points you at Nix instead, such as `nix profile upgrade agent-manager` or your flake or NixOS config.
 
@@ -214,7 +214,7 @@ The same commands work from a shell:
 ```bash
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
-scoop update agent-manager                                                               # Scoop, after closing agent-manager
+scoop update; scoop update agent-manager                                                 # Scoop, after closing agent-manager
 curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh
 mise upgrade --bump ubi:wainmann/agent-manager                                            # mise
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise, earlier installs

@@ -15,11 +15,25 @@ type Manager struct {
 	Name    string
 	Command []string
 	Advice  string
+	env     []string
+	channel channel
 }
 
 func (m Manager) Delegated() bool { return len(m.Command) > 0 }
 
 func (m Manager) String() string { return strings.Join(m.Command, " ") }
+
+// UpgradeCommand is Command ready to run, with the manager's environment.
+func (m Manager) UpgradeCommand() *exec.Cmd {
+	command := exec.Command(m.Command[0], m.Command[1:]...)
+	command.Env = append(os.Environ(), m.env...)
+	return command
+}
+
+// brewRefreshEnv makes brew fetch before upgrading. Its auto-update is skipped
+// when another brew command ran recently or the user turned it off, and the
+// upgrade then exits 0 against a stale list.
+var brewRefreshEnv = []string{"HOMEBREW_NO_AUTO_UPDATE=", "HOMEBREW_AUTO_UPDATE_SECS=0"}
 
 // Test seams: lookPath finds upgrade helpers, pacmanOwns asks pacman
 // whether it installed the binary.
@@ -42,11 +56,11 @@ func DetectManager(execPath string) Manager {
 	switch {
 	case scoopManaged(slashPath):
 		// Scoop refuses to update an app while its binary is running.
-		return Manager{Name: "Scoop", Advice: "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell."}
+		return Manager{Name: "Scoop", channel: scoopChannel, Advice: "installed with Scoop. Close agent-manager, then run: scoop update; scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell."}
 	case homebrewTree(slashPath) == "Caskroom":
-		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
+		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}, env: brewRefreshEnv, channel: caskChannel}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
-		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}}
+		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}, env: brewRefreshEnv, channel: coreChannel}
 	case miseSlug != "":
 		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}}
 	case strings.HasPrefix(slashPath, "/nix/store/"):
@@ -158,10 +172,10 @@ func pacmanOwnsPath(path string) bool {
 func archManager() Manager {
 	for _, helper := range []string{"yay", "paru"} {
 		if _, err := lookPath(helper); err == nil {
-			return Manager{Name: helper, Command: []string{helper, "-S", "agent-manager-bin"}}
+			return Manager{Name: helper, Command: []string{helper, "-S", "agent-manager-bin"}, channel: aurChannel}
 		}
 	}
-	return Manager{Name: "pacman", Advice: "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"}
+	return Manager{Name: "pacman", channel: aurChannel, Advice: "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"}
 }
 
 // RestartTarget is the path main should exec after a delegated upgrade.

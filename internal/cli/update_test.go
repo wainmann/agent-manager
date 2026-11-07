@@ -14,11 +14,14 @@ import (
 // catalog; apply is swapped per test where the test needs to see it.
 func swapUpdateSeams(t *testing.T, execPath string, manager update.Manager, result update.Result, refreshErr error) {
 	t.Helper()
-	oldExec, oldDetect, oldRefresh := updateExecutable, updateDetect, updateRefresh
+	oldExec, oldDetect, oldRefresh, oldUpgraded := updateExecutable, updateDetect, updateRefresh, updateUpgraded
 	updateExecutable = func() (string, error) { return execPath, nil }
 	updateDetect = func(string) update.Manager { return manager }
 	updateRefresh = func(context.Context, string, string) (update.Result, error) { return result, refreshErr }
-	t.Cleanup(func() { updateExecutable, updateDetect, updateRefresh = oldExec, oldDetect, oldRefresh })
+	updateUpgraded = func(string, string) (bool, error) { return true, nil }
+	t.Cleanup(func() {
+		updateExecutable, updateDetect, updateRefresh, updateUpgraded = oldExec, oldDetect, oldRefresh, oldUpgraded
+	})
 }
 
 func TestUpdateShowsUsageOnHelp(t *testing.T) {
@@ -57,7 +60,7 @@ func TestUpdateScoopRequiresClosedManager(t *testing.T) {
 		return update.Result{}, nil
 	}
 	err := runUpdate("0.43.0")(&bytes.Buffer{}, nil, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "Close agent-manager, then run: scoop update agent-manager") {
+	if err == nil || !strings.Contains(err.Error(), "Close agent-manager, then run: scoop update; scoop update agent-manager") {
 		t.Fatalf("Scoop update returned %v", err)
 	}
 }
@@ -70,6 +73,18 @@ func TestUpdateDelegatedRunsTheManagerCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "updated with true") {
 		t.Fatalf("delegated update output = %q", out.String())
+	}
+}
+
+func TestUpdateDelegatedSaysWhenTheManagerHadNothingNewer(t *testing.T) {
+	swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
+	updateUpgraded = func(string, string) (bool, error) { return false, nil }
+	var out bytes.Buffer
+	if err := runUpdate("0.31.0")(&out, nil, t.TempDir()); err != nil {
+		t.Fatalf("delegated update: %v", err)
+	}
+	if strings.Contains(out.String(), "updated with") || !strings.Contains(out.String(), "true found nothing newer than 0.31.0") {
+		t.Fatalf("no-op upgrade output = %q", out.String())
 	}
 }
 
@@ -157,6 +172,23 @@ func TestUpdateReportsRefreshFailures(t *testing.T) {
 	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || err.Error() != "update: could not reach GitHub: github unreachable" {
 		t.Fatalf("refresh failure returned %v", err)
+	}
+}
+
+func TestUpdateAppliesTheCachedReleaseWhenARefreshIsRefused(t *testing.T) {
+	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{Latest: "v0.32.0"}, errors.New("github returned 403 Forbidden"))
+	oldApply := updateApply
+	t.Cleanup(func() { updateApply = oldApply })
+	var applied string
+	updateApply = func(_ context.Context, tag, _ string) error {
+		applied = tag
+		return nil
+	}
+	if err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir()); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if applied != "v0.32.0" {
+		t.Fatalf("applied %q, want the cached release", applied)
 	}
 }
 

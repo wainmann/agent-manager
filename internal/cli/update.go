@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	"github.com/YoanWai/agent-manager/internal/update"
 )
@@ -20,6 +19,7 @@ var (
 	updateDetect     = update.DetectManager
 	updateRefresh    = update.Refresh
 	updateApply      = update.Apply
+	updateUpgraded   = update.Upgraded
 )
 
 func updateSection(version string) section {
@@ -63,7 +63,7 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			return errors.New(manager.Advice)
 		}
 		if manager.Delegated() {
-			command := exec.Command(manager.Command[0], manager.Command[1:]...)
+			command := manager.UpgradeCommand()
 			command.Stdin = os.Stdin
 			command.Stderr = os.Stderr
 			if *asJSON {
@@ -76,6 +76,14 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			if err := command.Run(); err != nil {
 				return fmt.Errorf("%s: %w", manager.String(), err)
 			}
+			upgraded, err := updateUpgraded(update.RestartTarget(execPath), version)
+			if err != nil {
+				return fmt.Errorf("%s: checking the result: %w", manager.String(), err)
+			}
+			if !upgraded {
+				return emit(out, *asJSON, updateReport{UpToDate: true},
+					fmt.Sprintf("%s found nothing newer than %s", manager.String(), version))
+			}
 			return emit(out, *asJSON, updateReport{Delegate: manager.String()},
 				fmt.Sprintf("updated with %s", manager.String()))
 		}
@@ -86,7 +94,7 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			return errors.New("update: this build is not a release; reinstall to upgrade")
 		}
 		result, err := updateRefresh(context.Background(), configDir, version)
-		if err != nil {
+		if err != nil && result.Latest == "" {
 			return fmt.Errorf("update: could not reach GitHub: %w", err)
 		}
 		if result.Latest == "" {
