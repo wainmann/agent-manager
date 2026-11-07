@@ -21,7 +21,7 @@ func TestDelegatedResult(t *testing.T) {
 
 	origUpgraded := Upgraded
 	t.Cleanup(func() { Upgraded = origUpgraded })
-	Upgraded = func(string, string) (bool, error) { return true, nil }
+	Upgraded = func(update.Manager, string, string) (string, bool, error) { return execPath, true, nil }
 
 	msg := delegatedResult(manager, execPath, "0.47.1", nil)
 	if msg.Err != nil {
@@ -39,12 +39,12 @@ func TestDelegatedResult(t *testing.T) {
 		t.Fatal("a failed upgrade must not restart")
 	}
 
-	Upgraded = func(string, string) (bool, error) { return false, nil }
+	Upgraded = func(update.Manager, string, string) (string, bool, error) { return execPath, false, nil }
 	unchanged := delegatedResult(manager, execPath, "0.47.1", nil)
 	if unchanged.Path != "" {
 		t.Fatal("an upgrade that changed nothing must not restart")
 	}
-	if unchanged.Err == nil || !strings.Contains(unchanged.Err.Error(), "Homebrew changed nothing, still on 0.47.1") {
+	if unchanged.Err == nil || !strings.Contains(unchanged.Err.Error(), "Homebrew finished, still on 0.47.1") {
 		t.Fatalf("an upgrade that changed nothing should say so, got %v", unchanged.Err)
 	}
 }

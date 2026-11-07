@@ -93,7 +93,7 @@ func TestForInstallAsksMiseForTheVersion(t *testing.T) {
 		asked = slug
 		return "0.47.1", nil
 	}
-	manager := Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:wainmann/agent-manager"}}
+	manager := Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:wainmann/agent-manager"}, channel: channel{miseSlug: "ubi:wainmann/agent-manager"}}
 	got, err := ForInstall(context.Background(), t.TempDir(), "0.47.0", manager, false, catalogResult())
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestForInstallSkipsTheChannelWhenNothingIsNewer(t *testing.T) {
 func TestForInstallKeepsTheLastAnswerWhenTheChannelFails(t *testing.T) {
 	origLatest := miseLatest
 	t.Cleanup(func() { miseLatest = origLatest })
-	manager := Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:wainmann/agent-manager"}}
+	manager := Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:wainmann/agent-manager"}, channel: channel{miseSlug: "ubi:wainmann/agent-manager"}}
 	dir := t.TempDir()
 
 	miseLatest = func(context.Context, string) (string, error) { return "0.48.0", nil }
@@ -163,11 +163,29 @@ func TestForInstallKeepsTheLastAnswerWhenTheChannelFails(t *testing.T) {
 func TestUpgradedComparesTheInstalledBinary(t *testing.T) {
 	orig := installedVersion
 	t.Cleanup(func() { installedVersion = orig })
-	installedVersion = func(string) (string, error) { return "0.48.0", nil }
-	if upgraded, err := Upgraded("/x", "0.47.1"); err != nil || !upgraded {
+	installedVersion = func(context.Context, string) (string, error) { return "0.48.0", nil }
+	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.47.1"); err != nil || !upgraded {
 		t.Fatalf("newer binary: %v, %v", upgraded, err)
 	}
-	if upgraded, err := Upgraded("/x", "0.48.0"); err != nil || upgraded {
+	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.48.0"); err != nil || upgraded {
 		t.Fatalf("same binary: %v, %v", upgraded, err)
+	}
+}
+
+func TestUpgradedAsksMiseWhichBinaryItServes(t *testing.T) {
+	origVersion, origWhich := installedVersion, miseWhich
+	t.Cleanup(func() { installedVersion, miseWhich = origVersion, origWhich })
+	newPath := "/m/installs/ubi-wainmann-agent-manager/0.48.0/agent-manager"
+	miseWhich = func(context.Context) (string, error) { return newPath, nil }
+	installedVersion = func(_ context.Context, path string) (string, error) {
+		if path != newPath {
+			t.Fatalf("checked %q, want the path mise named", path)
+		}
+		return "0.48.0", nil
+	}
+	manager := Manager{Name: "mise", channel: channel{miseSlug: "ubi:wainmann/agent-manager"}}
+	target, upgraded, err := manager.Upgraded("/m/installs/ubi-wainmann-agent-manager/0.47.1/agent-manager", "0.47.1")
+	if err != nil || !upgraded || target != newPath {
+		t.Fatalf("target %q, upgraded %v, err %v", target, upgraded, err)
 	}
 }

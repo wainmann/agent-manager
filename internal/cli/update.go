@@ -19,7 +19,8 @@ var (
 	updateDetect     = update.DetectManager
 	updateRefresh    = update.Refresh
 	updateApply      = update.Apply
-	updateUpgraded   = update.Upgraded
+	updateUpgraded   = update.Manager.Upgraded
+	updateForInstall = update.ForInstall
 )
 
 func updateSection(version string) section {
@@ -76,13 +77,12 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			if err := command.Run(); err != nil {
 				return fmt.Errorf("%s: %w", manager.String(), err)
 			}
-			upgraded, err := updateUpgraded(update.RestartTarget(execPath), version)
+			_, upgraded, err := updateUpgraded(manager, execPath, version)
 			if err != nil {
-				return fmt.Errorf("%s: checking the result: %w", manager.String(), err)
+				return fmt.Errorf("%s: checking the installed version: %w", manager.String(), err)
 			}
 			if !upgraded {
-				return emit(out, *asJSON, updateReport{UpToDate: true},
-					fmt.Sprintf("%s found nothing newer than %s", manager.String(), version))
+				return reportUnchanged(out, *asJSON, manager, version, configDir)
 			}
 			return emit(out, *asJSON, updateReport{Delegate: manager.String()},
 				fmt.Sprintf("updated with %s", manager.String()))
@@ -96,6 +96,9 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 		result, err := updateRefresh(context.Background(), configDir, version)
 		if err != nil && result.Latest == "" {
 			return fmt.Errorf("update: could not reach GitHub: %w", err)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "update: could not reach GitHub, using the cached release list: %v\n", err)
 		}
 		if result.Latest == "" {
 			return emit(out, *asJSON, updateReport{UpToDate: true}, "already up to date")
@@ -113,4 +116,21 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 		return emit(out, *asJSON, updateReport{Version: result.Latest},
 			fmt.Sprintf("updated to %s", result.Latest))
 	}
+}
+
+// reportUnchanged tells a current install from one its package manager failed
+// to move, since both end with the same version and exit status.
+func reportUnchanged(out io.Writer, asJSON bool, manager update.Manager, version, configDir string) error {
+	ctx := context.Background()
+	result, err := updateRefresh(ctx, configDir, version)
+	if err == nil {
+		result, err = updateForInstall(ctx, configDir, version, manager, true, result)
+	}
+	if err != nil {
+		return fmt.Errorf("%s finished, still on %s: %w", manager.String(), version, err)
+	}
+	if result.Latest != "" {
+		return fmt.Errorf("%s finished, still on %s, and %s is available", manager.String(), version, result.Latest)
+	}
+	return emit(out, asJSON, updateReport{UpToDate: true}, "already up to date")
 }

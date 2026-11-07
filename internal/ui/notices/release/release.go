@@ -452,7 +452,8 @@ func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 var ApplyUpdate = update.Apply
 
 // RefreshForApply makes u resolve the newest release at action time, even
-// when several releases landed after the notice was first cached.
+// when several releases landed after the notice was first cached. When the
+// refresh fails, u delivers the release its notice named.
 var RefreshForApply = update.Refresh
 
 // DetectManager is the install-source seam: tests swap it to steer u
@@ -460,7 +461,7 @@ var RefreshForApply = update.Refresh
 var DetectManager = update.DetectManager
 
 // Upgraded is the seam for checking what a delegated upgrade actually did.
-var Upgraded = update.Upgraded
+var Upgraded = update.Manager.Upgraded
 
 // Apply routes u by install source. A package-manager install hands the
 // terminal to that manager's upgrade command; a direct install downloads the
@@ -487,13 +488,17 @@ func (s *State) Apply() tea.Cmd {
 		result, err := RefreshForApply(context.Background(), dir, version)
 		// The download does not use the API a refresh does, so a refused
 		// refresh leaves the release the cached catalog already names reachable.
-		if err != nil && result.Latest == "" {
-			return AppliedMsg{Result: result, Err: err}
+		refreshErr := err
+		if refreshErr != nil && result.Latest == "" {
+			return AppliedMsg{Result: result, Err: refreshErr}
 		}
 		if result.Latest == "" {
 			return AppliedMsg{Result: result, UpToDate: true}
 		}
 		if err := ApplyUpdate(context.Background(), result.Latest, execPath); err != nil {
+			if refreshErr != nil {
+				err = fmt.Errorf("%w (the refresh also failed: %v)", err, refreshErr)
+			}
 			return AppliedMsg{Result: result, Err: err}
 		}
 		return AppliedMsg{Path: execPath, Result: result}
@@ -505,7 +510,9 @@ func (s *State) Apply() tea.Cmd {
 // in a plain shell.
 func delegatedCmd(manager update.Manager, execPath, version string) tea.Cmd {
 	return uiterminal.ExecProcess(manager.UpgradeCommand(), func(err error) tea.Msg {
-		return delegatedResult(manager, execPath, version, err)
+		// Bubble Tea runs this callback on the event loop, and the result
+		// execs the new binary, so it goes out as a command.
+		return tea.BatchMsg{func() tea.Msg { return delegatedResult(manager, execPath, version, err) }}
 	})
 }
 
@@ -513,13 +520,12 @@ func delegatedResult(manager update.Manager, execPath, version string, err error
 	if err != nil {
 		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.String(), err)}
 	}
-	target := update.RestartTarget(execPath)
-	upgraded, err := Upgraded(target, version)
+	target, upgraded, err := Upgraded(manager, execPath, version)
 	if err != nil {
-		return AppliedMsg{Err: fmt.Errorf("%s: checking %s: %w", manager.String(), target, err)}
+		return AppliedMsg{Err: fmt.Errorf("%s: checking the installed version: %w", manager.String(), err)}
 	}
 	if !upgraded {
-		return AppliedMsg{Err: fmt.Errorf("%s changed nothing, still on %s", manager.Name, version)}
+		return AppliedMsg{Err: fmt.Errorf("%s finished, still on %s", manager.Name, version)}
 	}
 	return AppliedMsg{Path: target}
 }

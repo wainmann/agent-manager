@@ -271,7 +271,7 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	// release that is now installed, so however recently that was, it cannot
 	// name what the update brought. Updating within the interval lands in
 	// exactly that state, which is when the notes are read.
-	if !force && parsedHere && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
+	if !force && parsedHere && haveCatalog && cacheFresh(cached.CheckedAt, time.Now()) && !Newer(current, newest) {
 		return resultFor(currentParts, cached.Releases), nil
 	}
 
@@ -306,8 +306,8 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	return resultFor(currentParts, releases), nil
 }
 
-func cacheFresh(c cache, now time.Time) bool {
-	age := now.Sub(c.CheckedAt)
+func cacheFresh(checkedAt, now time.Time) bool {
+	age := now.Sub(checkedAt)
 	return age >= 0 && age < checkInterval
 }
 

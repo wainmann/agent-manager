@@ -235,7 +235,7 @@ func TestDetectScoopManager(t *testing.T) {
 			if manager.Name != "Scoop" || manager.Delegated() {
 				t.Fatalf("Scoop install must block the in-place update, got %+v", manager)
 			}
-			if manager.Advice != "installed with Scoop. Close agent-manager, then run: scoop update; scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell." {
+			if manager.Advice != "installed with Scoop. Close agent-manager, then run scoop update, then scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell." {
 				t.Fatalf("Scoop advice = %q", manager.Advice)
 			}
 		})

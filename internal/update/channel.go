@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -14,13 +15,21 @@ import (
 	"github.com/YoanWai/agent-manager/internal/atomicfile"
 )
 
-const channelCacheFile = "channel-version.json"
+const (
+	channelCacheFile   = "channel-version.json"
+	upgradeCheckBudget = 30 * time.Second
+	processGrace       = 2 * time.Second
+)
 
-// channel is the published file a package manager reads new versions from.
+// channel says where a package manager's newest version can be read: a
+// published file, or mise itself.
 type channel struct {
-	url     string
-	version *regexp.Regexp
+	url      string
+	version  *regexp.Regexp
+	miseSlug string
 }
+
+func (c channel) key() string { return c.url + c.miseSlug }
 
 var (
 	coreChannel = channel{
@@ -41,16 +50,36 @@ var (
 	}
 )
 
-// miseLatest asks mise itself, so its release-age cooldown and the user's
-// settings decide what counts as available.
-var miseLatest = func(ctx context.Context, slug string) (string, error) {
-	output, err := exec.CommandContext(ctx, "mise", "latest", slug).Output()
+// miseAnswer runs mise from the home directory: a project's mise.toml at the
+// manager's working directory can fail the trust check or change the answer.
+func miseAnswer(ctx context.Context, args ...string) (string, error) {
+	command := exec.CommandContext(ctx, "mise", args...)
+	command.WaitDelay = processGrace
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	command.Dir = home
+	output, err := command.Output()
 	return strings.TrimSpace(string(output)), err
 }
 
+// miseLatest asks mise itself, so its release-age cooldown and the user's
+// settings decide what counts as available.
+var miseLatest = func(ctx context.Context, slug string) (string, error) {
+	return miseAnswer(ctx, "latest", slug)
+}
+
+// miseWhich is the seam for finding the binary mise now serves.
+var miseWhich = func(ctx context.Context) (string, error) {
+	return miseAnswer(ctx, "which", "agent-manager")
+}
+
 // installedVersion is a seam so tests never exec a real binary.
-var installedVersion = func(path string) (string, error) {
-	output, err := exec.Command(path, "--version").Output()
+var installedVersion = func(ctx context.Context, path string) (string, error) {
+	command := exec.CommandContext(ctx, path, "--version")
+	command.WaitDelay = processGrace
+	output, err := command.Output()
 	if err != nil {
 		return "", err
 	}
@@ -61,14 +90,25 @@ var installedVersion = func(path string) (string, error) {
 	return fields[len(fields)-1], nil
 }
 
-// Upgraded reports whether the binary at path is newer than current. A package
-// manager with nothing newer still exits 0, so its exit status cannot say.
-func Upgraded(path, current string) (bool, error) {
-	version, err := installedVersion(path)
-	if err != nil {
-		return false, err
+// Upgraded finds the binary a restart should exec and reports whether it is
+// newer than current. A package manager with nothing newer still exits 0, so
+// its exit status cannot say. mise keeps the old version's directory, and a
+// PATH from `mise activate` still names it, so only mise can name the new one.
+func (m Manager) Upgraded(execPath, current string) (string, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), upgradeCheckBudget)
+	defer cancel()
+	target := RestartTarget(execPath)
+	if m.channel.miseSlug != "" {
+		var err error
+		if target, err = miseWhich(ctx); err != nil {
+			return "", false, fmt.Errorf("asking mise for the installed path: %w", err)
+		}
 	}
-	return Newer(version, current), nil
+	version, err := installedVersion(ctx, target)
+	if err != nil {
+		return target, false, err
+	}
+	return target, Newer(version, current), nil
 }
 
 type channelCache struct {
@@ -102,30 +142,23 @@ func narrowToAvailable(result Result, current, available string) Result {
 	return result
 }
 
-func (m Manager) channelKey() string {
-	if m.Name == "mise" {
-		return m.Command[len(m.Command)-1]
-	}
-	return m.channel.url
-}
-
 // availableVersion keeps the last answer on failure so a passing outage does
 // not hide a release this install can already receive. A Manager with no
 // channel (Nix) has no knowable version and answers "".
 func (m Manager) availableVersion(ctx context.Context, configDir string, force bool) (string, error) {
-	key := m.channelKey()
+	key := m.channel.key()
 	if key == "" {
 		return "", nil
 	}
 	cachePath := filepath.Join(configDir, channelCacheFile)
 	cached, ok := atomicfile.ReadJSON[channelCache](cachePath)
 	known := ok && cached.Key == key
-	if known && !force && cacheFresh(cache{CheckedAt: cached.CheckedAt}, time.Now()) {
+	if known && !force && cacheFresh(cached.CheckedAt, time.Now()) {
 		return cached.Version, nil
 	}
 
 	budget := requestBudget
-	if force {
+	if force || m.channel.miseSlug != "" {
 		budget = refreshBudget
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
@@ -142,8 +175,8 @@ func (m Manager) availableVersion(ctx context.Context, configDir string, force b
 }
 
 func (m Manager) fetchAvailableVersion(ctx context.Context) (string, error) {
-	if m.Name == "mise" {
-		version, err := miseLatest(ctx, m.channelKey())
+	if m.channel.miseSlug != "" {
+		version, err := miseLatest(ctx, m.channel.miseSlug)
 		if err != nil {
 			return "", fmt.Errorf("update: asking mise for the latest version: %w", err)
 		}

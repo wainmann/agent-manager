@@ -27,6 +27,10 @@ func (m Manager) String() string { return strings.Join(m.Command, " ") }
 func (m Manager) UpgradeCommand() *exec.Cmd {
 	command := exec.Command(m.Command[0], m.Command[1:]...)
 	command.Env = append(os.Environ(), m.env...)
+	// mise --bump edits the config it resolves from here; the install is global.
+	if home, err := os.UserHomeDir(); err == nil && m.channel.miseSlug != "" {
+		command.Dir = home
+	}
 	return command
 }
 
@@ -56,13 +60,13 @@ func DetectManager(execPath string) Manager {
 	switch {
 	case scoopManaged(slashPath):
 		// Scoop refuses to update an app while its binary is running.
-		return Manager{Name: "Scoop", channel: scoopChannel, Advice: "installed with Scoop. Close agent-manager, then run: scoop update; scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell."}
+		return Manager{Name: "Scoop", channel: scoopChannel, Advice: "installed with Scoop. Close agent-manager, then run scoop update, then scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell."}
 	case homebrewTree(slashPath) == "Caskroom":
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}, env: brewRefreshEnv, channel: caskChannel}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}, env: brewRefreshEnv, channel: coreChannel}
 	case miseSlug != "":
-		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}}
+		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}, channel: channel{miseSlug: miseSlug}}
 	case strings.HasPrefix(slashPath, "/nix/store/"):
 		// The store is read-only, and the user's Nix profile or config owns the install.
 		return Manager{Name: "Nix", Advice: "installed with Nix; update it through Nix, for example: nix profile upgrade agent-manager"}

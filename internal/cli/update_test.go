@@ -14,13 +14,13 @@ import (
 // catalog; apply is swapped per test where the test needs to see it.
 func swapUpdateSeams(t *testing.T, execPath string, manager update.Manager, result update.Result, refreshErr error) {
 	t.Helper()
-	oldExec, oldDetect, oldRefresh, oldUpgraded := updateExecutable, updateDetect, updateRefresh, updateUpgraded
+	oldExec, oldDetect, oldRefresh, oldUpgraded, oldForInstall := updateExecutable, updateDetect, updateRefresh, updateUpgraded, updateForInstall
 	updateExecutable = func() (string, error) { return execPath, nil }
 	updateDetect = func(string) update.Manager { return manager }
 	updateRefresh = func(context.Context, string, string) (update.Result, error) { return result, refreshErr }
-	updateUpgraded = func(string, string) (bool, error) { return true, nil }
+	updateUpgraded = func(update.Manager, string, string) (string, bool, error) { return execPath, true, nil }
 	t.Cleanup(func() {
-		updateExecutable, updateDetect, updateRefresh, updateUpgraded = oldExec, oldDetect, oldRefresh, oldUpgraded
+		updateExecutable, updateDetect, updateRefresh, updateUpgraded, updateForInstall = oldExec, oldDetect, oldRefresh, oldUpgraded, oldForInstall
 	})
 }
 
@@ -60,7 +60,7 @@ func TestUpdateScoopRequiresClosedManager(t *testing.T) {
 		return update.Result{}, nil
 	}
 	err := runUpdate("0.43.0")(&bytes.Buffer{}, nil, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "Close agent-manager, then run: scoop update; scoop update agent-manager") {
+	if err == nil || !strings.Contains(err.Error(), "Close agent-manager, then run scoop update, then scoop update agent-manager") {
 		t.Fatalf("Scoop update returned %v", err)
 	}
 }
@@ -76,15 +76,40 @@ func TestUpdateDelegatedRunsTheManagerCommand(t *testing.T) {
 	}
 }
 
-func TestUpdateDelegatedSaysWhenTheManagerHadNothingNewer(t *testing.T) {
-	swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
-	updateUpgraded = func(string, string) (bool, error) { return false, nil }
-	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, nil, t.TempDir()); err != nil {
-		t.Fatalf("delegated update: %v", err)
+func TestUpdateDelegatedTellsCurrentFromStuck(t *testing.T) {
+	cases := []struct {
+		label      string
+		available  update.Result
+		channelErr error
+		wantErr    string
+		wantOut    string
+	}{
+		{label: "channel has nothing newer", wantOut: "already up to date"},
+		{label: "channel has a release the manager did not install", available: update.Result{Latest: "v0.32.0"}, wantErr: "true finished, still on 0.31.0, and v0.32.0 is available"},
+		{label: "channel cannot be read", channelErr: errors.New("offline"), wantErr: "true finished, still on 0.31.0: offline"},
 	}
-	if strings.Contains(out.String(), "updated with") || !strings.Contains(out.String(), "true found nothing newer than 0.31.0") {
-		t.Fatalf("no-op upgrade output = %q", out.String())
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
+			updateUpgraded = func(update.Manager, string, string) (string, bool, error) { return "agent-manager", false, nil }
+			updateForInstall = func(context.Context, string, string, update.Manager, bool, update.Result) (update.Result, error) {
+				return tc.available, tc.channelErr
+			}
+			var out bytes.Buffer
+			err := runUpdate("0.31.0")(&out, nil, t.TempDir())
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("err = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), tc.wantOut) {
+				t.Fatalf("out = %q, want %q", out.String(), tc.wantOut)
+			}
+		})
 	}
 }
 
