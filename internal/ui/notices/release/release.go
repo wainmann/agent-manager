@@ -443,8 +443,7 @@ func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 var ApplyUpdate = update.Apply
 
 // RefreshForApply makes u resolve the newest release at action time, even
-// when several releases landed after the notice was first cached. When the
-// refresh fails, u delivers the release its notice named.
+// when several releases landed after the notice was first cached.
 var RefreshForApply = update.Refresh
 
 // DetectManager is the install-source seam: tests swap it to steer u
@@ -477,19 +476,13 @@ func (s *State) Apply() tea.Cmd {
 			return AppliedMsg{Err: err}
 		}
 		result, err := RefreshForApply(context.Background(), dir, version)
-		// The download does not use the API a refresh does, so a refused
-		// refresh leaves the release the cached catalog already names reachable.
-		refreshErr := err
-		if refreshErr != nil && result.Latest == "" {
-			return AppliedMsg{Result: result, Err: refreshErr}
+		if err != nil {
+			return AppliedMsg{Result: result, Err: err}
 		}
 		if result.Latest == "" {
 			return AppliedMsg{Result: result, UpToDate: true}
 		}
 		if err := ApplyUpdate(context.Background(), result.Latest, execPath); err != nil {
-			if refreshErr != nil {
-				err = fmt.Errorf("%w (the refresh also failed: %v)", err, refreshErr)
-			}
 			return AppliedMsg{Result: result, Err: err}
 		}
 		return AppliedMsg{Path: execPath, Result: result}

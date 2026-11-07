@@ -95,11 +95,8 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			return errors.New("update: this build is not a release; reinstall to upgrade")
 		}
 		result, err := updateRefresh(context.Background(), configDir, version)
-		if err != nil && result.Latest == "" {
-			return fmt.Errorf("update: could not reach GitHub: %w", err)
-		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "update: could not reach GitHub, using the cached release list: %v\n", err)
+			return fmt.Errorf("update: could not reach GitHub: %w", err)
 		}
 		if result.Latest == "" {
 			return emit(out, *asJSON, updateReport{UpToDate: true}, "already up to date")

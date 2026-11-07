@@ -200,23 +200,6 @@ func TestUpdateReportsRefreshFailures(t *testing.T) {
 	}
 }
 
-func TestUpdateAppliesTheCachedReleaseWhenARefreshIsRefused(t *testing.T) {
-	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{Latest: "v0.32.0"}, errors.New("github returned 403 Forbidden"))
-	oldApply := updateApply
-	t.Cleanup(func() { updateApply = oldApply })
-	var applied string
-	updateApply = func(_ context.Context, tag, _ string) error {
-		applied = tag
-		return nil
-	}
-	if err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir()); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	if applied != "v0.32.0" {
-		t.Fatalf("applied %q, want the cached release", applied)
-	}
-}
-
 func TestUpdateReportsApplyFailures(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{Latest: "v0.32.0"}, nil)
 	oldApply := updateApply
