@@ -86,7 +86,7 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で `scoop update agent-manager --global` を実行します。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
+その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update`、続けて `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で 2 つ目のコマンドに `--global` を付けます。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
 
 <!--
 winget is not listed yet. Each release opens a manifest PR to
