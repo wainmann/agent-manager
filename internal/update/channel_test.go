@@ -164,10 +164,10 @@ func TestUpgradedComparesTheInstalledBinary(t *testing.T) {
 	orig := installedVersion
 	t.Cleanup(func() { installedVersion = orig })
 	installedVersion = func(context.Context, string) (string, error) { return "0.48.0", nil }
-	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.47.1"); err != nil || !upgraded {
+	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.47.1", ""); err != nil || !upgraded {
 		t.Fatalf("newer binary: %v, %v", upgraded, err)
 	}
-	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.48.0"); err != nil || upgraded {
+	if _, upgraded, err := (Manager{}).Upgraded("/x", "0.48.0", ""); err != nil || upgraded {
 		t.Fatalf("same binary: %v, %v", upgraded, err)
 	}
 }
@@ -184,8 +184,24 @@ func TestUpgradedAsksMiseWhichBinaryItServes(t *testing.T) {
 		return "0.48.0", nil
 	}
 	manager := Manager{Name: "mise", channel: channel{miseSlug: "ubi:wainmann/agent-manager"}}
-	target, upgraded, err := manager.Upgraded("/m/installs/ubi-wainmann-agent-manager/0.47.1/agent-manager", "0.47.1")
+	target, upgraded, err := manager.Upgraded("/m/installs/ubi-wainmann-agent-manager/0.47.1/agent-manager", "0.47.1", "")
 	if err != nil || !upgraded || target != newPath {
 		t.Fatalf("target %q, upgraded %v, err %v", target, upgraded, err)
+	}
+}
+
+func TestUpgradedRejectsUnusableResults(t *testing.T) {
+	orig := installedVersion
+	t.Cleanup(func() { installedVersion = orig })
+	for _, tc := range []struct{ installed, current, expected string }{
+		{"0.47.1", "0.47.0", "v0.48.0"},
+		{"0.47.0", "0.47.1", ""},
+		{"dev", "0.47.1", ""},
+		{"0.48.0", "dev", ""},
+	} {
+		installedVersion = func(context.Context, string) (string, error) { return tc.installed, nil }
+		if _, upgraded, err := (Manager{}).Upgraded("/x", tc.current, tc.expected); err == nil || upgraded {
+			t.Errorf("installed %s, current %s, expected %s got upgraded %v, err %v", tc.installed, tc.current, tc.expected, upgraded, err)
+		}
 	}
 }

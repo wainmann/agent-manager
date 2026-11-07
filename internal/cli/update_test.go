@@ -18,7 +18,7 @@ func swapUpdateSeams(t *testing.T, execPath string, manager update.Manager, resu
 	updateExecutable = func() (string, error) { return execPath, nil }
 	updateDetect = func(string) update.Manager { return manager }
 	updateRefresh = func(context.Context, string, string) (update.Result, error) { return result, refreshErr }
-	updateUpgraded = func(update.Manager, string, string) (string, bool, error) { return execPath, true, nil }
+	updateUpgraded = func(update.Manager, string, string, string) (string, bool, error) { return execPath, true, nil }
 	t.Cleanup(func() {
 		updateExecutable, updateDetect, updateRefresh, updateUpgraded, updateForInstall = oldExec, oldDetect, oldRefresh, oldUpgraded, oldForInstall
 	})
@@ -91,7 +91,7 @@ func TestUpdateDelegatedTellsCurrentFromStuck(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
 			swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
-			updateUpgraded = func(update.Manager, string, string) (string, bool, error) { return "agent-manager", false, nil }
+			updateUpgraded = func(update.Manager, string, string, string) (string, bool, error) { return "agent-manager", false, nil }
 			updateForInstall = func(context.Context, string, string, update.Manager, bool, update.Result) (update.Result, error) {
 				return tc.available, tc.channelErr
 			}

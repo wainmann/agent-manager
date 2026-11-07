@@ -90,11 +90,8 @@ var installedVersion = func(ctx context.Context, path string) (string, error) {
 	return fields[len(fields)-1], nil
 }
 
-// Upgraded finds the binary a restart should exec and reports whether it is
-// newer than current. A package manager with nothing newer still exits 0, so
-// its exit status cannot say. mise keeps the old version's directory, and a
-// PATH from `mise activate` still names it, so only mise can name the new one.
-func (m Manager) Upgraded(execPath, current string) (string, bool, error) {
+// Upgraded verifies that the restart binary advanced and reached the offered version, if any.
+func (m Manager) Upgraded(execPath, current, expected string) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), upgradeCheckBudget)
 	defer cancel()
 	target := RestartTarget(execPath)
@@ -107,6 +104,18 @@ func (m Manager) Upgraded(execPath, current string) (string, bool, error) {
 	version, err := installedVersion(ctx, target)
 	if err != nil {
 		return target, false, err
+	}
+	if _, ok := parseVersion(version); !ok {
+		return target, false, fmt.Errorf("%s reported an invalid version %q", target, version)
+	}
+	if _, ok := parseVersion(current); !ok {
+		return target, false, fmt.Errorf("cannot compare installed version %s with running version %q", version, current)
+	}
+	if Newer(current, version) {
+		return target, false, fmt.Errorf("installed version %s is older than running version %s", version, current)
+	}
+	if Newer(expected, version) {
+		return target, false, fmt.Errorf("installed version %s did not reach the offered version %s", version, expected)
 	}
 	return target, Newer(version, current), nil
 }

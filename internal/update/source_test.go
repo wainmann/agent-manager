@@ -304,18 +304,40 @@ func TestPacmanOwnsOffLinux(t *testing.T) {
 	}
 }
 
-func TestRestartTargetPrefersPathEntry(t *testing.T) {
-	stubSourceSeams(t, map[string]string{"agent-manager": "/opt/homebrew/bin/agent-manager"}, false)
-	got := RestartTarget("/opt/homebrew/Caskroom/agent-manager/0.19.0/agent-manager")
-	if got != "/opt/homebrew/bin/agent-manager" {
-		t.Fatalf("RestartTarget = %q", got)
+func TestRestartTargetStaysWithTheOriginalInstall(t *testing.T) {
+	stubSourceSeams(t, map[string]string{"agent-manager": "/another/install/agent-manager"}, false)
+	for _, tc := range []struct{ path, want string }{
+		{"/opt/homebrew/Caskroom/agent-manager/0.47.1/agent-manager", "/opt/homebrew/bin/agent-manager"},
+		{"/usr/local/Cellar/agent-manager/0.47.1/bin/agent-manager", "/usr/local/bin/agent-manager"},
+		{"/home/linuxbrew/.linuxbrew/Cellar/agent-manager/0.47.1/bin/agent-manager", "/home/linuxbrew/.linuxbrew/bin/agent-manager"},
+		{"/opt/homebrew/opt/agent-manager/bin/agent-manager", "/opt/homebrew/bin/agent-manager"},
+		{"/usr/bin/agent-manager", "/usr/bin/agent-manager"},
+		{"/weird/place/agent-manager", "/weird/place/agent-manager"},
+	} {
+		if got := RestartTarget(filepath.FromSlash(tc.path)); got != filepath.FromSlash(tc.want) {
+			t.Errorf("RestartTarget(%q) = %q, want %q", tc.path, got, tc.want)
+		}
 	}
 }
 
-func TestRestartTargetFallsBackToExecPath(t *testing.T) {
-	stubSourceSeams(t, nil, false)
-	got := RestartTarget("/weird/place/agent-manager")
-	if got != "/weird/place/agent-manager" {
-		t.Fatalf("RestartTarget = %q", got)
+func TestRestartTargetResolvesLinksBeforeTheVersionDirectoryIsRemoved(t *testing.T) {
+	prefix := t.TempDir()
+	old := filepath.Join(prefix, "Caskroom", "agent-manager", "0.47.1", "agent-manager")
+	if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(prefix, "custom-link")
+	if err := os.Symlink(old, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := RestartTarget(link), filepath.Join(resolved, "bin", "agent-manager"); got != want {
+		t.Fatalf("restart target = %q, want %q", got, want)
 	}
 }

@@ -89,12 +89,8 @@ func setting(st Store, key string) string {
 // show before the first check returns.
 func (s *State) UseCached(configDir string) {
 	cached := update.Cached(configDir, s.Version)
-	// Only the first check knows what a package manager can deliver.
-	if cached.Latest != "" && !installsDirectly() {
-		cached.Latest, cached.URL = "", ""
-	}
-	s.Latest = cached.Latest
-	s.URL = cached.URL
+	// Availability is resolved off the event loop by the first check.
+	s.Latest, s.URL = "", ""
 	s.Releases = cached.Releases
 	s.Checked = len(cached.Releases) > 0
 }
@@ -349,11 +345,6 @@ func forInstall(dir, version string, force bool, result update.Result) (update.R
 	return update.ForInstall(context.Background(), dir, version, DetectManager(execPath), force, result)
 }
 
-func installsDirectly() bool {
-	execPath, err := os.Executable()
-	return err == nil && DetectManager(execPath).Name == ""
-}
-
 func fetchFeed(version string, force bool) FeedMsg {
 	dir, err := config.Dir()
 	if err != nil {
@@ -468,19 +459,19 @@ var Upgraded = update.Manager.Upgraded
 // latest release off the event loop and swaps the running binary. Both
 // report the path to restart into.
 func (s *State) Apply() tea.Cmd {
-	execPath, err := os.Executable()
-	if err != nil {
-		return func() tea.Msg { return AppliedMsg{Err: err} }
-	}
-	manager := DetectManager(execPath)
-	if manager.Advice != "" {
-		return func() tea.Msg { return AppliedMsg{Err: errors.New(manager.Advice)} }
-	}
-	version := s.Version
-	if manager.Delegated() {
-		return delegatedCmd(manager, execPath, version)
-	}
+	version, expected := s.Version, s.Latest
 	return func() tea.Msg {
+		execPath, err := os.Executable()
+		if err != nil {
+			return AppliedMsg{Err: err}
+		}
+		manager := DetectManager(execPath)
+		if manager.Advice != "" {
+			return AppliedMsg{Err: errors.New(manager.Advice)}
+		}
+		if manager.Delegated() {
+			return delegatedCmd(manager, update.RestartTarget(execPath), version, expected)()
+		}
 		dir, err := config.Dir()
 		if err != nil {
 			return AppliedMsg{Err: err}
@@ -508,23 +499,39 @@ func (s *State) Apply() tea.Cmd {
 // delegatedCmd suspends the TUI and runs the manager's upgrade command on
 // the real terminal, so its progress output and any password prompt work as
 // in a plain shell.
-func delegatedCmd(manager update.Manager, execPath, version string) tea.Cmd {
+func delegatedCmd(manager update.Manager, execPath, version, expected string) tea.Cmd {
 	return uiterminal.ExecProcess(manager.UpgradeCommand(), func(err error) tea.Msg {
 		// Bubble Tea runs this callback on the event loop, and the result
 		// execs the new binary, so it goes out as a command.
-		return tea.BatchMsg{func() tea.Msg { return delegatedResult(manager, execPath, version, err) }}
+		return tea.BatchMsg{func() tea.Msg { return delegatedResult(manager, execPath, version, expected, err) }}
 	})
 }
 
-func delegatedResult(manager update.Manager, execPath, version string, err error) AppliedMsg {
+func delegatedResult(manager update.Manager, execPath, version, expected string, err error) AppliedMsg {
 	if err != nil {
 		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.String(), err)}
 	}
-	target, upgraded, err := Upgraded(manager, execPath, version)
+	target, upgraded, err := Upgraded(manager, execPath, version, expected)
 	if err != nil {
-		return AppliedMsg{Err: fmt.Errorf("%s: checking the installed version: %w", manager.String(), err)}
+		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.Name, err)}
 	}
 	if !upgraded {
+		if expected == "" {
+			dir, err := config.Dir()
+			var result update.Result
+			if err == nil {
+				result, err = RefreshForApply(context.Background(), dir, version)
+			}
+			if err == nil {
+				result, err = update.ForInstall(context.Background(), dir, version, manager, true, result)
+			}
+			if err != nil {
+				return AppliedMsg{Err: fmt.Errorf("%s finished, still on %s: %w", manager.Name, version, err)}
+			}
+			if result.Latest == "" {
+				return AppliedMsg{Result: result, UpToDate: true}
+			}
+		}
 		return AppliedMsg{Err: fmt.Errorf("%s finished, still on %s", manager.Name, version)}
 	}
 	return AppliedMsg{Path: target}

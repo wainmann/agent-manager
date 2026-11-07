@@ -182,13 +182,15 @@ func archManager() Manager {
 	return Manager{Name: "pacman", channel: aurChannel, Advice: "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"}
 }
 
-// RestartTarget is the path main should exec after a delegated upgrade.
-// The PATH entry wins over the resolved install dir: brew and mise may
-// delete the version directory the running image was loaded from, while
-// the PATH entry tracks the new install.
+// RestartTarget stays within the original install even when PATH names another copy.
 func RestartTarget(execPath string) string {
-	if found, err := lookPath(filepath.Base(execPath)); err == nil {
-		return found
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		execPath = resolved
+	}
+	path := filepath.ToSlash(execPath)
+	if tree := homebrewTree(path); tree != "" {
+		prefix, _, _ := strings.Cut(path, "/"+tree+"/agent-manager/")
+		return filepath.FromSlash(prefix + "/bin/agent-manager")
 	}
 	return execPath
 }

@@ -64,6 +64,7 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			return errors.New(manager.Advice)
 		}
 		if manager.Delegated() {
+			execPath = update.RestartTarget(execPath)
 			command := manager.UpgradeCommand()
 			command.Stdin = os.Stdin
 			command.Stderr = os.Stderr
@@ -77,7 +78,7 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			if err := command.Run(); err != nil {
 				return fmt.Errorf("%s: %w", manager.String(), err)
 			}
-			_, upgraded, err := updateUpgraded(manager, execPath, version)
+			_, upgraded, err := updateUpgraded(manager, execPath, version, "")
 			if err != nil {
 				return fmt.Errorf("%s: checking the installed version: %w", manager.String(), err)
 			}
