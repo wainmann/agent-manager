@@ -376,10 +376,15 @@ func (tr toolRules) tailRows(lines []string, blocks bool) []string {
 	if blocks {
 		inBlock = tr.chromeBlockRows(lines)
 	}
+	// A shell draws no frame, so its box-drawing rows are output.
+	blank := unicode.IsSpace
+	if tr.activityCutoff != nil {
+		blank = boxOrSpace
+	}
 	rows := make([]string, 0, len(lines))
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
-		if strings.TrimFunc(line, boxOrSpace) == "" || (blocks && inBlock[i]) || tr.isStructural(line) {
+		if strings.TrimFunc(line, blank) == "" || (blocks && inBlock[i]) || tr.isStructural(line) {
 			continue
 		}
 		rows = append(rows, line)

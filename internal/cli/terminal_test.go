@@ -152,7 +152,9 @@ func TestTerminalReadTail(t *testing.T) {
 	if got := strings.TrimSpace(out.String()); got != "build passed" {
 		t.Fatalf("terminal read --tail 1 = %q", got)
 	}
-	if err := runTerminalRead(&bytes.Buffer{}, &fakeTerminals{}, []string{"--tail", "1", "--styled", "t1"}, ""); err == nil {
-		t.Fatal("terminal read --tail --styled did not fail")
+	for _, args := range [][]string{{"--tail", "1", "--styled", "t1"}, {"--tail", "-1", "t1"}} {
+		if err := runTerminalRead(&bytes.Buffer{}, &fakeTerminals{}, args, ""); err == nil {
+			t.Errorf("terminal read %v did not fail", args)
+		}
 	}
 }

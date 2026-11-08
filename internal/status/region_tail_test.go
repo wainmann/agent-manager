@@ -43,6 +43,7 @@ func TestTailPerTool(t *testing.T) {
 			"● Bash(sleep 6) (ctrl+o to expand)\n  The sleep 6 command has finished executing."},
 		{"hermes", "╭────╮\n│ All done. │\n╰────╯\n  ⚕ hermes-4 │ ctx -- │ ⏲ 4s\n────────\n❯ \n", 3, "│ All done. │"},
 		{"terminal", "$ go build ./...\n$ go test ./...\nok  \tpkg\t0.1s\n$ \n\n\n", 2, "ok  \tpkg\t0.1s\n$"},
+		{"terminal", "$ tree\n├── a\n│\n└── b\n$ \n", 3, "│\n└── b\n$"},
 		{"pi", "  a pi reply row\n────────────\n\n────────────\n/tmp (main)\n", 3, "  a pi reply row"},
 		{"omp", fixture("testdata/omp/question.txt"), 1, " I can do that. Which file should I edit?"},
 		{"command-code", "# Command Code v1.32.1\n❯ Reply with exactly: CMD ECHO TEST DONE.\n⠶ CMD ECHO TEST DONE.\n  And a second line of the reply.\n────────────────────────\n❯ Ask your question...\n────────────────────────\n  ? for shortcuts · taste on", 2,

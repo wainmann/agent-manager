@@ -1570,4 +1570,7 @@ func TestReadTail(t *testing.T) {
 	if _, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1", "tail": -1}); !isError {
 		t.Fatal("a negative tail was not refused")
 	}
+	if _, isError := callText(t, session, "read_terminal", map[string]any{"terminal_id": "t1", "tail": -1}); !isError {
+		t.Fatal("a negative terminal tail was not refused")
+	}
 }

@@ -391,3 +391,21 @@ default_status = "idle"
 		t.Fatalf("a timed-out registration left a marker: %v", err)
 	}
 }
+
+// Zero keeps the screen whole, a count cuts it to the newest content rows,
+// and a negative count is refused.
+func TestTail(t *testing.T) {
+	screen := "● Ran the suite.\n\n● Done.\n\n❯ \n  ? for shortcuts"
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{{0, screen}, {1, "● Done."}, {2, "● Ran the suite.\n● Done."}} {
+		got, err := Tail("claude", screen, tc.n)
+		if err != nil || got != tc.want {
+			t.Errorf("Tail(%d) = %q, %v; want %q", tc.n, got, err, tc.want)
+		}
+	}
+	if _, err := Tail("claude", screen, -1); err == nil {
+		t.Error("Tail(-1) did not fail")
+	}
+}
