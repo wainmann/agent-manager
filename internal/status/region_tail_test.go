@@ -102,3 +102,12 @@ func TestTailKeepsAnOpenDialog(t *testing.T) {
 		t.Errorf("kiro approval: Tail = %q, want the question and its options kept", got)
 	}
 }
+
+// A pane with no cutoff still drops a queued message's chrome block.
+func TestTailNoCutoffDropsChromeBlock(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "YES\n\n▾ Queued 1\n  ❯ next question\n"
+	if got := engine.Tail("grok", pane, 3); got != "YES" {
+		t.Errorf("Tail = %q, want %q", got, "YES")
+	}
+}

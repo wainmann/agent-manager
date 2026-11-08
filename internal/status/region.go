@@ -349,7 +349,7 @@ func (e *Engine) Tail(tool, pane string, n int) string {
 	tr := e.tools[tool]
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return lastRows(tr.tailRows(strings.Split(pane, "\n"), false), n)
+		return lastRows(tr.tailRows(strings.Split(pane, "\n"), true), n)
 	}
 	lines := strings.Split(region, "\n")
 	if !slices.ContainsFunc(lines, tr.isContent) {
