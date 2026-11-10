@@ -46,7 +46,7 @@ var buildSource = ""
 // against release tags.
 func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
 	if embedded != devVersion {
-		return embedded
+		return strings.TrimPrefix(embedded, "v")
 	}
 	if !ok || info == nil {
 		return devVersion
