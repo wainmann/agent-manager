@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/conversation"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -46,6 +47,78 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 		return Session{}, fmt.Errorf("killed %s, but could not read which conversation it was on: %w", target.Name, followErr)
 	}
 	return runtime.sessionInfo(killed, false, false), nil
+}
+
+// Deletion is a session Delete removed, and why its worktree stayed when it
+// did.
+type Deletion struct {
+	Session
+	Notice string `json:"notice,omitempty" jsonschema:"why the session's worktree stayed on disk, when it did"`
+}
+
+// Delete removes a session the way the delete key does, its terminals,
+// worktree and am/ branch included. Unlike the key, which keeps a worktree
+// with work in it and says so, it refuses before anything stops, so
+// discarding unsaved work stays a step the user takes by hand.
+func (s *Sessions) Delete(sessionID, targetID string) (Deletion, error) {
+	runtime, err := s.open()
+	if err != nil {
+		return Deletion{}, err
+	}
+	defer runtime.Close()
+	caller, err := runtime.optionalCaller(sessionID)
+	if err != nil {
+		return Deletion{}, err
+	}
+	target, err := runtime.agent(targetID)
+	if err != nil {
+		return Deletion{}, err
+	}
+	if target.ID == sessionID || (caller.ParentID != "" && caller.ParentID == target.ID) {
+		return Deletion{}, fmt.Errorf("a session cannot delete itself; end it with %s or %s, which wait for this turn to end", runtime.words.ArchiveSelf, runtime.words.KillSelf)
+	}
+	sessions, err := runtime.store.ListSessions(true)
+	if err != nil {
+		return Deletion{}, err
+	}
+	selection := []store.Session{target}
+	sharedWorktree := false
+	for _, sess := range sessions {
+		switch {
+		case sess.ParentID == target.ID:
+			selection = append(selection, sess)
+		case sess.ID != target.ID && sess.Cwd == target.Cwd:
+			sharedWorktree = true
+		}
+	}
+	var gitDriver *git.Driver
+	if target.WorktreeRepo != "" {
+		if gitDriver, err = s.newGit(); err != nil {
+			return Deletion{}, fmt.Errorf("cannot check %s's worktree for unsaved work: %w", target.Name, err)
+		}
+		if !sharedWorktree {
+			base, err := groupBase(runtime.store, target.Group)
+			if err != nil {
+				return Deletion{}, err
+			}
+			unsaved, err := gitDriver.WorktreeUnsaved(target.WorktreeRepo, target.Cwd, target.WorktreeBranch, base)
+			if err != nil {
+				return Deletion{}, fmt.Errorf("cannot check %s's worktree for unsaved work: %w", target.Name, err)
+			}
+			if unsaved != "" {
+				return Deletion{}, fmt.Errorf("kept %s: its worktree has %s; save or discard that work first", target.Name, unsaved)
+			}
+		}
+	}
+	lifecycle, err := s.lifecycle(runtime, gitDriver)
+	if err != nil {
+		return Deletion{}, err
+	}
+	result, err := lifecycle.DeleteForHuman(DeleteSelection{Sessions: selection})
+	if err != nil {
+		return Deletion{}, err
+	}
+	return Deletion{Session: runtime.sessionInfo(target, false, false), Notice: result.Notice}, nil
 }
 
 // Revive relaunches a dead session under its old id, keeping its name,

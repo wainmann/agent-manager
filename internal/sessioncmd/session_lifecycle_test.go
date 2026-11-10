@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -362,5 +363,83 @@ func TestSessionsReviveRefusesArchivedSession(t *testing.T) {
 	}
 	if !after.Archived || !after.AgentLaunchedAt.Equal(before.AgentLaunchedAt) || h.driver.Exists(created.ID) {
 		t.Fatalf("archived revive changed state: %+v", after)
+	}
+}
+
+func TestSessionsDeleteRemovesACleanWorktreeWithItsBranch(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "done-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	deleted, err := h.sessions.Delete(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if deleted.ID != created.ID || deleted.Notice != "" {
+		t.Fatalf("deleted = %+v", deleted)
+	}
+	if _, err := h.store.Get(created.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if h.driver.Exists(created.ID) {
+		t.Fatal("deleted session still has a pane")
+	}
+	if _, err := os.Stat(created.Directory); !os.IsNotExist(err) {
+		t.Fatalf("worktree still on disk: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+created.Branch)
+	branch.Dir = repo
+	if branch.Run() == nil {
+		t.Fatalf("branch %s should be deleted", created.Branch)
+	}
+}
+
+func TestSessionsDeleteRefusesAWorktreeWithUnsavedWork(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "busy-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	refused := func(want string) {
+		t.Helper()
+		if _, err := h.sessions.Delete(h.caller.ID, created.ID); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("Delete error = %v, want it to name %q", err, want)
+		}
+		if _, err := h.store.Get(created.ID); err != nil {
+			t.Fatalf("a refused delete must keep the row: %v", err)
+		}
+		if !h.driver.Exists(created.ID) {
+			t.Fatal("a refused delete must leave the agent running")
+		}
+		if _, err := os.Stat(filepath.Join(created.Directory, "work.txt")); err != nil {
+			t.Fatalf("a refused delete must keep the work: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(created.Directory, "work.txt"), []byte("draft"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refused("uncommitted or untracked files")
+	for _, args := range [][]string{{"add", "work.txt"}, {"commit", "-m", "work"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = created.Directory
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	refused("commits on " + created.Branch)
+}
+
+func TestSessionsDeleteRefusesItsOwnCaller(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.Delete(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
+		t.Fatalf("deleting itself = %v, want kill_self named", err)
+	}
+	if !h.driver.Exists(h.caller.ID) {
+		t.Fatal("a refused self-delete must leave the caller running")
 	}
 }

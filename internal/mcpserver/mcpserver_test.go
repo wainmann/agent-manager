@@ -103,6 +103,7 @@ type fakeSessionCommands struct {
 	reservations  []sessioncmd.Reservation
 	revivedID     string
 	killedID      string
+	deletedID     string
 	archivedID    string
 	archived      bool
 	movedID       string
@@ -168,6 +169,11 @@ func (f *fakeSessionCommands) Revive(_ string, id string) (sessioncmd.Session, e
 func (f *fakeSessionCommands) Kill(_ string, id string) (sessioncmd.Session, error) {
 	f.killedID = id
 	return f.created, f.err
+}
+
+func (f *fakeSessionCommands) Delete(_ string, id string) (sessioncmd.Deletion, error) {
+	f.deletedID = id
+	return sessioncmd.Deletion{Session: f.created}, f.err
 }
 
 // The row an archive returns carries the state it landed in, which is what
@@ -772,7 +778,7 @@ func TestListsFleetTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
-		"revive_session", "kill_session", "archive_session", "move_session", "archive_self", "kill_self",
+		"revive_session", "kill_session", "delete_session", "archive_session", "move_session", "archive_self", "kill_self",
 		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
@@ -858,6 +864,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
 		"kill_session":     {"revive_session", "ask first", "kill_self"},
+		"delete_session":   {"worktree", "no way to force it", "ask first", "kill_self"},
 		"archive_session":  {"archived false", "archive_self"},
 		"move_session":     {"list_groups", "create_group", "keeps running"},
 		"archive_self":     {"once the turn making this call ends", "finish your reply", "cancel true", "archive_session"},
@@ -974,6 +981,13 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		t.Fatalf("kill id = %q", fake.killedID)
 	}
 
+	if text, isError := callText(t, session, "delete_session", map[string]any{"session_id": "a1b2c3d4"}); isError || !strings.HasPrefix(text, "deleted ") {
+		t.Fatalf("delete_session = %q, isError=%v", text, isError)
+	}
+	if fake.deletedID != "a1b2c3d4" {
+		t.Fatalf("delete id = %q", fake.deletedID)
+	}
+
 	if text, _ := callText(t, session, "archive_session", map[string]any{"session_id": "a1b2c3d4"}); !strings.Contains(text, "archived") {
 		t.Fatalf("archive text = %q", text)
 	}
@@ -1045,7 +1059,7 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 	}
 	// A rename is the change this test exists to catch, and reading the
 	// annotations off a tool that is no longer there panics the package.
-	for _, name := range []string{"list_sessions", "read_session", "list_groups", "kill_session", "kill_self", "archive_self", "create_session", "send_session"} {
+	for _, name := range []string{"list_sessions", "read_session", "list_groups", "kill_session", "delete_session", "kill_self", "archive_self", "create_session", "send_session"} {
 		if tools[name] == nil {
 			t.Fatalf("%s is not registered", name)
 		}
@@ -1058,7 +1072,7 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 			t.Fatalf("%s has no structured output schema", name)
 		}
 	}
-	for _, name := range []string{"kill_session", "kill_self", "archive_self"} {
+	for _, name := range []string{"kill_session", "delete_session", "kill_self", "archive_self"} {
 		if annotations := tools[name].Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint {
 			t.Fatalf("%s annotations = %+v", name, annotations)
 		}
@@ -1095,6 +1109,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"list_reservations", map[string]any{}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
+		{"delete_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
 		{"archive_self", map[string]any{}},
 		{"kill_self", map[string]any{"cancel": true}},
