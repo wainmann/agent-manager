@@ -92,11 +92,7 @@ func (m Model) renderPaneRow(row int, raw string, width int, cursorStyle, select
 	clean := safePaneLine(raw)
 	line := ansi.Strip(clean)
 	if start, end, ok := m.selectionSpan(row, ansi.StringWidth(line)); ok {
-		startByte, endByte := graphemeRangeAtColumns(line, start, end)
-		selected := line[startByte:endByte]
-		before := ansi.Truncate(clean, ansi.StringWidth(line[:startByte]), "")
-		after := ansi.TruncateLeft(clean, ansi.StringWidth(line[:endByte]), "")
-		return fitPaneLine(before+selectionStyle.Render(selected)+after, width)
+		return fitPaneLine(overlayPaneRange(clean, line, start, end, selectionStyle), width)
 	}
 	return m.withCursor(row, raw, width, cursorStyle)
 }
@@ -112,19 +108,21 @@ func (m Model) withCursor(row int, raw string, width int, style lipgloss.Style) 
 		pad := strings.Repeat(" ", cursorCol-lineWidth)
 		return fitPaneLine(clean+pad+style.Render(" "), width)
 	}
-	line := ansi.Strip(clean)
-	startByte, endByte := graphemeRangeAtColumns(line, cursorCol, cursorCol+1)
-	head, tail := splitCursorLine(clean, startByte, endByte)
-	cell := line[startByte:endByte]
-	withCursor := head + style.Render(cell) + tail
-	if ansi.Strip(withCursor) != line {
-		return fitPaneLine(clean, width)
+	return fitPaneLine(overlayPaneRange(clean, ansi.Strip(clean), cursorCol, cursorCol+1, style), width)
+}
+
+func overlayPaneRange(clean, line string, start, end int, style lipgloss.Style) string {
+	startByte, endByte := graphemeRangeAtColumns(line, start, end)
+	before, after := splitPaneLine(clean, startByte, endByte)
+	overlay := before + style.Render(line[startByte:endByte]) + after
+	if ansi.Strip(overlay) != line {
+		return clean
 	}
-	return fitPaneLine(withCursor, width)
+	return overlay
 }
 
 // Keep ANSI sequences when splitting at byte offsets in the stripped text.
-func splitCursorLine(line string, startByte, endByte int) (string, string) {
+func splitPaneLine(line string, startByte, endByte int) (string, string) {
 	var head, tail strings.Builder
 	head.Grow(len(line))
 	tail.Grow(len(line))

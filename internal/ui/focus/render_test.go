@@ -127,15 +127,44 @@ func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 	}
 }
 
-// A selection edge landing on one cell of a wide grapheme snaps outward to
-// the whole grapheme; the styled splice must keep the row's text intact
-// rather than repeating the grapheme on both sides of the edge.
 func TestSelectionOverlayKeepsWideGraphemesWhole(t *testing.T) {
-	model := mouseModel(t, []string{"a\U0001f600b"}, 10, PaneUpdate{})
-	model.selection = selection{active: true, anchorRow: 0, anchorCol: 0, headRow: 0, headCol: 2}
-	row := model.renderPaneRow(0, "a\U0001f600b", 10, lipgloss.NewStyle(), litStyle())
-	if plain := strings.TrimRight(ansi.Strip(row), " "); plain != "a\U0001f600b" {
-		t.Fatalf("selection overlay changed row text: %q", plain)
+	const link = "\x1b]8;;https://example.com\x1b\\"
+	const closeLink = "\x1b]8;;\x1b\\"
+	for _, test := range []struct {
+		name          string
+		line          string
+		start, end    int
+		want          string
+		before, after string
+	}{
+		{name: "keycap at row start", line: "1️⃣ab", start: 0, end: 1, want: "1️⃣"},
+		{name: "keycap in row middle", line: "a1️⃣bc", start: 1, end: 2, want: "1️⃣"},
+		{name: "selection after keycap", line: "1️⃣ab", start: 2, end: 3, want: "a"},
+		{name: "CJK", line: "a你b", start: 1, end: 2, want: "你"},
+		{name: "wide emoji at selection edge", line: "a😀b", start: 0, end: 2, want: "a😀"},
+		{name: "ZWJ emoji", line: "a👩‍💻b", start: 1, end: 2, want: "👩‍💻"},
+		{name: "flag", line: "a🇮🇱b", start: 1, end: 2, want: "🇮🇱"},
+		{name: "combining mark", line: "ae\u0301b", start: 1, end: 2, want: "e\u0301"},
+		{name: "selection at row end", line: "ab你", start: 2, end: 4, want: "你"},
+		{
+			name: "SGR and OSC 8", line: "\x1b[31mred\x1b[0m1️⃣" + link + "\x1b[34mblue\x1b[0m" + closeLink,
+			start: 3, end: 4, want: "1️⃣", before: "\x1b[31mred", after: link + "\x1b[34mblue\x1b[0m" + closeLink,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const width = 20
+			style := litStyle()
+			model := mouseModel(t, []string{test.line}, width, PaneUpdate{})
+			model.selection = selection{active: true, anchorCol: test.start, headCol: test.end}
+			row := model.renderPaneRow(0, test.line, width, lipgloss.NewStyle(), style)
+			if got, want := strings.TrimRight(ansi.Strip(row), " "), ansi.Strip(test.line); got != want {
+				t.Errorf("selection changed row text: got %q, want %q", got, want)
+			}
+			before, after, found := strings.Cut(row, style.Render(test.want))
+			if !found || !strings.Contains(before, test.before) || !strings.Contains(after, test.after) {
+				t.Errorf("selection or surrounding styling is misplaced: %q", row)
+			}
+		})
 	}
 }
 
