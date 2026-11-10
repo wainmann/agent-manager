@@ -2,7 +2,6 @@ package status
 
 import (
 	"os"
-	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +22,7 @@ func TestTailPerTool(t *testing.T) {
 		}
 		return string(data)
 	}
+	ran := map[string]bool{}
 	for _, tc := range []struct {
 		tool, pane string
 		n          int
@@ -51,6 +51,7 @@ func TestTailPerTool(t *testing.T) {
 		{"cursor", fixture("testdata/cursor/2026.10.19-6bbf2c4/resting.txt"), 1, "  Done — pong.txt now contains pong."},
 		{"kiro", fixture("testdata/kiro/3.1.0/finished.txt"), 2, "    README.md\n• README.md"},
 	} {
+		ran[tc.tool] = true
 		if got := engine.Tail(tc.tool, tc.pane, tc.n); got != tc.want {
 			t.Errorf("%s: Tail = %q, want %q", tc.tool, got, tc.want)
 		}
@@ -60,7 +61,7 @@ func TestTailPerTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	for tool := range cfg.Tools {
-		if !slices.Contains([]string{"claude", "opencode", "codex", "muse", "grok", "gemini", "antigravity", "hermes", "terminal", "pi", "omp", "command-code", "cursor", "kiro"}, tool) {
+		if !ran[tool] {
 			t.Errorf("no Tail case for %s", tool)
 		}
 	}
@@ -109,5 +110,55 @@ func TestTailNoCutoffDropsChromeBlock(t *testing.T) {
 	pane := "YES\n\n▾ Queued 1\n  ❯ next question\n"
 	if got := engine.Tail("grok", pane, 3); got != "YES" {
 		t.Errorf("Tail = %q, want %q", got, "YES")
+	}
+}
+
+// The panes are the fixtures the classification tests in this package pin.
+func TestTailReadsDialogsAndFrameOnlyScreens(t *testing.T) {
+	engine := defaultEngine(t)
+	data, err := os.ReadFile("testdata/omp/working.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ompWorking := string(data)
+	piEditor := "\n\n──────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4"
+	border := strings.Repeat("─", 84)
+	claudeAreas := "✻ Churned for 38s\n\n❯ ask me which areas\n\n────\n←  ☐ Areas  ✔ Submit  →\n\nWhich areas?\n\n" +
+		"  1. [ ] Docs\n         Documentation files and written guides\n  2. [ ] Tests\n         Test suites and test coverage\n" +
+		"  3. [ ] CI\n         Continuous integration pipelines and config\n" +
+		"  4. [✔] hello there\n❯    Submit\n────\n  5. Chat about this\n\n" +
+		"Enter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim · Esc to cancel\n"
+	for _, tc := range []struct {
+		name, tool, pane string
+		n                int
+		want             string
+	}{
+		{"opencode permission", "opencode", "  ┃  ⠦ ls -la .\n  ┃  △ Permission required\n  ┃    # Shell command\n  ┃  $ ls -la .\n" +
+			"  ┃   Allow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm", 4,
+			"  △ Permission required\n    # Shell command\n  $ ls -la .\n   Allow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm"},
+		{"opencode question", "opencode", "     → Asked 1 question\n  ┃  What should the new line be?\n  ┃  1. Race-enabled test command\n" +
+			"  ┃  2. Type your own answer\n  ┃  ↑↓ select  enter submit  esc dismiss\n  ┃", 4,
+			"  What should the new line be?\n  1. Race-enabled test command\n  2. Type your own answer\n  ↑↓ select  enter submit  esc dismiss"},
+		{"opencode multi-select", "opencode", "     → Asked 2 questions\n  ┃  Scope\n  ┃  Which checks should run? (select all that apply)\n" +
+			"  ┃  1. [ ] Race tests\n  ┃  ⇆ tab  ↑↓ select  enter toggle  esc dismiss\n  ┃", 3,
+			"  Which checks should run? (select all that apply)\n  1. [ ] Race tests\n  ⇆ tab  ↑↓ select  enter toggle  esc dismiss"},
+		{"pi question above its editor", "pi", "Which option do you prefer?" + piEditor, 5, "Which option do you prefer?"},
+		{"claude before anything is said", "claude", "\n ▐▛███▛█   Claude Code v2.1.281\n▝▜██████▀  Sonnet 5 · Claude Max\n  ▝▝ ▝▝    /home/dev/project\n\n" +
+			"────────────\n❯ Try \"fix the build\"\n────────────\n  ? for shortcuts\n", 3, ""},
+		{"command-code resting composer", "command-code", "# Command Code v1.32.1\n# /tmp/amcmd-proj\n" + border + "\n❯ Ask your question...\n" + border +
+			"\n  ? for shortcuts · taste on", 3, ""},
+		{"claude multi-select on its Submit row", "claude", claudeAreas, 4,
+			"  4. [✔] hello there\n❯    Submit\n  5. Chat about this\nEnter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim · Esc to cancel"},
+		{"omp spinner", "omp", ompWorking, 1, " step 0 step 1 step 2 step 3 step 4"},
+		{"codex dialog over its status row", "codex", "      Restart background server?\n      Active or queued work in other chats may be interrupted.\n\n" +
+			"    › 1. Cancel\n      2. Restart\n\n      enter select · esc back\n\n\n\n  Service v0.153.0 < Codex CLI v0.154.0 · /daemon", 3,
+			"    › 1. Cancel\n      2. Restart\n      enter select · esc back"},
+		{"diagram in a reply", "claude", "● Here is the layout:\n\n  ┌──────┐\n  │ api  │\n  └──────┘\n      │\n  ┌──────┐\n  │ db   │\n  └──────┘\n\n" +
+			"────────────────────────────────\n❯ \n────────────────────────────────\n  ? for shortcuts\n", 8,
+			"● Here is the layout:\n  ┌──────┐\n  │ api  │\n  └──────┘\n      │\n  ┌──────┐\n  │ db   │\n  └──────┘"},
+	} {
+		if got := engine.Tail(tc.tool, tc.pane, tc.n); got != tc.want {
+			t.Errorf("%s: Tail = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

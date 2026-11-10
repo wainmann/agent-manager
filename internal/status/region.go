@@ -3,7 +3,6 @@ package status
 import (
 	"github.com/charmbracelet/x/ansi"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 )
@@ -341,50 +340,65 @@ func (tr toolRules) isStructural(line string) bool {
 
 // Tail is the pane's last n content rows, one per line: the rows LastMessage
 // reads, from the activity region, without blanks, chrome blocks or the
-// tool's own frame. An open dialog is what the agent waits on, so its rows
-// below the cutoff, the question and its options, stay; a modal dialog
-// always trips a waiting rule. A pane with no
-// cutoff, a dialog drawn before the first composer or a shell, is read whole.
+// tool's own frame. A dialog is what the agent waits on, so its rows stay:
+// below the cutoff when the classifier sees its footer there, and the whole
+// pane when it replaced the composer, read without the gutter the composer
+// draws it in.
 func (e *Engine) Tail(tool, pane string, n int) string {
 	tr := e.tools[tool]
+	width := 0
+	for _, line := range strings.Split(pane, "\n") {
+		width = max(width, ansi.StringWidth(strings.TrimRight(line, " \t")))
+	}
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return lastRows(tr.tailRows(strings.Split(pane, "\n"), true), n)
-	}
-	lines := strings.Split(region, "\n")
-	if !slices.ContainsFunc(lines, tr.isContent) {
-		lines = tr.paneAboveComposer(pane)
-	}
-	rows := tr.tailRows(lines, true)
-	if state, _ := tr.matchRules(tr.matchScope(pane)); state == Waiting {
-		dialog := strings.Split(pane[len(region):], "\n")
-		// The cutoff row is the dialog's selected option, drawn with the
-		// prompt marker by claude and codex, or the prompt echo the dialog
-		// opened under.
-		if tr.userEcho != nil {
-			if echoed, ok := tr.echoText(dialog[0]); ok && !numberedOption.MatchString(echoed) {
-				dialog = dialog[1:]
+		lines := strings.Split(pane, "\n")
+		if state, _ := tr.matchRules(pane); state == Waiting && tr.inputPrefix != nil {
+			for i, line := range lines {
+				if !tr.frameRow(line, width) {
+					lines[i] = tr.inputPrefix.ReplaceAllString(line, "")
+				}
 			}
 		}
-		rows = append(rows, tr.tailRows(dialog, false)...)
+		return lastRows(tr.tailRows(lines, true, width), n)
+	}
+	if region == "" {
+		// pi and omp open their region at the pane origin.
+		return lastRows(tr.tailRows(tr.paneAboveComposer(pane), true, width), n)
+	}
+	rows := tr.tailRows(strings.Split(region, "\n"), true, width)
+	if cutoffTail := pane[len(region):]; tr.dialogBelow(pane, region) {
+		// The cutoff row opens the dialog: its selected option, or the
+		// prompt it opened under.
+		rows = append(rows, tr.tailRows(strings.Split(cutoffTail, "\n"), false, width)...)
 	}
 	return lastRows(rows, n)
 }
 
-func (tr toolRules) tailRows(lines []string, blocks bool) []string {
+// dialogBelow reports a dialog drawn on or under the cutoff row: the
+// classifier sees its footer there, or its waiting signal needs rows below
+// the cutoff to match.
+func (tr toolRules) dialogBelow(pane, region string) bool {
+	if tr.hasWaitingFooter(pane[len(region):]) {
+		return true
+	}
+	scoped, _ := tr.matchRules(tr.matchScope(pane))
+	above, _ := tr.matchRules(region)
+	return scoped == Waiting && above != Waiting
+}
+
+// tailRows keeps the content rows of lines. A row of box drawing as wide as
+// the pane is a frame the tool draws without a chrome_line for it; a
+// narrower one is a diagram in the reply. A shell draws no frame.
+func (tr toolRules) tailRows(lines []string, blocks bool, width int) []string {
 	var inBlock []bool
 	if blocks {
 		inBlock = tr.chromeBlockRows(lines)
 	}
-	// A shell draws no frame, so its box-drawing rows are output.
-	blank := unicode.IsSpace
-	if tr.activityCutoff != nil {
-		blank = boxOrSpace
-	}
 	rows := make([]string, 0, len(lines))
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
-		if strings.TrimFunc(line, blank) == "" || (blocks && inBlock[i]) || tr.isStructural(line) {
+		if strings.TrimSpace(line) == "" || tr.frameRow(line, width) || (blocks && inBlock[i]) || tr.isStructural(line) {
 			continue
 		}
 		rows = append(rows, line)
@@ -392,14 +406,15 @@ func (tr toolRules) tailRows(lines []string, blocks bool) []string {
 	return rows
 }
 
-func lastRows(rows []string, n int) string {
-	return strings.Join(rows[max(len(rows)-n, 0):], "\n")
+func (tr toolRules) frameRow(line string, width int) bool {
+	line = strings.TrimRight(line, " \t")
+	return tr.activityCutoff != nil && strings.TrimFunc(line, boxOrSpace) == "" && ansi.StringWidth(line) >= width
 }
 
-var numberedOption = regexp.MustCompile(`^\d+\.\s`)
-
-// boxOrSpace is a blank or a box-drawing cell, the whole of a frame row
-// some tools draw without a chrome_line for it.
 func boxOrSpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= '\u2500' && r <= '\u257f')
+}
+
+func lastRows(rows []string, n int) string {
+	return strings.Join(rows[max(len(rows)-n, 0):], "\n")
 }
