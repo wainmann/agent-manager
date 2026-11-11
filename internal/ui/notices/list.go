@@ -188,7 +188,7 @@ func hookNotices(src Sources) []Notice {
 		lines := make([]string, 0, len(failures)+2)
 		for i := len(failures) - 1; i >= 0; i-- {
 			failure := failures[i]
-			lines = append(lines, failure.At.UTC().Format("15:04")+" "+failure.Event+" "+failure.Command+": "+failure.Reason)
+			lines = append(lines, failure.At.Local().Format("15:04")+" "+failure.Event+" "+failure.Command+": "+failure.Reason)
 		}
 		if src.HooksLog != "" {
 			lines = append(lines, "", src.HooksLog)

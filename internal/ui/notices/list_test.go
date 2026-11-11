@@ -137,7 +137,7 @@ func TestActiveReleaseWithoutHeadlineHasNoSubtitle(t *testing.T) {
 }
 
 func TestActiveHookNoticesNameTheFailureAndANewOneChangesTheID(t *testing.T) {
-	older := time.Date(2026, time.November, 11, 14, 2, 0, 0, time.UTC)
+	older := time.Date(2026, time.November, 11, 14, 2, 0, 0, time.Local)
 	newer := older.Add(time.Minute)
 	src := Sources{
 		Store:            true,
