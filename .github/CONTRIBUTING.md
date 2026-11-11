@@ -61,7 +61,7 @@ each of these with the reason behind it.
 
 ## Setup
 
-You need Go 1.27.3+ and tmux.
+You need Go 1.27.4+ and tmux.
 
 ```bash
 git clone https://github.com/wainmann/agent-manager.git
