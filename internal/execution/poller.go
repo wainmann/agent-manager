@@ -540,11 +540,11 @@ func (p *Runner) step(ctx context.Context) Result {
 			// listed row already matches, and that move is announced too.
 			if written && changed {
 				var banner notify.Event
-				fired := false
+				triggered := false
 				if newStatus != sess.Status {
-					banner, fired = p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
+					banner, triggered = p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
-				p.emitSessionState(sess, newStatus, previous, banner, fired)
+				p.emitSessionState(sess, newStatus, previous, banner, triggered)
 			}
 		}
 		if observed {

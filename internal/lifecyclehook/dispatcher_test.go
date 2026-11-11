@@ -237,7 +237,7 @@ func TestDispatcherGatesNotifyAndStatus(t *testing.T) {
 		t.Fatal("the events filter dropped a waiting transition")
 	}
 	if got := readFile(t, notified); got != "Need you\n" {
-		t.Fatalf("a notify hook runs only when the banner fired, got %q", got)
+		t.Fatalf("a notify hook runs only on a banner trigger, got %q", got)
 	}
 	if got := readFile(t, changes); got != "\n\n\n" {
 		t.Fatalf("a hook without notify runs on every change with no banner text, got %q", got)

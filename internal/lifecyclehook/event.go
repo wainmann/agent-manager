@@ -107,8 +107,8 @@ type Event struct {
 	Effort          string
 	Conversation    string
 	UseConversation bool
-	// NotifyEnv is AM_NOTIFY_KIND, AM_TITLE and AM_BODY when the banner
-	// fired. A notify hook runs only when it is set.
+	// NotifyEnv is AM_NOTIFY_KIND, AM_TITLE and AM_BODY when the change is
+	// a banner trigger, even with banners off. A notify hook runs only then.
 	NotifyEnv   []string
 	Task        *TaskInfo
 	Reservation *ReservationInfo

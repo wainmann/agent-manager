@@ -1,13 +1,16 @@
 package execution
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
-
-	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -15,6 +18,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 // waitForCalls blocks until n notifications have landed. Delivery runs off
@@ -52,9 +56,9 @@ func envValue(env []string, name string) string {
 	return ""
 }
 
-// A status change always emits. The banner text rides along only when the
-// banner fired, since notify hooks run only then.
-func TestEmitSessionStateSetsNotifyEnvOnlyWhenTheBannerFired(t *testing.T) {
+// A status change always emits. The banner text rides along only on a
+// banner trigger, since notify hooks run only then.
+func TestEmitSessionStateSetsNotifyEnvOnlyOnATrigger(t *testing.T) {
 	p, sess, _ := newNotifyTestPoller(t)
 	rec := &lifecyclehook.Recorder{}
 	p.events = rec
@@ -76,55 +80,140 @@ func TestEmitSessionStateSetsNotifyEnvOnlyWhenTheBannerFired(t *testing.T) {
 	}
 }
 
-// The poller hands notify hooks the banner it fired, so with banners
-// silenced the status change is still emitted but carries no banner.
-func TestSessionStateCarriesTheBannerOnlyWhenItFires(t *testing.T) {
+// Notify hooks follow the banner trigger, not the banner setting. A real
+// poller drives a real dispatcher, with banners off first so the first-run
+// notice is shown on a trigger nobody saw a banner for.
+func TestNotifyHooksFollowTheBannerTriggerWhateverTheBannerSetting(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
 	m := buildModel(t)
 	hooked := m.cfg.Tools["claude-hooked"]
-	if runtime.GOOS != "windows" {
-		hooked.Command = `sh -c 'exec cat' --`
-	}
+	hooked.Command = `sh -c 'exec cat' --`
 	m.cfg.Tools["claude-hooked"] = hooked
 	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
 	sess := m.sessionRows()[0]
 	waitForPane(t, m, sess.ID, "boot-marker")
+
+	configDir := t.TempDir()
+	notified := filepath.Join(configDir, "notified")
+	changes := filepath.Join(configDir, "changes")
+	notifyHook := writeScript(t, configDir, "notify.sh", `printf '%s|%s|%s\n' "$AM_NOTIFY_KIND" "$AM_TITLE" "$AM_BODY" >> `+strconv.Quote(notified))
+	changeHook := writeScript(t, configDir, "change.sh", `status=$(grep -o '"status":"[a-z]*"' | cut -d'"' -f4); printf '%s|%s\n' "$status" "$AM_BODY" >> `+strconv.Quote(changes))
+	hooksToml := "schema_version = 1\n" +
+		"[[hooks.session_state]]\ncommand = [" + strconv.Quote(notifyHook) + "]\nnotify = true\n" +
+		"[[hooks.session_state]]\ncommand = [" + strconv.Quote(changeHook) + "]\n"
+	if err := os.WriteFile(filepath.Join(configDir, lifecyclehook.HooksFile), []byte(hooksToml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var shownMu sync.Mutex
+	var shown []string
+	dispatcher := lifecyclehook.New(lifecyclehook.Options{ConfigDir: configDir, Store: m.store, Version: "test", Show: func(command string) {
+		shownMu.Lock()
+		shown = append(shown, command)
+		shownMu.Unlock()
+	}})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		dispatcher.Close(ctx)
+	})
 	banners := &notifyRecorder{}
 	m.poller.notifyFn = banners.fn()
-	events := &lifecyclehook.Recorder{}
-	m.poller.events = events
+	m.poller.events = dispatcher
+
 	statusFile := m.poller.hooks.StatusFile(sess.ID)
 	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(statusFile, []byte(status.Waiting), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	enterWaiting := func() {
+	moveTo := func(from, to string) {
 		t.Helper()
-		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		if err := os.WriteFile(statusFile, []byte(to), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.store.UpdateStatus(sess.ID, from); err != nil {
 			t.Fatal(err)
 		}
 		m.poller.Step()
 	}
-
-	enterWaiting()
-	waitForCalls(t, banners, 1)
-	got := events.Events()
-	if len(got) != 1 || got[0].Session.Status != status.Waiting || envValue(got[0].NotifyEnv, "AM_NOTIFY_KIND") != "waiting" {
-		t.Fatalf("banner on: events = %+v", got)
+	lines := func(path string, n int) []string {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			data, _ := os.ReadFile(path)
+			got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+			if len(data) > 0 && len(got) >= n {
+				return got
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: want %d lines, got %q", filepath.Base(path), n, data)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	if err := m.store.SetSetting(notificationsSetting, "off"); err != nil {
 		t.Fatal(err)
 	}
-	enterWaiting()
-	settle()
-	got = events.Events()
-	if len(got) != 2 || got[1].Session.Status != status.Waiting || got[1].NotifyEnv != nil {
-		t.Fatalf("banner off: the change is emitted with no banner, got %+v", got)
+	moveTo(status.Idle, status.Waiting)
+	got := lines(notified, 1)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "waiting|needy") || !strings.HasSuffix(got[0], "Waiting: boot-marker") {
+		t.Fatalf("banners off: a waiting trigger runs the notify hook with the banner title and body, got %q", got)
 	}
-	if calls := banners.all(); len(calls) != 1 {
-		t.Fatalf("banner off: no new banner, got %v", calls)
+	shownMu.Lock()
+	announced := slices.Contains(shown, lifecyclehook.EventSessionState+": "+notifyHook)
+	shownMu.Unlock()
+	if !announced {
+		t.Fatalf("banners off: the first-run notice follows the trigger, shown %q", shown)
+	}
+	if calls := banners.all(); len(calls) != 0 {
+		t.Fatalf("banners off: no banner shows, got %v", calls)
+	}
+
+	moveTo(status.Waiting, status.Working)
+	if got := lines(changes, 2); len(got) != 2 || got[0] != "waiting|" || got[1] != "working|" {
+		t.Fatalf("a hook without notify runs on every change with no banner text, got %q", got)
+	}
+	if got := lines(notified, 1); len(got) != 1 {
+		t.Fatalf("working is not a banner trigger, so the notify hook stays quiet, got %q", got)
+	}
+
+	if err := m.store.SetSetting(notificationsSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	moveTo(status.Idle, status.Errored)
+	waitForCalls(t, banners, 1)
+	if got := lines(notified, 2); len(got) != 2 || !strings.HasPrefix(got[1], "errored|needy") {
+		t.Fatalf("banners on: an errored trigger runs the notify hook, got %q", got)
+	}
+	if got := lines(changes, 3); len(got) != 3 || got[2] != "errored|" {
+		t.Fatalf("a hook without notify still runs once per change, got %q", got)
+	}
+}
+
+func writeScript(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// With banners off a trigger still reports its banner, and nothing shows.
+func TestNotifyTransitionReportsTheTriggerWithBannersOff(t *testing.T) {
+	p, sess, rec := newNotifyTestPoller(t)
+	if err := p.store.SetSetting(notificationsSetting, "off"); err != nil {
+		t.Fatal(err)
+	}
+	banner, triggered := p.notifyTransition(sess, status.Waiting, "", "Do you want to proceed?")
+	if !triggered || banner.Kind != notify.Waiting || banner.Text != "Do you want to proceed?" {
+		t.Fatalf("banners off: want the waiting trigger reported, got %+v %v", banner, triggered)
+	}
+	if _, triggered := p.notifyTransition(sess, status.Working, "", ""); triggered {
+		t.Fatal("working is not a banner trigger")
+	}
+	settle()
+	if calls := rec.all(); len(calls) != 0 {
+		t.Fatalf("banners off: nothing shows, got %v", calls)
 	}
 }
 
