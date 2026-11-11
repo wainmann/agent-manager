@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +40,11 @@ func TestMigrateWritesAPrivateFileAndSetsTheMarkerAfter(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := file.Hooks[0]
-	if !hook.Notify || hook.Timeout.String() != "15s" || len(hook.Command) != 3 || hook.Command[0] != "sh" || hook.Command[1] != "-c" || hook.Command[2] != command {
+	argv, err := migratedArgv(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hook.Notify || hook.Timeout.String() != "15s" || !slices.Equal(hook.Command, argv) {
 		t.Fatalf("hook = %+v", hook)
 	}
 	if joined := strings.Join(hook.Events, ","); joined != status.Waiting+","+status.Errored+","+status.Finished {
