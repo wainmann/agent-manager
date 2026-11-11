@@ -24,6 +24,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -368,15 +369,19 @@ func TestStartupClaimsMouse(t *testing.T) {
 }
 
 type extendedKeyRecorder struct {
-	got []uifocus.ExtendedKeyMsg
+	got     []uifocus.ExtendedKeyMsg
+	schemes []uiterminal.SchemeMsg
 }
 
 func (r *extendedKeyRecorder) Init() tea.Cmd { return nil }
 
 func (r *extendedKeyRecorder) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(uifocus.ExtendedKeyMsg); ok {
-		r.got = append(r.got, key)
+	switch msg := msg.(type) {
+	case uifocus.ExtendedKeyMsg:
+		r.got = append(r.got, msg)
 		return r, tea.Quit
+	case uiterminal.SchemeMsg:
+		r.schemes = append(r.schemes, msg)
 	}
 	return r, nil
 }
@@ -429,6 +434,31 @@ func TestStartupFilterReadsShiftEnter(t *testing.T) {
 	)
 	if _, err := program.Run(); err != nil {
 		t.Fatalf("Run: %v, got %v", err, recorder.got)
+	}
+	if len(recorder.got) != 1 || recorder.got[0].Name != "S-Enter" {
+		t.Fatalf("program read %v, want S-Enter", recorder.got)
+	}
+}
+
+// The filter the program starts with reads scheme reports as well as the
+// keys, so composing the two never drops one.
+func TestStartupFilterReadsSchemeReports(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	recorder := &extendedKeyRecorder{}
+	program := tea.NewProgram(recorder,
+		tea.WithContext(ctx),
+		tea.WithInput(strings.NewReader("\x1b[?997;2n\x1b[13;2u")),
+		tea.WithOutput(io.Discard),
+		tea.WithoutRenderer(),
+		tea.WithoutSignalHandler(),
+		tea.WithFilter(programFilter),
+	)
+	if _, err := program.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(recorder.schemes) != 1 || !recorder.schemes[0].Light {
+		t.Fatalf("program read schemes %v, want one light report", recorder.schemes)
 	}
 	if len(recorder.got) != 1 || recorder.got[0].Name != "S-Enter" {
 		t.Fatalf("program read %v, want S-Enter", recorder.got)

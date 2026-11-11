@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"sync"
 	"testing"
@@ -204,12 +205,32 @@ func TestAttachBuildsTheCommandOffTheUpdatePath(t *testing.T) {
 }
 
 func TestAttachEndingNamesWhy(t *testing.T) {
-	state := listedState(t, &ssh{})
-	root := &recorder{}
-	state.Route(root, AttachDoneMsg{Host: "box", Err: exitStatus(120)})
-	want := "review opens only for sessions on this machine, not yet for one on box"
-	if len(root.errs) != 1 || root.errs[0] != want {
-		t.Fatalf("errors = %q, want %q", root.errs, want)
+	reports, request := errors.New("turn reports on"), errors.New("ask for the scheme")
+	review := "review opens only for sessions on this machine, not yet for one on box"
+	editor := "the editor opens only for sessions on this machine, not yet for one on box"
+	failures := "turn reports on\nask for the scheme"
+	// Exec joins the terminal's failures to the child's status in this shape.
+	withFailures := func(status exitStatus) error { return errors.Join(errors.Join(status, reports), request) }
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{"detached", nil, nil},
+		{"review key", exitStatus(120), []string{review}},
+		{"editor key", exitStatus(121), []string{editor}},
+		{"review key and terminal failures", withFailures(120), []string{review + "; " + failures}},
+		{"editor key and terminal failures", withFailures(121), []string{editor + "; " + failures}},
+		{"attach failed", withFailures(1), []string{"box: attach ended: exit status\n" + failures}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := listedState(t, &ssh{})
+			root := &recorder{}
+			state.Route(root, AttachDoneMsg{Host: "box", Err: tc.err})
+			if !slices.Equal(root.errs, tc.want) {
+				t.Fatalf("errors = %q, want %q", root.errs, tc.want)
+			}
+		})
 	}
 }
 

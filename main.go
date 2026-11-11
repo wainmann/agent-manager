@@ -315,13 +315,14 @@ func sessionFromAncestry() (id string, seen bool) {
 
 // programFilter resets the pointer while the screen that showed the hand is
 // still up, since kitty keeps one per screen and an interrupt skips Update,
-// and reads the modified keys Bubble Tea leaves undecoded.
+// and reads the modified keys and scheme reports Bubble Tea leaves
+// undecoded.
 func programFilter(_ tea.Model, msg tea.Msg) tea.Msg {
 	switch msg.(type) {
 	case tea.QuitMsg, tea.InterruptMsg:
 		ui.ResetPointer()
 	}
-	return ui.ReadExtendedKey(msg)
+	return ui.ReadColorScheme(ui.ReadExtendedKey(msg))
 }
 
 func run() (resultErr error) {
@@ -366,6 +367,9 @@ func run() (resultErr error) {
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
+	if err := ui.EnableColorSchemeReports(); err != nil {
+		return err
+	}
 	// The terminal's own text and background colors follow the theme while
 	// the manager runs, so window padding outside the cell grid matches the
 	// frame — through tmux's passthrough envelope when a multiplexer is
@@ -392,6 +396,7 @@ func run() (resultErr error) {
 	catalog.StopAll()
 	ui.ResetTerminalColors()
 	ui.ResetPointer()
+	runErr = errors.Join(runErr, ui.DisableColorSchemeReports())
 	stopRuntime()
 	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
 		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))

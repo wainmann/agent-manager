@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uicomposer "github.com/YoanWai/agent-manager/internal/ui/composer"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
@@ -117,6 +118,9 @@ type mouseCapture struct {
 type environment struct {
 	workDir string
 	homeDir string
+	// scheme is the light or dark side the terminal last reported, unknown
+	// until a report arrives.
+	scheme systheme.Scheme
 }
 
 type Dependencies struct {

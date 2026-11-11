@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -110,7 +111,7 @@ func (m *Model) runSettingsResult(d *uisettings.State, result uisettings.Result)
 	switch {
 	case result.Palette:
 		if result.DetectTheme {
-			d.ShowTheme(uitheme.Auto(d.ManualTheme, systheme.Detect()))
+			d.ShowTheme(uitheme.Auto(d.ManualTheme, m.liveScheme(systheme.Detect)))
 		}
 		applyTheme(uitheme.Palettes[d.ThemeIndex])
 		SyncTerminalColors()
@@ -279,6 +280,9 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case uilaunch.BaseFetchedMsg:
 		return routed(m, m.recordBaseFetch(msg))
+
+	case uiterminal.SchemeMsg:
+		return routed(m, m.followColorScheme(msg))
 
 	case uisettings.EditorsProbe:
 		m.applyEditorsProbe(msg)
