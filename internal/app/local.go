@@ -86,10 +86,22 @@ func OpenLocal(profileDir, version string, driver *tmux.Driver) (*Local, error) 
 }
 
 func (l *Local) Close() error {
-	if dispatcher, ok := l.Runtime.Events.(*lifecyclehook.Dispatcher); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), lifecyclehook.DrainQuit)
-		dispatcher.Close(ctx)
-		cancel()
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), lifecyclehook.DrainQuit)
+	defer cancel()
+	l.closeHooks(ctx)
 	return l.Runtime.Store.Close()
+}
+
+// StopHooks cancels running hooks and drops queued ones without closing the
+// store, for a quit that abandoned effects still holding it.
+func (l *Local) StopHooks() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	l.closeHooks(ctx)
+}
+
+func (l *Local) closeHooks(ctx context.Context) {
+	if dispatcher, ok := l.Runtime.Events.(*lifecyclehook.Dispatcher); ok {
+		dispatcher.Close(ctx)
+	}
 }

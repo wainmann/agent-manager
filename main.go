@@ -393,6 +393,7 @@ func run() (resultErr error) {
 			if len(model.AbandonedEffects()) > 0 {
 				// Abandoned workers keep their resources until the process exits.
 				closeLocal = false
+				local.StopHooks()
 				return
 			}
 			<-done
