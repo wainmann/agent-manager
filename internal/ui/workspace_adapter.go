@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
-	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -295,7 +293,6 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.notices.HookFailures = hookFailuresFrom(msg.hookFailures)
 		m.notices.HooksConfigError = msg.hooksConfigError
 		m.notices.NotifyNotCarried = msg.notifyNotCarried
-		m.notices.HooksLog = filepath.Join(m.services.configDir, lifecyclehook.LogFile)
 		// A listing older than a committed mutation or a newer listing keeps
 		// its rows out, but still carries focus consumed from a notification,
 		// the turns it saw end and its pane facts.

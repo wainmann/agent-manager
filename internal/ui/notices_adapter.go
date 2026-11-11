@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"path/filepath"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
@@ -34,7 +37,7 @@ func (m *Model) noticeSources() uinotices.Sources {
 	sources.HookFailures = m.notices.HookFailures
 	sources.HooksConfigError = m.notices.HooksConfigError
 	sources.NotifyNotCarried = m.notices.NotifyNotCarried
-	sources.HooksLog = m.notices.HooksLog
+	sources.HooksLog = filepath.Join(m.services.configDir, lifecyclehook.LogFile)
 	return sources
 }
 

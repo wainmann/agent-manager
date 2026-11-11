@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/execution"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -36,11 +38,8 @@ func TestRefreshStoresHookNoticesBeforeItDropsAStaleListing(t *testing.T) {
 	if m.notices.HooksConfigError != "hooks.toml: refused" || m.notices.NotifyNotCarried != "paste me" || len(m.notices.HookFailures) != 1 {
 		t.Fatalf("log = %+v", m.notices.Log)
 	}
-	if m.notices.HooksLog == "" {
-		t.Fatal("the log path was not recorded")
-	}
 	sources := m.noticeSources()
-	if sources.HooksConfigError != m.notices.HooksConfigError || len(sources.HookFailures) != 1 || sources.HooksLog != m.notices.HooksLog {
+	if sources.HooksConfigError != m.notices.HooksConfigError || len(sources.HookFailures) != 1 || filepath.Base(sources.HooksLog) != lifecyclehook.LogFile {
 		t.Fatalf("sources = %+v", sources)
 	}
 }
