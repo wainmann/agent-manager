@@ -3,7 +3,6 @@ package ui
 import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"maps"
-	"os"
 	"slices"
 	"time"
 
@@ -137,14 +136,8 @@ type Dependencies struct {
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
 	gitDriver, _ := git.New()
 	dir, _ := config.Dir()
-	// Tests build the model through New. The dispatcher reads a private
-	// empty directory so a hooks.toml beside the test, or in the user's
-	// profile, never runs.
-	hookDir, err := os.MkdirTemp("", "am-hooks-")
-	if err != nil {
-		return nil, err
-	}
-	events := lifecyclehook.New(lifecyclehook.Options{ConfigDir: hookDir, Store: st, Version: version})
+	// Tests build the model through New, so no hooks.toml of the user's runs.
+	events := lifecyclehook.Nop{}
 	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, Events: events,
 		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }}
 	opts := execution.OptionsFromConfig(cfg)
@@ -165,8 +158,8 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 }
 
 func NewWithServices(deps Dependencies, version string) (*Model, error) {
-	if deps.Execution == nil || deps.Lifecycle == nil {
-		panic("execution and lifecycle services are required")
+	if deps.Execution == nil || deps.Lifecycle == nil || deps.Events == nil {
+		panic("execution, lifecycle and events services are required")
 	}
 	return newView(deps, version)
 }

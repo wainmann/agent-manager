@@ -357,7 +357,7 @@ func run() (resultErr error) {
 	rt := local.Runtime
 	model, err := ui.NewWithServices(ui.Dependencies{
 		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
-		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, Events: rt.Events, ProfileDir: dir,
 	}, version)
 	if err != nil {
 		return err
