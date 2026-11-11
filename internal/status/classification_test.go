@@ -501,3 +501,25 @@ func TestClaudeQuotedDialogTextIsNotADialog(t *testing.T) {
 		}
 	}
 }
+
+// Only the newest turn counts: an interrupt above the newest prompt echo
+// belongs to a turn the user already moved on from.
+func TestClaudeInterruptedReadsTheNewestTurn(t *testing.T) {
+	engine := defaultEngine(t)
+	cut := "❯ Run the Bash command: touch a.txt\n  Ran 1 shell command\n" +
+		"  ⎿  Interrupted · What should Claude do instead?\n✻ Baked for 1s · done 22:19\n"
+	composer := "────\n❯ \n────"
+	for _, tc := range []struct {
+		name string
+		pane string
+		want bool
+	}{
+		{"interrupted", cut + composer, true},
+		{"declined question", "❯ Ask me a color.\n● User declined to answer questions\n✻ Cogitated for 1s\n" + composer, true},
+		{"a newer turn", cut + "❯ Try again\n● Done.\n✻ Worked for 2s\n" + composer, false},
+	} {
+		if got := engine.Interrupted("claude", tc.pane); got != tc.want {
+			t.Errorf("%s: Interrupted = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

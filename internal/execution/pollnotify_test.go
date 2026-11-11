@@ -346,7 +346,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	}
 	m.applyCmd(t, nil)
 	sess := m.sessionRows()[0]
-	waitForPane(t, m, sess.ID, "boot-marker")
+	waitForPane(t, m, sess.ID, "Enter to confirm")
 
 	// Pin the pre-state: whatever earlier refreshes derived, the
 	// transition into waiting is observed by the next refresh and only
@@ -368,7 +368,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd, Text: "boot-marker"}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd, Text: "Enter to confirm"}) {
 		t.Fatalf("want one waiting notification titled with the session name and quoting the pane, got %v", calls)
 	}
 
@@ -391,7 +391,7 @@ func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
 	m.cfg.Tools["claude-hooked"] = hooked
 	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
 	sess := m.sessionRows()[0]
-	waitForPane(t, m, sess.ID, "boot-marker")
+	waitForPane(t, m, sess.ID, "Enter to confirm")
 	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
 		t.Fatal(err)
 	}

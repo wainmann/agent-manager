@@ -287,6 +287,27 @@ func (tr toolRules) turnState(pane string) (string, bool) {
 	return Finished, true
 }
 
+// Interrupted reports whether the user cut the newest turn short: a
+// blocked_line row sits below the newest prompt the tool echoed. A hook
+// cannot see it, since Esc fires no event.
+func (e *Engine) Interrupted(tool, pane string) bool {
+	tr, ok := e.tools[tool]
+	if !ok || tr.blockedLine == nil {
+		return false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return false
+	}
+	lines := strings.Split(region, "\n")
+	for _, line := range lines[tr.lastEchoIndex(lines)+1:] {
+		if tr.blockedLine.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
 // TurnEndedState infers the resting status of a turn that closed without
 // a turn_end marker: the poller calls it when a region that was working
 // stops changing and no rule matches. A question mark on the last content

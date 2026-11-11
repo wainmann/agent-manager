@@ -46,7 +46,9 @@ chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Rest
 # hint; the spinner owns the tip, effort badge and notices drawn under it;
 # the welcome logo owns the version, model and directory beside it
 chrome_block = "^❯ |^[✻✳✶✽✢·✦✧+*] \\S+…|^\\s*▐▛███▛█ "
-blocked_line = "Interrupted ·"
+# Esc cuts a turn short with the interrupt banner, or on a question dialog
+# with the decline; neither fires a hook
+blocked_line = "Interrupted ·|^[●⏺] User declined to answer questions"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
 # a question dialog draws its selected option on the composer's own row

@@ -109,6 +109,72 @@ func TestHookFinishedHoldsOnceBackgroundAgentsEnd(t *testing.T) {
 	}
 }
 
+// The Notification hook writes waiting while a dialog is open, and Esc
+// closes it without Stop or PostToolUse. The user dismissed it, so once no
+// dialog is on screen the stale waiting reads idle, even though Claude's
+// closing line carries a question mark.
+func TestHookWaitingYieldsOnceTheDialogIsDismissed(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	m.poller.statusSources["claude"] = hooks.StatusSourceClaude
+	sess := store.Session{ID: "hooked-dismissed", Tool: "claude", Status: status.Waiting}
+	writeHookStatus(t, m, sess.ID, status.Waiting)
+
+	// real captures, Claude Code 2.1.322
+	ask := "❯ Run the Bash command: touch esc-probe.txt\n● Creating empty file esc-probe.txt\n  ⎿  $ touch esc-probe.txt\n────\n" +
+		" Bash command\n Create empty file esc-probe.txt\n touch esc-probe.txt\n Do you want to proceed?\n ❯ 1. Yes\n" +
+		"   2. Yes, and always allow access to /tmp/work from this project\n   4. No\n Esc to cancel · Tab to amend"
+	if got := deriveStatus(t, m, sess, ask, true); got != status.Waiting {
+		t.Fatalf("open permission prompt = %q, want waiting", got)
+	}
+	composer := "────\n❯ \n────\n  -- INSERT -- ⏸ manual mode on"
+	for name, pane := range map[string]string{
+		"permission prompt": "❯ Run the Bash command: touch esc-probe.txt\n  Ran 1 shell command\n" +
+			"  ⎿  Interrupted · What should Claude do instead?\n✻ Baked for 2s · done 22:11\n" + composer,
+		"question dialog": "❯ Use the AskUserQuestion tool to ask me which color I prefer: red, green or blue.\n" +
+			"● User declined to answer questions\n  ⎿  · Which color do you prefer? (Red / Green / Blue)\n" +
+			"✻ Cogitated for 1s · done 22:12\n" +
+			"● full  $0.09  last $0.01  4s                                Review  Audit  Board  Details [-]\n" + composer,
+	} {
+		if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+			t.Fatalf("%s dismissed with Esc = %q, want idle", name, got)
+		}
+	}
+}
+
+// Esc before the Notification hook fires, or during a running turn, leaves
+// the hook at working: no Stop follows. The user cut the turn short, so
+// it reads idle, with or without a band row the rules cannot read.
+func TestHookWorkingYieldsWhenEscCutsTheTurnShort(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	m.poller.statusSources["claude"] = hooks.StatusSourceClaude
+	sess := store.Session{ID: "hooked-cut", Tool: "claude", Status: status.Working}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	// real capture, Claude Code 2.1.322
+	cut := "❯ Run the Bash command: touch esc-probe2.txt\n  ⎿  16 skills available\n  Ran 1 shell command\n" +
+		"  ⎿  Interrupted · What should Claude do instead?\n✻ Baked for 1s · done 22:19\n"
+	band := "● full  $0.11  last $0.02  5s                                Review  Audit  Board  Details [-]\n"
+	composer := "────\n❯ \n────\n  -- INSERT -- ⏸ manual mode on"
+	declined := "❯ Use the AskUserQuestion tool to ask me which color I prefer: red, green or blue.\n" +
+		"● User declined to answer questions\n  ⎿  · Which color do you prefer? (Red / Green / Blue)\n✻ Cogitated for 1s · done 22:12\n"
+	for name, pane := range map[string]string{
+		"interrupt":           cut + composer,
+		"interrupt over band": cut + band + composer,
+		"declined question":   declined + band + composer,
+	} {
+		if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+			t.Fatalf("%s = %q, want idle", name, got)
+		}
+	}
+
+	next := cut + "❯ Try again\n✻ Drizzling… (3s · thinking)\n" + composer
+	if got := deriveStatus(t, m, sess, next, true); got != status.Working {
+		t.Fatalf("a new turn under an older interrupt = %q, want working", got)
+	}
+}
+
 // Text that only reads like a failure, in a tool result, a quote or a
 // submitted prompt, must not turn a successful turn errored.
 func TestHookFinishedHoldsOverQuotedSignedOutText(t *testing.T) {
