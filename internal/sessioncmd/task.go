@@ -156,7 +156,7 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 		if !ok {
 			return Task{}, errors.New("no task is ready to claim; every pending task is blocked, or the list is empty")
 		}
-		runtime.emitTask(caller, lifecyclehook.EventTaskClaim, claimed.ID, claimed.Title, claimed.Owner)
+		runtime.emitTask(caller, lifecyclehook.EventTaskClaim, claimed.ID, claimed.Title)
 		return runtime.task(caller.ID, claimed.ID)
 	}
 	claimed, err := runtime.store.ClaimTask(taskID, caller.ID, now)
@@ -167,7 +167,7 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 		return Task{}, runtime.refusedClaim(caller.ID, taskID)
 	}
 	task, err := runtime.task(caller.ID, taskID)
-	runtime.emitTask(caller, lifecyclehook.EventTaskClaim, taskID, task.Title, caller.ID)
+	runtime.emitTask(caller, lifecyclehook.EventTaskClaim, taskID, task.Title)
 	if err != nil {
 		return Task{}, err
 	}
@@ -243,7 +243,7 @@ func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error)
 	}
 	task, err := runtime.task(caller.ID, taskID)
 	if done {
-		runtime.emitTask(caller, lifecyclehook.EventTaskFinish, taskID, task.Title, caller.ID)
+		runtime.emitTask(caller, lifecyclehook.EventTaskFinish, taskID, task.Title)
 	}
 	if err != nil {
 		return Task{}, err

@@ -4,35 +4,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-func (l *Lifecycle) emit(ev lifecyclehook.Event) {
-	if l.shell(ev.Session) {
+// emit stamps and sends one event. A terminal row has no hooks.
+func emit(events lifecyclehook.Emitter, tool config.Tool, ev lifecyclehook.Event) {
+	if tool.Shell {
 		return
 	}
-	if ev.At.IsZero() {
-		ev.At = time.Now().UTC()
-	}
-	lifecyclehook.Or(l.runtime.Events).Emit(ev)
+	ev.At = time.Now().UTC()
+	lifecyclehook.Or(events).Emit(ev)
 }
 
-func (l *Lifecycle) shell(sess store.Session) bool {
-	tool, ok := l.runtime.Config.Tools[sess.Tool]
-	return ok && tool.Shell
+func (l *Lifecycle) emit(ev lifecyclehook.Event) {
+	emit(l.runtime.Events, l.runtime.Config.Tools[ev.Session.Tool], ev)
+}
+
+func startEvent(sess store.Session, reason string) lifecyclehook.Event {
+	return lifecyclehook.Event{
+		Name:    lifecyclehook.EventSessionStart,
+		Session: sess,
+		Reason:  reason,
+		Model:   sess.Choice.Model,
+		Effort:  sess.Choice.Effort,
+	}
 }
 
 func (l *Lifecycle) emitStart(sess store.Session, reason, conversation string, replaceConversation bool) {
-	l.emit(lifecyclehook.Event{
-		Name:            lifecyclehook.EventSessionStart,
-		Session:         sess,
-		Reason:          reason,
-		Model:           sess.Choice.Model,
-		Effort:          sess.Choice.Effort,
-		Conversation:    conversation,
-		UseConversation: replaceConversation,
-	})
+	ev := startEvent(sess, reason)
+	ev.Conversation, ev.UseConversation = conversation, replaceConversation
+	l.emit(ev)
 }
 
 // emitKilled reports the stop twice, once as session_kill and once as a
@@ -117,23 +120,14 @@ func sessionsUnder(sessions []store.Session, path string) []store.Session {
 }
 
 func (r *runtime) emit(ev lifecyclehook.Event) {
-	if tool, ok := r.cfg.Tools[ev.Session.Tool]; ok && tool.Shell {
-		return
-	}
-	if ev.At.IsZero() {
-		ev.At = time.Now().UTC()
-	}
-	lifecyclehook.Or(r.events).Emit(ev)
+	emit(r.events, r.cfg.Tools[ev.Session.Tool], ev)
 }
 
-func (r *runtime) emitTask(caller store.Session, name, id, title, owner string) {
-	if owner == "" {
-		owner = caller.ID
-	}
+func (r *runtime) emitTask(caller store.Session, name, id, title string) {
 	r.emit(lifecyclehook.Event{
 		Name:    name,
 		Session: caller,
-		Task:    &lifecyclehook.TaskInfo{ID: id, Title: title, Owner: owner},
+		Task:    &lifecyclehook.TaskInfo{ID: id, Title: title, Owner: caller.ID},
 	})
 }
 

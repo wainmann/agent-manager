@@ -486,8 +486,7 @@ func (l *Lifecycle) SetArchivedForSession(callerID, targetID string, archived bo
 		return Session{}, err
 	}
 	target.Archived = archived
-	reason := lifecyclehook.ReasonAgent
-	l.emitArchived(target, reason, archived)
+	l.emitArchived(target, lifecyclehook.ReasonAgent, archived)
 	return runtime.sessionInfo(target, running, false), nil
 }
 

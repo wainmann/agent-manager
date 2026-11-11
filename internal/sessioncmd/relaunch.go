@@ -146,16 +146,7 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	}
 	sess.AgentLaunchedAt = launchedAt
 	sess.Status = status.Starting
-	if !tool.Shell {
-		lifecyclehook.Or(events).Emit(lifecyclehook.Event{
-			Name:    lifecyclehook.EventSessionStart,
-			At:      time.Now().UTC(),
-			Session: sess,
-			Reason:  reason,
-			Model:   sess.Choice.Model,
-			Effort:  sess.Choice.Effort,
-		})
-	}
+	emit(events, tool, startEvent(sess, reason))
 	// A leftover ack from the agent that exited must not swallow the first
 	// finished alert of the one taking its place.
 	if err := st.SetAcked(sess.ID, false); err != nil {
