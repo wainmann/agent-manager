@@ -3,6 +3,7 @@ package lifecyclehook
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -29,7 +30,8 @@ func TestMigrateWritesAPrivateFileAndSetsTheMarkerAfter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows reports 0666 for any writable file, so only POSIX can check it.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o, want 600", info.Mode().Perm())
 	}
 	file, err := Load(dir)

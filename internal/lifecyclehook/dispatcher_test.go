@@ -223,7 +223,7 @@ func TestDispatcherGatesNotifyAndStatus(t *testing.T) {
 	d, _ := openDispatcher(t, dir)
 	d.Emit(sessionEvent("s", status.Working))
 	d.Emit(Event{Name: EventSessionKill, Session: store.Session{ID: "s", Status: status.Dead}})
-	waitUntil(t, func() bool { return fileExists(barrier) && fileExists(notified) })
+	waitUntil(t, func() bool { return readFile(t, barrier) != "" && readFile(t, notified) != "" })
 	if fileExists(gate) {
 		t.Fatal("the events filter let a working transition through")
 	}
@@ -244,7 +244,7 @@ func TestDispatcherPassesLiteralArgumentsAndStdin(t *testing.T) {
 	out := filepath.Join(dir, "out")
 	envFile := filepath.Join(dir, "env")
 	pwned := filepath.Join(dir, "pwned")
-	hook := script(t, "printf '%s\\n' \"$1\" > "+quote(out)+"\ncat > "+quote(out)+".json\nenv | grep '^AM_' | sort > "+quote(envFile)+"\n")
+	hook := script(t, "printf '%s\\n' \"$1\" > "+quote(out)+"\ncat > "+quote(out)+".json\nenv | grep '^AM_' | sort > "+quote(envFile+".tmp")+" && mv "+quote(envFile+".tmp")+" "+quote(envFile)+"\n")
 	payload := "$(touch " + pwned + ")"
 	writeHooks(t, dir, EventSessionStart, []string{hook, payload}, "")
 	d, _ := openDispatcher(t, dir)

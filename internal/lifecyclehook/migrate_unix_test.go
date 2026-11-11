@@ -30,7 +30,7 @@ func TestMigratedCommandReadsStdinAndTheBannerVariables(t *testing.T) {
 		Session:   store.Session{ID: "s1", Name: "deploy", Tool: "claude", Status: status.Waiting, Cwd: dir},
 		NotifyEnv: []string{"AM_NOTIFY_KIND=waiting", "AM_TITLE=Hello", "AM_BODY=Need you"},
 	})
-	waitUntil(t, func() bool { return fileExists(out) })
+	waitUntil(t, func() bool { return strings.Contains(readFile(t, out), "Need you\n") })
 	got := readFile(t, out)
 	if !strings.Contains(got, `"event":"session_state"`) || !strings.Contains(got, "Hello") || !strings.Contains(got, "Need you") {
 		t.Fatalf("migrated command saw %q", got)
