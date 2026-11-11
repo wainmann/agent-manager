@@ -3,6 +3,7 @@ package ui
 import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"maps"
+	"os"
 	"slices"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -128,24 +130,33 @@ type Dependencies struct {
 	Git        *git.Driver
 	Lifecycle  *sessioncmd.Lifecycle
 	Execution  *execution.Runner
+	Events     lifecyclehook.Emitter
 	ProfileDir string
 }
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
 	gitDriver, _ := git.New()
 	dir, _ := config.Dir()
-	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, ShowCommand: showCommand,
+	// Tests build the model through New. The dispatcher reads a private
+	// empty directory so a hooks.toml beside the test, or in the user's
+	// profile, never runs.
+	hookDir, err := os.MkdirTemp("", "am-hooks-")
+	if err != nil {
+		return nil, err
+	}
+	events := lifecyclehook.New(lifecyclehook.Options{ConfigDir: hookDir, Store: st, Version: version})
+	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, Events: events,
 		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }}
 	opts := execution.OptionsFromConfig(cfg)
 	var model *Model
 	lifecycle, err := sessioncmd.NewLifecycle(sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hookManager, Git: gitDriver,
-		Snapshot: st.SetSnapshot,
+		Snapshot: st.SetSnapshot, Events: events,
 	})
 	if err != nil {
 		return nil, err
 	}
-	model, err = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), ProfileDir: dir}, version)
+	model, err = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), Events: events, ProfileDir: dir}, version)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +217,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			gitDrv:      gitDriver,
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
+			events:      deps.Events,
 		},
 		rail:      uirailpersist.Load(st),
 		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),

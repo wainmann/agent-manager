@@ -1,11 +1,26 @@
 package notices
 
+import "time"
+
+// HookFailure is one recorded hook failure, copied out of the store so
+// this package does not import it.
+type HookFailure struct {
+	At      time.Time
+	Event   string
+	Command string
+	Reason  string
+}
+
 // Log is the notice the root holds back: the reason a config.toml of an
 // earlier release was refused, shown as a notice until it is dismissed, and
 // a notice that arrived while the list was not showing.
 type Log struct {
-	ImportError string
-	Held        string
+	ImportError      string
+	Held             string
+	HookFailures     []HookFailure
+	HooksConfigError string
+	NotifyNotCarried string
+	HooksLog         string
 }
 
 // Stage says what a change in the active notices asks the root to do: open

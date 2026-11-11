@@ -115,7 +115,7 @@ func TestServeStopsWhenItsContextEndsAfterPolling(t *testing.T) {
 		_ = os.Remove(driver.SocketPath())
 	})
 	dir := t.TempDir()
-	local, err := OpenLocal(dir, driver)
+	local, err := OpenLocal(dir, "test", driver)
 	if err != nil {
 		t.Fatalf("OpenLocal: %v", err)
 	}

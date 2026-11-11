@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/google/uuid"
 )
@@ -115,6 +116,12 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 	}
 	for _, reservation := range reservations {
 		result.Reserved = append(result.Reserved, runtime.reservationInfo(reservation, names, caller.ID, now))
+		runtime.emitReservation(caller, lifecyclehook.ReservationInfo{
+			Action:    lifecyclehook.ReservationReserve,
+			Pattern:   reservation.Pattern,
+			Mode:      reservation.Mode,
+			ExpiresAt: reservation.ExpiresAt,
+		})
 	}
 	return result, nil
 }
@@ -143,7 +150,11 @@ func (s *Sessions) ReleaseFiles(sessionID string, patterns []string) (int, error
 	}
 	if len(cleaned) == 0 {
 		released, err := runtime.store.Release(caller.ID, "")
-		return int(released), err
+		if err != nil {
+			return 0, err
+		}
+		runtime.emitReservation(caller, lifecyclehook.ReservationInfo{Action: lifecyclehook.ReservationRelease, Released: true})
+		return int(released), nil
 	}
 	total := int64(0)
 	for _, pattern := range cleaned {
@@ -152,6 +163,11 @@ func (s *Sessions) ReleaseFiles(sessionID string, patterns []string) (int, error
 			return int(total), err
 		}
 		total += released
+		runtime.emitReservation(caller, lifecyclehook.ReservationInfo{
+			Action:   lifecyclehook.ReservationRelease,
+			Pattern:  pattern,
+			Released: true,
+		})
 	}
 	return int(total), nil
 }

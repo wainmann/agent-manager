@@ -11,6 +11,7 @@ Under `internal/`:
 - `sessioncmd`: the session commands (spawn, archive, revive, messages, tasks). `Lifecycle` runs ordered effects.
 - `cli`, `mcpserver`: translate shell and MCP requests into `sessioncmd` commands.
 - `execution`: UI-free poller and runner: capture, delivery, mailbox, status, notifications.
+- `lifecyclehook`: loads `hooks.toml`, runs its commands after a stored lifecycle change, and carries an old `notify_command` into that file.
 - `ui`: the Bubble Tea program. One `Model` routes messages, runs effects, composes the frame.
 - `ui/help`, `ui/review`, `ui/focus`, `ui/rail`, `ui/settings`: feature packages with private models.
 - `ui/effects`: the effect contract (`Request`, `Runner[S]`, `Bind`, `Result`), the FIFO lanes and the quit drain's bookkeeping. It knows no request type and imports nothing from the module.

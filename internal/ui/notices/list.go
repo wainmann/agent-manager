@@ -2,8 +2,11 @@ package notices
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +34,10 @@ type Sources struct {
 	WhatsNewVersion   string
 	WhatsNewFrom      string
 	ConfigImportError string
+	HookFailures      []HookFailure
+	HooksConfigError  string
+	NotifyNotCarried  string
+	HooksLog          string
 }
 
 func newestHeadline(releases []Release) string {
@@ -120,6 +127,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Expires:  msg.Expires,
 		})
 	}
+	notices = append(notices, hookNotices(src)...)
 	if src.ConfigImportError != "" {
 		notices = append(notices, Notice{
 			ID:       ConfigNotImported,
@@ -151,6 +159,60 @@ func (p Panel) Active(src Sources) []Notice {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(pinRank(a), pinRank(b)))
 	})
 	return kept
+}
+
+func hookNotices(src Sources) []Notice {
+	var notices []Notice
+	if src.HooksConfigError != "" {
+		sum := sha256.Sum256([]byte(src.HooksConfigError))
+		notices = append(notices, Notice{
+			ID:       "hooks-config-" + hex.EncodeToString(sum[:6]),
+			Kind:     KindHeadsUp,
+			Title:    "hooks.toml was not loaded",
+			Subtitle: "Hooks did not run",
+			Body: []string{
+				"hooks.toml was not loaded.",
+				"",
+				src.HooksConfigError,
+			},
+			URL:    RepoURL + "/blob/main/docs/configuration.md",
+			Action: "Read how hooks.toml is loaded",
+		})
+	}
+	if len(src.HookFailures) > 0 {
+		failures := src.HookFailures
+		if len(failures) > 8 {
+			failures = failures[len(failures)-8:]
+		}
+		newest := failures[len(failures)-1].At
+		lines := make([]string, 0, len(failures)+2)
+		for i := len(failures) - 1; i >= 0; i-- {
+			failure := failures[i]
+			lines = append(lines, failure.At.UTC().Format("15:04")+" "+failure.Event+" "+failure.Command+": "+failure.Reason)
+		}
+		if src.HooksLog != "" {
+			lines = append(lines, "", src.HooksLog)
+		}
+		notices = append(notices, Notice{
+			ID:       "hook-failed-" + strconv.FormatInt(newest.Unix(), 10),
+			Kind:     KindHeadsUp,
+			Title:    "A hook command failed",
+			Subtitle: lines[0],
+			Body:     lines,
+		})
+	}
+	if src.NotifyNotCarried != "" {
+		notices = append(notices, Notice{
+			ID:       "notify-command-not-carried",
+			Kind:     KindHeadsUp,
+			Title:    "Your notify command was not carried over",
+			Subtitle: "hooks.toml was already there",
+			Body:     strings.Split(src.NotifyNotCarried, "\n"),
+			URL:      RepoURL + "/blob/main/docs/configuration.md",
+			Action:   "Read how hooks.toml replaces it",
+		})
+	}
+	return notices
 }
 
 func pinRank(n Notice) int {

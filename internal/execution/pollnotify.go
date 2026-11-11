@@ -1,11 +1,11 @@
 package execution
 
 import (
-	"fmt"
 	"strings"
+	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -20,13 +20,38 @@ import (
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
 // whose ping they must not miss. The banner quotes what the row shows:
-// a waiting session's question, a finished session's prompt. The notify
-// command set with agent-manager settings runs for the same transitions,
-// after the native banner and never instead of it.
+// a waiting session's question, a finished session's prompt.
 func (p *Runner) notifyTransition(sess store.Session, newStatus, prompt, quote string) {
-	if p.notifyFn == nil {
+	event, ok := p.attention(sess, newStatus, prompt, quote)
+	if !ok || p.notifyFn == nil {
 		return
 	}
+	// Delivery can wait on an external process, so it must never run
+	// inside refreshOnce, which holds runMu.
+	go p.notifyFn(event)
+}
+
+// emitSessionState reports one stored status change. A notify hook runs
+// for the change itself. NotifyEnv is set only when the banner would
+// also fire, and that is the only time the hook receives the banner text.
+func (p *Runner) emitSessionState(sess store.Session, newStatus, previous, prompt, quote string) {
+	if p.shellTools[sess.Tool] {
+		return
+	}
+	sess.Status = newStatus
+	ev := lifecyclehook.Event{
+		Name:           lifecyclehook.EventSessionState,
+		At:             time.Now().UTC(),
+		Session:        sess,
+		PreviousStatus: previous,
+	}
+	if event, ok := p.attention(sess, newStatus, prompt, quote); ok {
+		ev.NotifyEnv = notifyVars(notify.CommandEnv(event))
+	}
+	lifecyclehook.Or(p.events).Emit(ev)
+}
+
+func (p *Runner) attention(sess store.Session, newStatus, prompt, quote string) (notify.Event, bool) {
 	var kind notify.Kind
 	var text string
 	switch newStatus {
@@ -36,58 +61,30 @@ func (p *Runner) notifyTransition(sess store.Session, newStatus, prompt, quote s
 		kind = notify.Errored
 	case status.Finished:
 		if !p.notifyFinished() {
-			return
+			return notify.Event{}, false
 		}
 		kind, text = notify.Finished, sessionPrompt(sess, prompt)
 	default:
-		return
+		return notify.Event{}, false
 	}
 	if !p.notificationsOn() {
-		return
+		return notify.Event{}, false
 	}
-	event := notify.Event{
+	return notify.Event{
 		ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind,
 		Dir: sess.Cwd, Branch: sess.WorktreeBranch, Repo: sess.WorktreeRepo, Text: text,
-	}
-	command, readErr := p.notifyCommand()
-	unshown := command != "" && p.claimUnshownCommand(command)
-	// Delivery can wait on an external process (osascript, notify-send,
-	// the user's command), so it must never run inside refreshOnce, which
-	// holds runMu.
-	go func() {
-		p.notifyFn(event)
-		if unshown {
-			p.showCommandFn(command)
+	}, true
+}
+
+func notifyVars(env []string) []string {
+	var out []string
+	for _, item := range env {
+		name, _, ok := strings.Cut(item, "=")
+		if ok && (name == "AM_NOTIFY_KIND" || name == "AM_TITLE" || name == "AM_BODY") {
+			out = append(out, item)
 		}
-		if command != "" || readErr != nil {
-			p.commandFn(event, command, readErr)
-		}
-	}()
-}
-
-func runNotifyCommand(event notify.Event, command string, readErr error) {
-	dir, err := config.Dir()
-	if err != nil {
-		return
 	}
-	if readErr != nil {
-		notify.LogCommandFailure(dir, event, fmt.Errorf("reading the notify command: %w", readErr))
-		return
-	}
-	notify.RunCommand(command, dir, event)
-}
-
-func (p *Runner) notifyCommand() (string, error) {
-	command, err := p.store.Setting(notifyCommandSetting)
-	return strings.TrimSpace(command), err
-}
-
-// claimUnshownCommand records command as shown and reports whether it was
-// new, in one write so managers sharing the store show it once between
-// them. A store that cannot answer counts as unshown, never as hidden.
-func (p *Runner) claimUnshownCommand(command string) bool {
-	changed, err := p.store.SetSettingIfChanged(notifyCommandShownSetting, command)
-	return changed || err != nil
+	return out
 }
 
 func (p *Runner) notificationsOn() bool {

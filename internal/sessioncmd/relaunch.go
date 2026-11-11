@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -105,7 +106,7 @@ func caretRow(driver *tmux.Driver, sessID string) (string, bool) {
 // relaunched, read after the agent quit, since that agent may have reported
 // a switch the caller's copy predates, and a warning when the agent started
 // without the agent-manager tools because registering them timed out.
-func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, sessID string, tool config.Tool) (store.Session, string, error) {
+func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, events lifecyclehook.Emitter, sessID string, tool config.Tool, reason string) (store.Session, string, error) {
 	sess, err := st.Get(sessID)
 	if err != nil {
 		return store.Session{}, "", err
@@ -143,13 +144,23 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	if err := st.UpdateStatus(sess.ID, status.Starting); err != nil {
 		return store.Session{}, "", err
 	}
+	sess.AgentLaunchedAt = launchedAt
+	sess.Status = status.Starting
+	if !tool.Shell {
+		lifecyclehook.Or(events).Emit(lifecyclehook.Event{
+			Name:    lifecyclehook.EventSessionStart,
+			At:      time.Now().UTC(),
+			Session: sess,
+			Reason:  reason,
+			Model:   sess.Choice.Model,
+			Effort:  sess.Choice.Effort,
+		})
+	}
 	// A leftover ack from the agent that exited must not swallow the first
 	// finished alert of the one taking its place.
 	if err := st.SetAcked(sess.ID, false); err != nil {
 		return store.Session{}, "", err
 	}
-	sess.AgentLaunchedAt = launchedAt
-	sess.Status = status.Starting
 	return sess, warning, nil
 }
 

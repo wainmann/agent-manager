@@ -1053,18 +1053,21 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	written, _, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
+	written, _, previous, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !written {
 		t.Fatal("an unclaimed row is the polling manager's to write")
 	}
+	if previous != "working" {
+		t.Fatalf("previous = %q, want the stored status", previous)
+	}
 
 	if err := st.SetTmuxSocket(sess.ID, theirs); err != nil {
 		t.Fatal(err)
 	}
-	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
+	written, _, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1079,7 +1082,7 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatalf("status = %q, want the claim to have held it at idle", got.Status)
 	}
 
-	written, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
+	written, _, _, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1121,7 +1124,7 @@ func TestUpdateStatusOnSocketReportsWhichWriteMovedTheStatus(t *testing.T) {
 	results := make(chan result, len(managers))
 	for _, manager := range managers {
 		go func() {
-			written, changed, err := manager.UpdateStatusOnSocket(sess.ID, "waiting", socket)
+			written, changed, _, err := manager.UpdateStatusOnSocket(sess.ID, "waiting", socket)
 			results <- result{written, changed, err}
 		}()
 	}

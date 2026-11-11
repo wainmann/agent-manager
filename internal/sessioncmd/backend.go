@@ -1,12 +1,16 @@
 package sessioncmd
 
 import (
+	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
@@ -20,6 +24,7 @@ type Runtime struct {
 	Hooks    *hooks.Manager
 	Git      *git.Driver
 	Snapshot func(string, string) error
+	Events   lifecyclehook.Emitter
 }
 
 // Backend binds command services to exactly one local runtime. OpenBackend
@@ -32,10 +37,28 @@ type Backend struct {
 	opened    bool
 	owned     bool
 	closed    bool
+	version   string
+	drain     time.Duration
 }
 
 func OpenBackend(configDir string) *Backend {
-	return &Backend{configDir: configDir, owned: true}
+	return &Backend{configDir: configDir, owned: true, drain: lifecyclehook.DrainCall}
+}
+
+// SetVersion is the version written into hook envelopes. Set it before the
+// first command opens the runtime.
+func (b *Backend) SetVersion(version string) {
+	b.mu.Lock()
+	b.version = version
+	b.mu.Unlock()
+}
+
+// SetDrain is how long Close waits for hooks. A short command stays under
+// the remote call timeout. Spawn stays under the create timeout.
+func (b *Backend) SetDrain(limit time.Duration) {
+	b.mu.Lock()
+	b.drain = limit
+	b.mu.Unlock()
 }
 
 func BorrowBackend(runtime Runtime) (*Backend, error) {
@@ -68,7 +91,7 @@ func (b *Backend) resolve() (Runtime, error) {
 		return Runtime{}, errors.New("session command backend is closed")
 	}
 	if !b.opened {
-		runtime, err := openRuntime(b.configDir)
+		runtime, err := openRuntime(b.configDir, b.version)
 		if err != nil {
 			return Runtime{}, err
 		}
@@ -86,7 +109,7 @@ func (b *Backend) resolve() (Runtime, error) {
 	return b.runtime, nil
 }
 
-func openRuntime(configDir string) (Runtime, error) {
+func openRuntime(configDir, version string) (Runtime, error) {
 	cfg, err := config.Default()
 	if err != nil {
 		return Runtime{}, err
@@ -106,6 +129,12 @@ func openRuntime(configDir string) (Runtime, error) {
 	}
 	driver.SetSessionKeys(keys)
 	gitDriver, _ := git.New()
+	events := lifecyclehook.New(lifecyclehook.Options{
+		ConfigDir: configDir,
+		Store:     st,
+		Version:   version,
+		Show:      func(_, text string) { notify.ShowCommand(text) },
+	})
 	return Runtime{
 		Config:   cfg,
 		Store:    st,
@@ -113,6 +142,7 @@ func openRuntime(configDir string) (Runtime, error) {
 		Hooks:    hooks.NewManager(configDir),
 		Git:      gitDriver,
 		Snapshot: st.SetSnapshot,
+		Events:   events,
 	}, nil
 }
 
@@ -127,6 +157,15 @@ func (b *Backend) Close() error {
 	b.closed = true
 	if !b.owned || !b.opened || b.runtime.Store == nil {
 		return nil
+	}
+	if dispatcher, ok := b.runtime.Events.(*lifecyclehook.Dispatcher); ok {
+		limit := b.drain
+		if limit <= 0 {
+			limit = lifecyclehook.DrainCall
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), limit)
+		dispatcher.Close(ctx)
+		cancel()
 	}
 	return b.runtime.Store.Close()
 }
@@ -180,6 +219,7 @@ func (b *Backend) commands(words Vocabulary) (*runtime, error) {
 		words:  words,
 		store:  bound.Store,
 		driver: bound.Driver,
+		events: bound.Events,
 	}, nil
 }
 

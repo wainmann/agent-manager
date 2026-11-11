@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -16,16 +17,15 @@ import (
 )
 
 type Dependencies struct {
-	Store  *store.Store
-	TMux   *tmux.Driver
-	Engine *status.Engine
-	Hooks  *hooks.Manager
-	Git    *git.Driver
-	Inbox  sessioncmd.InboxMaintenance
-	Notify func(notify.Event)
-	// ShowCommand shows a notify command the user has not seen run yet.
-	ShowCommand func(command string)
-	TakeFocus   func() (string, bool)
+	Store     *store.Store
+	TMux      *tmux.Driver
+	Engine    *status.Engine
+	Hooks     *hooks.Manager
+	Git       *git.Driver
+	Inbox     sessioncmd.InboxMaintenance
+	Notify    func(notify.Event)
+	Events    lifecyclehook.Emitter
+	TakeFocus func() (string, bool)
 }
 
 type Options struct {
@@ -74,6 +74,11 @@ type Snapshot struct {
 	// FollowWarning reports a session whose conversation the pass could not
 	// follow, the first time it fails that way.
 	FollowWarning string
+	// HookFailures and HooksConfigError are the messages panel's hook
+	// notices for this pass. A read error leaves them empty.
+	HookFailures     []store.HookFailure
+	HooksConfigError string
+	NotifyNotCarried string
 }
 
 type Result struct {
@@ -94,13 +99,9 @@ func New(deps Dependencies, opts Options) *Runner {
 	if notifyFn == nil {
 		notifyFn = func(notify.Event) {}
 	}
-	showCommandFn := deps.ShowCommand
-	if showCommandFn == nil {
-		showCommandFn = func(string) {}
-	}
 	return &Runner{
 		store: deps.Store, tmux: deps.TMux, engine: deps.Engine, hooks: deps.Hooks,
-		gitDrv: deps.Git, inboxOwner: inbox, notifyFn: notifyFn, commandFn: runNotifyCommand, showCommandFn: showCommandFn, takeFocus: deps.TakeFocus,
+		gitDrv: deps.Git, inboxOwner: inbox, notifyFn: notifyFn, events: deps.Events, takeFocus: deps.TakeFocus,
 		statusSources: opts.StatusSources, sessionStores: opts.SessionStores,
 		mcpStyles: opts.MCPStyles, reportStyles: opts.ReportStyles, shellTools: opts.ShellTools, binaries: opts.Binaries,
 		interval: interval, poke: make(chan struct{}, 1), paneHashes: map[string]uint64{},

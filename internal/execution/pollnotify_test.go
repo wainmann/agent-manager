@@ -4,13 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"sync"
 	"testing"
 	"time"
 
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -38,225 +39,68 @@ func newNotifyTestPoller(t *testing.T) (*Runner, store.Session, *notifyRecorder)
 	p, sess := newTestPollerWithSession(t)
 	rec := &notifyRecorder{}
 	p.notifyFn = rec.fn()
-	p.commandFn = func(notify.Event, string, error) {}
-	p.showCommandFn = func(string) {}
 	return p, sess, rec
 }
 
-type commandCall struct {
-	command string
-	event   notify.Event
-	readErr error
-}
-
-type commandRecorder struct {
-	mu    sync.Mutex
-	calls []commandCall
-}
-
-func (r *commandRecorder) fn() func(notify.Event, string, error) {
-	return func(event notify.Event, command string, readErr error) {
-		r.mu.Lock()
-		r.calls = append(r.calls, commandCall{command, event, readErr})
-		r.mu.Unlock()
-	}
-}
-
-func (r *commandRecorder) all() []commandCall {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]commandCall(nil), r.calls...)
-}
-
-func waitForCommands(t *testing.T, rec *commandRecorder, n int) []commandCall {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		calls := rec.all()
-		if len(calls) >= n {
-			return calls
+func envValue(env []string, name string) string {
+	prefix := name + "="
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			return strings.TrimPrefix(item, prefix)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("want %d commands, got %v", n, calls)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
+	return ""
 }
 
-func newCommandTestPoller(t *testing.T, command string) (*Runner, store.Session, *notifyRecorder, *commandRecorder) {
-	t.Helper()
-	p, sess, rec := newNotifyTestPoller(t)
-	commands := &commandRecorder{}
-	p.commandFn = commands.fn()
-	if err := p.store.SetSetting(notifyCommandSetting, command); err != nil {
-		t.Fatal(err)
-	}
-	return p, sess, rec, commands
-}
-
-// The command is additive: the native banner still goes up, and the
-// command gets the same event with the session's directory and branch.
-func TestNotifyTransitionRunsTheCommandBesideTheBanner(t *testing.T) {
-	p, sess, rec, commands := newCommandTestPoller(t, ` curl -d "$AM_BODY" ntfy.sh/topic `)
+// A status change always emits. The banner text rides along only when the
+// banner itself would fire.
+func TestEmitSessionStateSetsNotifyEnvOnlyForABanner(t *testing.T) {
+	p, sess, _ := newNotifyTestPoller(t)
+	rec := &lifecyclehook.Recorder{}
+	p.events = rec
 	sess.WorktreeBranch = "am/fix-login"
-	p.notifyTransition(sess, status.Waiting, "", "")
-	want := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: sess.Cwd, Branch: "am/fix-login"}
-	if calls := waitForCalls(t, rec, 1); calls[0] != want {
-		t.Fatalf("banner got %+v, want %+v", calls[0], want)
+	p.emitSessionState(sess, status.Waiting, status.Idle, "", "Do you want to proceed?")
+	got := rec.Events()
+	if len(got) != 1 || got[0].Name != lifecyclehook.EventSessionState || got[0].PreviousStatus != status.Idle || got[0].Session.Status != status.Waiting {
+		t.Fatalf("event = %+v", got)
 	}
-	calls := waitForCommands(t, commands, 1)
-	if calls[0].command != `curl -d "$AM_BODY" ntfy.sh/topic` || calls[0].event != want || calls[0].readErr != nil {
-		t.Fatalf("command got %+v, want the trimmed command with %+v", calls[0], want)
+	if envValue(got[0].NotifyEnv, "AM_NOTIFY_KIND") != "waiting" || !strings.Contains(envValue(got[0].NotifyEnv, "AM_BODY"), "Do you want to proceed?") {
+		t.Fatalf("notify env = %q", got[0].NotifyEnv)
 	}
-}
+	if envValue(got[0].NotifyEnv, "AM_CWD") != "" {
+		t.Fatalf("notify env should carry only the banner variables, got %q", got[0].NotifyEnv)
+	}
 
-func TestNotifyTransitionWithoutACommandRunsNone(t *testing.T) {
-	p, sess, rec, commands := newCommandTestPoller(t, "")
-	p.notifyTransition(sess, status.Waiting, "", "")
-	waitForCalls(t, rec, 1)
-	settle()
-	if calls := commands.all(); len(calls) != 0 {
-		t.Fatalf("no command is set, got %v", calls)
-	}
-}
-
-// A command the store cannot hand back is not taken for an unset one: the
-// banner still goes up, and the read failure goes where command failures
-// are logged.
-func TestNotifyTransitionReportsAnUnreadableCommand(t *testing.T) {
-	p, sess, rec, commands := newCommandTestPoller(t, "true")
-	if err := p.store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	p.notifyTransition(sess, status.Waiting, "", "")
-	waitForCalls(t, rec, 1)
-	calls := waitForCommands(t, commands, 1)
-	if calls[0].readErr == nil || calls[0].command != "" || calls[0].event.Kind != notify.Waiting {
-		t.Fatalf("want the read error handed on for the waiting event, got %+v", calls[0])
-	}
-}
-
-// The command follows the same toggles as the banner: off silences both,
-// and finished needs the opt-in.
-func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
-	p, sess, _, commands := newCommandTestPoller(t, "true")
-	p.notifyTransition(sess, status.Finished, "", "")
-	settle()
-	if calls := commands.all(); len(calls) != 0 {
-		t.Fatalf("finished without the opt-in ran %v", calls)
+	p.emitSessionState(sess, status.Finished, status.Working, "write a haiku", "")
+	if later := rec.Events(); len(later) != 2 || later[1].NotifyEnv != nil {
+		t.Fatalf("finished without the opt-in should emit with no banner text, got %+v", later)
 	}
 	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
-	p.notifyTransition(sess, status.Finished, "", "")
-	if calls := waitForCommands(t, commands, 1); calls[0].event.Kind != notify.Finished {
-		t.Fatalf("want a finished command after the opt-in, got %v", calls)
+	p.emitSessionState(sess, status.Finished, status.Working, "write a haiku", "")
+	if later := rec.Events(); envValue(later[2].NotifyEnv, "AM_NOTIFY_KIND") != "finished" {
+		t.Fatalf("opted-in finished env = %q", later[2].NotifyEnv)
 	}
 	if err := p.store.SetSetting(notificationsSetting, "off"); err != nil {
 		t.Fatal(err)
 	}
-	for _, st := range []string{status.Waiting, status.Errored, status.Finished} {
-		p.notifyTransition(sess, st, "", "")
-	}
-	settle()
-	if calls := commands.all(); len(calls) != 1 {
-		t.Fatalf("notifications off should silence the command too, got %v", calls)
-	}
-}
-
-type deliveryLog struct {
-	mu    sync.Mutex
-	steps []string
-}
-
-func (l *deliveryLog) add(step string) {
-	l.mu.Lock()
-	l.steps = append(l.steps, step)
-	l.mu.Unlock()
-}
-
-func (l *deliveryLog) wait(t *testing.T, n int) []string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		l.mu.Lock()
-		steps := slices.Clone(l.steps)
-		l.mu.Unlock()
-		if len(steps) >= n {
-			return steps
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("want %d delivery steps, got %v", n, steps)
-		}
-		time.Sleep(10 * time.Millisecond)
+	p.emitSessionState(sess, status.Waiting, status.Idle, "", "still there")
+	p.emitSessionState(sess, status.Working, status.Waiting, "", "")
+	later := rec.Events()
+	if len(later) != 5 || later[3].NotifyEnv != nil || later[4].NotifyEnv != nil {
+		t.Fatalf("a silenced banner and a working change carry no banner text, got %+v", later[3:])
 	}
 }
 
-func loggedCommandPoller(t *testing.T, command string) (*Runner, store.Session, *deliveryLog) {
-	t.Helper()
-	p, sess, _, _ := newCommandTestPoller(t, command)
-	log := &deliveryLog{}
-	p.notifyFn = func(notify.Event) { log.add("banner") }
-	p.showCommandFn = func(command string) { log.add("shown " + command) }
-	p.commandFn = func(_ notify.Event, command string, _ error) { log.add("ran " + command) }
-	return p, sess, log
-}
-
-// Nothing on screen lists the notify command, so a new one shows itself
-// on a banner before its first run, and only then.
-func TestANewNotifyCommandIsShownOnceBeforeItRuns(t *testing.T) {
-	p, sess, log := loggedCommandPoller(t, " say done ")
-	p.notifyTransition(sess, status.Waiting, "", "")
-	log.wait(t, 3)
-	p.notifyTransition(sess, status.Errored, "", "")
-	want := []string{"banner", "shown say done", "ran say done", "banner", "ran say done"}
-	if got := log.wait(t, 5); !slices.Equal(got, want) {
-		t.Fatalf("deliveries = %v, want %v", got, want)
-	}
-}
-
-// The banner follows the last command it showed, so a command swapped in
-// and back again is shown each time it changes.
-func TestAChangedNotifyCommandIsShownAgain(t *testing.T) {
-	p, sess, log := loggedCommandPoller(t, "say one")
-	steps := 0
-	for _, command := range []string{"say one", "say two", "say one"} {
-		if err := p.store.SetSetting(notifyCommandSetting, command); err != nil {
-			t.Fatal(err)
-		}
-		p.notifyTransition(sess, status.Waiting, "", "")
-		steps += 3
-		log.wait(t, steps)
-	}
-	got := log.wait(t, steps)
-	want := []string{
-		"banner", "shown say one", "ran say one",
-		"banner", "shown say two", "ran say two",
-		"banner", "shown say one", "ran say one",
-	}
-	if !slices.Equal(got, want) {
-		t.Fatalf("deliveries = %v, want %v", got, want)
-	}
-}
-
-// The shown command is stored, so another manager on the same store, or
-// this one after a restart, does not show it again.
-func TestAShownNotifyCommandStaysShownAcrossManagers(t *testing.T) {
-	p, sess, log := loggedCommandPoller(t, "say done")
-	p.notifyTransition(sess, status.Waiting, "", "")
-	log.wait(t, 3)
-	if (&Runner{store: p.store}).claimUnshownCommand("say done") {
-		t.Fatal("a second manager would show a command the first already showed")
-	}
-}
-
-func TestNoNotifyCommandShowsNoBanner(t *testing.T) {
-	p, sess, log := loggedCommandPoller(t, "")
-	p.notifyTransition(sess, status.Waiting, "", "")
-	log.wait(t, 1)
-	settle()
-	if got := log.wait(t, 1); !slices.Equal(got, []string{"banner"}) {
-		t.Fatalf("deliveries = %v, want the session banner alone", got)
+func TestEmitSessionStateSkipsAShell(t *testing.T) {
+	p, sess, _ := newNotifyTestPoller(t)
+	rec := &lifecyclehook.Recorder{}
+	p.events = rec
+	p.shellTools = map[string]bool{sess.Tool: true}
+	p.emitSessionState(sess, status.Waiting, status.Idle, "", "hello")
+	if got := rec.Events(); len(got) != 0 {
+		t.Fatalf("a shell emits nothing, got %+v", got)
 	}
 }
 
@@ -380,11 +224,11 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 }
 
 // Every manager on the server derives the same transition from the same
-// pane. The command runs from the notification, behind the same check on
-// whether this manager's write moved the stored status, so a second
-// manager polling the same pane runs nothing. The race where both read
-// the old status is the store's to settle, and its tests cover it.
-func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
+// pane. The event is behind the same check on whether this manager's
+// write moved the stored status, so a second manager polling the same
+// pane emits nothing. The race where both read the old status is the
+// store's to settle, and its tests cover it.
+func TestSessionStateEmitsOnceAcrossManagers(t *testing.T) {
 	m := buildModel(t)
 	hooked := m.cfg.Tools["claude-hooked"]
 	hooked.Command = `sh -c 'exec cat' --`
@@ -395,14 +239,11 @@ func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
 	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.SetSetting(notifyCommandSetting, "true"); err != nil {
-		t.Fatal(err)
-	}
 	second := New(Dependencies{Store: m.store, TMux: m.tmux, Engine: m.poller.engine, Hooks: m.poller.hooks, Git: m.poller.gitDrv}, OptionsFromConfig(m.cfg))
-	commands := &commandRecorder{}
+	rec := &lifecyclehook.Recorder{}
 	for _, p := range []*Runner{m.poller, second} {
 		p.notifyFn = func(notify.Event) {}
-		p.commandFn = commands.fn()
+		p.events = rec
 	}
 	statusFile := m.poller.hooks.StatusFile(sess.ID)
 	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
@@ -413,10 +254,9 @@ func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
 	}
 	m.poller.Step()
 	second.Step()
-	waitForCommands(t, commands, 1)
-	settle()
-	if calls := commands.all(); len(calls) != 1 {
-		t.Fatalf("two managers ran the command %d times: %v", len(calls), calls)
+	got := rec.Events()
+	if len(got) != 1 || got[0].Name != lifecyclehook.EventSessionState || got[0].Session.Status != status.Waiting || envValue(got[0].NotifyEnv, "AM_NOTIFY_KIND") != "waiting" {
+		t.Fatalf("two managers emitted %+v", got)
 	}
 }
 

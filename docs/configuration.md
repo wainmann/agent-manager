@@ -4,6 +4,57 @@ Everything you can change lives in Settings (`s` by default): the keys, the edit
 
 The **editor** row picks the command `o` opens a directory in (see [Opening the editor](usage.md#opening-the-editor)), and the **keybindings** row opens the [key picker](#key-bindings). Panes are polled every two seconds for status, preview, and stats.
 
+## Lifecycle hooks
+
+`hooks.toml` in the config directory runs commands after a lifecycle event is stored. There is no Settings row for it. `agent-manager hooks` prints the file, and `agent-manager hooks --json` prints the same facts as JSON. A missing file is normal and exits 0. A file the manager refuses exits 1.
+
+```toml
+schema_version = 1
+
+[[hooks.session_state]]
+command = ["sh", "-c", "curl -fsS -H \"Title: $AM_TITLE\" -d \"$AM_BODY\" https://ntfy.sh/topic"]
+events = ["waiting", "errored", "finished"]
+notify = true
+timeout = "15s"
+```
+
+`schema_version` is required and must be `1`. An empty file, a missing version, or a version this manager does not read refuses the whole file. The manager posts that reason in Messages and writes it to `hooks_config_error`. A good load clears it.
+
+Each `[[hooks.<event>]]` block names one command. The events are `session_start`, `session_state`, `session_archive`, `session_restore`, `session_kill`, `task_claim`, `task_finish`, `review_round` and `reservation_set`. `command` is an argv, with no shell unless you put one there. `timeout` defaults to 5s and must sit between 1s and 30s. `events` filters `session_state` by the new status. Empty or omitted means every status. `notify` does not decide whether the hook runs. A `notify` hook runs on the stored change, and receives `AM_NOTIFY_KIND`, `AM_TITLE` and `AM_BODY` only when the native banner would also fire.
+
+The manager writes one compact JSON line to the command's stdin.
+
+| Field | Meaning |
+| --- | --- |
+| `v` | `1` |
+| `event` | the event name |
+| `ts` | RFC3339 UTC |
+| `session` | id, name, tool, group, directory, worktree, branch, status, previous_status, conversation, spawned_by |
+| `manager` | pid and version |
+| `reason` | why this event happened, when it has one |
+| `model`, `effort` | the launch choice, on `session_start` |
+| `task` | id, title and owner, on a task event. The body is not included |
+| `reservation` | action (`reserve` or `release`), pattern, mode, expires_at, released |
+| `review` | comment_count, round and repo, on a confirmed review send |
+
+`directory` is the repository checkout when the session has a worktree, and the session directory otherwise. `worktree` is the worktree checkout when one exists, and empty otherwise. `AM_CWD` is always the session directory, which is the worktree checkout when the manager made one. A hook that `cd`s to `directory` lands in the main checkout of a worktree session. A hook that `cd`s to `AM_CWD` lands in the checkout the agent is using.
+
+The environment always carries `AM_EVENT`, `AM_SESSION_ID`, `AM_MANAGER_PID`, `AM_GROUP`, `AM_SPAWNED_BY`, `AM_SESSION_NAME`, `AM_TOOL`, `AM_CWD` and `AM_BRANCH`. The three banner variables are added only for a `notify` hook on a transition the banner would show.
+
+`session_start` reasons are `spawn` (the picker or `Sessions.Create`), `fork`, `revive`, `restart` and `restore`. `spawned_by` is set only when another session created this one through the CLI or MCP. A picker launch and a fork leave it empty. `session_kill` reasons are `kill`, `archive`, `after_turn`, `restart`, `delete` and `rollback`. A kill also emits `session_state` with status `dead`. A hook that stops a container has to treat that pair as one stop, because the poller can write `dead` as well. `restart` emits `session_kill` only when a pane was there to kill, and its `session_start` carries the new conversation id. `delete` emits `session_kill` after the row is gone, and does not emit `session_state`. `rollback` is a launch that was announced and then stopped. A launch that fails before it is announced emits nothing. Archive and restore reasons are `user` from the manager and `agent` from the CLI or MCP. `after_turn` is the reason when the session asked to be archived or killed at the end of its turn.
+
+A terminal, and any other tool with `shell` set, emits nothing. Closing a terminal's child stays silent. Acknowledging a finished session emits nothing. Releasing a task without finishing it, and a refused claim, emit nothing. A reservation renew emits `reservation_set` again. Releasing every reservation is one event with an empty pattern. A review round emits only when the send is confirmed.
+
+Four hooks run at once, across sessions. Hooks for one session stay in order, so its kill and the start that follows cannot overlap. A fifth session waits. The queue holds 64 waiting hooks and drops the rest. A dropped hook is recorded once. Each hook is at most once. A short command waits up to 12 seconds for hooks at exit, and `spawn` waits up to 45 seconds, both under the remote call limits. The manager, `serve` and the MCP server wait up to 30 seconds at shutdown and then cancel what is running and drop what has not started. The MCP handlers themselves never wait. A remote session reads the hooks file on that host. A client can report a failure when the drain hits its cap after the effect is already stored.
+
+Failures go to `hooks.log` in the config directory, mode 0600, restarted past 256 KiB, with at most 2 KiB of output. Messages shows the event, the first argument and the reason, up to eight recent lines. A new failure gets a new notice. The first time a hook is about to run, the manager posts a `New hook command` banner. A command you have already been shown stays quiet, including after a restart.
+
+The file is trusted the way a shell rc file is. It runs as you. Do not commit a file that contains a token.
+
+A `notify_command` from an older release is copied into `hooks.toml` the next time the manager or `serve` starts, as one `session_state` hook with `notify` set, a 15 second timeout, and `events` of `waiting`, `errored` and `finished`. On Unix the argv is `sh -c` and the old command. On Windows it is the PowerShell vector that release used. The JSON line on stdin is new. The old command saw only environment variables. If `hooks.toml` already exists, it is left alone and Messages shows the block to paste. Deleting a file that was written does not put `notify_command` back. Importing an old export raises the same notice when the file is already there. `settings set notify_command ''` clears the leftover. Any other value is refused.
+
+Archiving a group writes every session under that group, including one created in the moment between the list and the write. That new session is archived and gets no event. Subscribers that care about the group should read the session list again.
+
 ## Export and import
 
 Move the manager's configuration between machines with JSON files.
