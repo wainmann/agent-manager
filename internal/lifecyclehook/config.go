@@ -3,10 +3,10 @@ package lifecyclehook
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -61,9 +61,6 @@ func Load(dir string) (File, error) {
 		return File{Path: path, Found: true}, fmt.Errorf("hooks.toml: %w", err)
 	}
 	file := File{Path: path, Found: true}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return file, errors.New("hooks.toml: schema_version is required")
-	}
 	var doc document
 	meta, err := toml.Decode(string(data), &doc)
 	if err != nil {
@@ -80,8 +77,8 @@ func Load(dir string) (File, error) {
 	if err != nil {
 		return file, err
 	}
-	if err := unknownKeys(&meta); err != nil {
-		return file, err
+	if unknown := meta.Undecoded(); len(unknown) > 0 {
+		return file, fmt.Errorf("hooks.toml: unknown key %q", unknown[0].String())
 	}
 	file.Hooks = hooks
 	return file, nil
@@ -91,25 +88,9 @@ func hooksPath(dir string) string {
 	return filepath.Join(dir, HooksFile)
 }
 
-func unknownKeys(meta *toml.MetaData) error {
-	for _, key := range meta.Undecoded() {
-		return fmt.Errorf("hooks.toml: unknown key %q", key.String())
-	}
-	return nil
-}
-
 func decodeHooks(meta *toml.MetaData, raw map[string]toml.Primitive) ([]Hook, error) {
-	known := map[string]bool{}
-	for _, name := range EventNames() {
-		known[name] = true
-	}
-	var names []string
-	for name := range raw {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	for _, name := range names {
-		if !known[name] {
+	for _, name := range slices.Sorted(maps.Keys(raw)) {
+		if !slices.Contains(EventNames(), name) {
 			return nil, fmt.Errorf("hooks.toml: unknown event %q", name)
 		}
 	}
@@ -157,7 +138,7 @@ func (raw rawHook) toHook(meta *toml.MetaData, event string) (Hook, error) {
 		return Hook{}, fmt.Errorf("hooks.toml: hooks.%s: events and notify are only valid on session_state", event)
 	}
 	for _, name := range raw.Events {
-		if !knownStatus(name) {
+		if !slices.Contains(StatusNames(), name) {
 			return Hook{}, fmt.Errorf("hooks.toml: hooks.%s: unknown status %q", event, name)
 		}
 	}
@@ -172,7 +153,7 @@ func (raw rawHook) toHook(meta *toml.MetaData, event string) (Hook, error) {
 		}
 		timeout = parsed
 	}
-	return Hook{Event: event, Command: command, Events: append([]string(nil), raw.Events...), Notify: raw.Notify, Timeout: timeout}, nil
+	return Hook{Event: event, Command: command, Events: raw.Events, Notify: raw.Notify, Timeout: timeout}, nil
 }
 
 func decodeCommand(meta *toml.MetaData, event string, prim toml.Primitive) ([]string, error) {
@@ -188,10 +169,6 @@ func decodeCommand(meta *toml.MetaData, event string, prim toml.Primitive) ([]st
 		return nil, fmt.Errorf("hooks.toml: hooks.%s.command is empty", event)
 	}
 	return argv, nil
-}
-
-func knownStatus(name string) bool {
-	return slices.Contains(StatusNames(), name)
 }
 
 func match(hook Hook, ev Event) bool {

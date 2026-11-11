@@ -59,11 +59,11 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 	}
 	pending := pendingPrefix + command
 	info, statErr := os.Stat(hooksPath(dir))
-	exists := statErr == nil && !info.IsDir()
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
-	if info != nil && info.IsDir() {
+	exists := statErr == nil
+	if exists && info.IsDir() {
 		return fmt.Errorf("hooks.toml: %s is a directory", hooksPath(dir))
 	}
 	if exists && marker == pending {
