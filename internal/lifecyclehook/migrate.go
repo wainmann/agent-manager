@@ -66,6 +66,10 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 	if info != nil && info.IsDir() {
 		return fmt.Errorf("hooks.toml: %s is a directory", hooksPath(dir))
 	}
+	if exists && marker == pending {
+		_, err := st.SwapSetting(store.NotifyCommandMigratedKey, pending, command)
+		return err
+	}
 	if exists {
 		return noticeExisting(st, command, marker)
 	}

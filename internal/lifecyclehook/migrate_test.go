@@ -159,6 +159,36 @@ func TestMigrateResumeAfterAPendingMarker(t *testing.T) {
 	}
 }
 
+func TestMigrateFinishesAPendingWriteWithoutANotice(t *testing.T) {
+	dir := t.TempDir()
+	st := openStore(t)
+	command := "echo written"
+	if err := st.SetSetting(store.NotifyCommandKey, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(store.NotifyCommandMigratedKey, pendingPrefix+command); err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := migratedDocument(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, HooksFile), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateNotifyCommand(dir, st); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.Setting(store.NotifyCommandMigratedKey)
+	if err != nil || marker != command {
+		t.Fatalf("marker = %q, %v", marker, err)
+	}
+	notice, err := st.Setting(store.NotifyCommandNotCarriedKey)
+	if err != nil || notice != "" {
+		t.Fatalf("a file this migration wrote raised the not-carried notice: %q, %v", notice, err)
+	}
+}
+
 func TestTwoStoresMigrateOneFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.db")
@@ -196,5 +226,8 @@ func TestTwoStoresMigrateOneFile(t *testing.T) {
 	marker, err := st1.Setting(store.NotifyCommandMigratedKey)
 	if err != nil || marker != "echo once" {
 		t.Fatalf("marker = %q, %v", marker, err)
+	}
+	if notice, err := st1.Setting(store.NotifyCommandNotCarriedKey); err != nil || notice != "" {
+		t.Fatalf("racing migrations raised the not-carried notice: %q, %v", notice, err)
 	}
 }
