@@ -90,6 +90,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			want: "killed api-worker (id beef1234)",
 		},
 		{
+			name: "delete names what it removed",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runDelete(out, f, args, "cafe0001")
+			},
+			args: []string{"beef1234"},
+			want: "deleted api-worker (id beef1234) running claude in api",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || f.callerID != "cafe0001" {
+					t.Fatalf("delete got target %q as %q", f.targetID, f.callerID)
+				}
+			},
+		},
+		{
 			name: "revive names what it brought back",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runRevive(out, f, args, "cafe0001")
@@ -235,6 +248,32 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				testCase.inspect(t, fake)
 			}
 		})
+	}
+}
+
+// A delete that kept a shared worktree says so on its own line, and --json
+// carries the same notice for a script to read.
+func TestDeletePrintsTheNoticeAndTheRecord(t *testing.T) {
+	notice := "worktree kept (used by another session): /repo"
+	out := &bytes.Buffer{}
+	if err := runDelete(out, &fakeSessions{session: sampleSession(), notice: notice}, []string{"beef1234"}, "cafe0001"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 2 ||
+		!strings.HasPrefix(lines[0], "deleted api-worker (id beef1234)") || lines[1] != notice {
+		t.Fatalf("delete printed %q", out.String())
+	}
+
+	out.Reset()
+	if err := runDelete(out, &fakeSessions{session: sampleSession(), notice: notice}, []string{"beef1234", "--json"}, "cafe0001"); err != nil {
+		t.Fatalf("delete --json: %v", err)
+	}
+	var deleted sessioncmd.Deletion
+	if err := json.Unmarshal(out.Bytes(), &deleted); err != nil {
+		t.Fatalf("delete --json is not JSON: %v (%q)", err, out.String())
+	}
+	if deleted.ID != "beef1234" || deleted.Name != "api-worker" || deleted.Notice != notice {
+		t.Fatalf("delete --json = %+v", deleted)
 	}
 }
 

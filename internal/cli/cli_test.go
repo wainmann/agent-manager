@@ -44,6 +44,7 @@ type fakeSessions struct {
 	note      string
 	ttl       time.Duration
 	deleted   bool
+	notice    string
 
 	session   sessioncmd.Session
 	wait      sessioncmd.WaitResult
@@ -125,7 +126,7 @@ func (f *fakeSessions) Kill(sessionID, targetID string) (sessioncmd.Session, err
 
 func (f *fakeSessions) Delete(sessionID, targetID string) (sessioncmd.Deletion, error) {
 	f.callerID, f.targetID = sessionID, targetID
-	return sessioncmd.Deletion{Session: f.session}, f.failWith
+	return sessioncmd.Deletion{Session: f.session, Notice: f.notice}, f.failWith
 }
 
 func (f *fakeSessions) Revive(sessionID, targetID string) (sessioncmd.Session, error) {

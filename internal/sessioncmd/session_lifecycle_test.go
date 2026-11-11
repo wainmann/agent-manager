@@ -434,6 +434,39 @@ func TestSessionsDeleteRefusesAWorktreeWithUnsavedWork(t *testing.T) {
 	refused("commits on " + created.Branch)
 }
 
+// A worktree another session still works in is that session's too, so the
+// delete leaves it and its branch, and says why.
+func TestSessionsDeleteKeepsAWorktreeAnotherSessionUses(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	owner, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "first-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create owner: %v", err)
+	}
+	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "successor", Directory: owner.Directory}); err != nil {
+		t.Fatalf("Create successor: %v", err)
+	}
+	deleted, err := h.sessions.Delete(h.caller.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if want := "worktree kept (used by another session): " + owner.Directory; deleted.Notice != want {
+		t.Fatalf("notice = %q, want %q", deleted.Notice, want)
+	}
+	if _, err := h.store.Get(owner.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if _, err := os.Stat(owner.Directory); err != nil {
+		t.Fatalf("a shared worktree must stay: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+owner.Branch)
+	branch.Dir = repo
+	if err := branch.Run(); err != nil {
+		t.Fatalf("branch %s of a shared worktree must stay: %v", owner.Branch, err)
+	}
+}
+
 func TestSessionsDeleteRefusesItsOwnCaller(t *testing.T) {
 	h := newSessionHarness(t)
 	if _, err := h.sessions.Delete(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
