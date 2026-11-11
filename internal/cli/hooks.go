@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 const usageHooks = "hooks [--json]"
@@ -30,13 +32,13 @@ func hooksSection() section {
 }
 
 type hooksReport struct {
-	Path          string        `json:"path"`
-	Found         bool          `json:"found"`
-	Error         string        `json:"error"`
-	SchemaVersion int           `json:"schema_version"`
-	Events        []string      `json:"events"`
-	Hooks         []hookView    `json:"hooks"`
-	Failures      []hookFailure `json:"failures"`
+	Path          string              `json:"path"`
+	Found         bool                `json:"found"`
+	Error         string              `json:"error"`
+	SchemaVersion int                 `json:"schema_version"`
+	Events        []string            `json:"events"`
+	Hooks         []hookView          `json:"hooks"`
+	Failures      []store.HookFailure `json:"failures"`
 }
 
 type hookView struct {
@@ -46,13 +48,6 @@ type hookView struct {
 	Notify  bool     `json:"notify"`
 	Timeout string   `json:"timeout"`
 	Shown   bool     `json:"shown"`
-}
-
-type hookFailure struct {
-	At      time.Time `json:"at"`
-	Event   string    `json:"event"`
-	Command string    `json:"command"`
-	Reason  string    `json:"reason"`
 }
 
 func runHooks(out io.Writer, args []string, configDir string) error {
@@ -68,7 +63,6 @@ func runHooks(out io.Writer, args []string, configDir string) error {
 		SchemaVersion: loaded.SchemaVersion,
 		Events:        lifecyclehook.EventNames(),
 		Hooks:         []hookView{},
-		Failures:      []hookFailure{},
 	}
 	if loadErr != nil {
 		report.Error = loadErr.Error()
@@ -82,10 +76,6 @@ func runHooks(out io.Writer, args []string, configDir string) error {
 	if err != nil {
 		return err
 	}
-	seen := map[string]bool{}
-	for _, fingerprint := range shown {
-		seen[fingerprint] = true
-	}
 	for _, hook := range loaded.Hooks {
 		events := hook.Events
 		if events == nil {
@@ -97,17 +87,15 @@ func runHooks(out io.Writer, args []string, configDir string) error {
 			Events:  events,
 			Notify:  hook.Notify,
 			Timeout: hook.Timeout.String(),
-			Shown:   seen[lifecyclehook.Fingerprint(hook.Event, hook.Command)],
+			Shown:   slices.Contains(shown, lifecyclehook.Fingerprint(hook.Event, hook.Command)),
 		})
 	}
-	failures, err := st.HookFailures()
+	report.Failures, err = st.HookFailures()
 	if err != nil {
 		return err
 	}
-	for _, failure := range failures {
-		report.Failures = append(report.Failures, hookFailure{
-			At: failure.At, Event: failure.Event, Command: failure.Command, Reason: failure.Reason,
-		})
+	if report.Failures == nil {
+		report.Failures = []store.HookFailure{}
 	}
 	var human string
 	if !*asJSON {
