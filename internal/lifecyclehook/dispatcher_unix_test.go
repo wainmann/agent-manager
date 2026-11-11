@@ -13,11 +13,9 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 func TestDispatcherKillsTheHookTreeAtTheTimeout(t *testing.T) {
-	testenv.SkipPOSIXShell(t)
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	hook := script(t, "sleep 30 &\necho $! > "+quote(pidFile)+"\nwait\n")

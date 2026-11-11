@@ -187,11 +187,6 @@ func TestLifecycleHooksCoverReviveRestartArchiveRestoreDeleteAndAfterTurn(t *tes
 	if len(got) != 1 || got[0].Name != lifecyclehook.EventSessionKill || got[0].Reason != lifecyclehook.ReasonDelete {
 		t.Fatalf("delete events = %v", eventNames(got))
 	}
-	for _, ev := range got {
-		if ev.Name == lifecyclehook.EventSessionState {
-			t.Fatal("delete also emitted session_state")
-		}
-	}
 }
 
 func TestLifecycleHooksArchiveAGroup(t *testing.T) {

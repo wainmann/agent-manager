@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -151,7 +152,6 @@ printf 'done\n' > `+quote(done)+`
 	if fileExists(done) {
 		t.Fatal("the long hook finished after close")
 	}
-	time.Sleep(100 * time.Millisecond)
 	if countLines(started) != 1 {
 		t.Fatalf("a queued hook started after close:\n%s", readFile(t, started))
 	}
@@ -180,8 +180,10 @@ func TestDispatcherFailureIsOnceAndPrivate(t *testing.T) {
 	d, st := openDispatcher(t, dir)
 	d.Emit(sessionEvent("s", status.Errored))
 	d.Emit(sessionEvent("s", status.Errored))
-	waitUntil(t, func() bool { return countLines(count) >= 2 })
-	time.Sleep(50 * time.Millisecond)
+	closeDispatcher(d, 3*time.Second)
+	if countLines(count) != 2 {
+		t.Fatalf("the hook ran %d times, want one run per event", countLines(count))
+	}
 	failures, err := st.HookFailures()
 	if err != nil {
 		t.Fatal(err)
@@ -234,9 +236,6 @@ func TestDispatcherGatesNotifyAndStatus(t *testing.T) {
 	ev.NotifyEnv = []string{"AM_NOTIFY_KIND=waiting", "AM_TITLE=Hello", "AM_BODY=Need you"}
 	d.Emit(ev)
 	waitUntil(t, func() bool { return fileExists(gate) && readFile(t, notified) == "Need you\n" })
-	if readFile(t, notified) != "Need you\n" {
-		t.Fatalf("notify body = %q", readFile(t, notified))
-	}
 }
 
 func TestDispatcherPassesLiteralArgumentsAndStdin(t *testing.T) {
@@ -300,11 +299,7 @@ func TestDispatcherShowsAHookOnce(t *testing.T) {
 		shown = append(shown, text)
 		mu.Unlock()
 	}})
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		d.Close(ctx)
-		cancel()
-	})
+	t.Cleanup(func() { closeDispatcher(d, 2*time.Second) })
 	d.Emit(sessionEvent("s", status.Waiting))
 	d.Emit(sessionEvent("s", status.Waiting))
 	waitUntil(t, func() bool {
@@ -312,21 +307,14 @@ func TestDispatcherShowsAHookOnce(t *testing.T) {
 		defer mu.Unlock()
 		return len(shown) >= 1
 	})
-	time.Sleep(40 * time.Millisecond)
-	mu.Lock()
-	got := append([]string(nil), shown...)
-	mu.Unlock()
-	if len(got) != 1 || !strings.HasPrefix(got[0], EventSessionState+": ") {
-		t.Fatalf("shown = %q", got)
-	}
-	other := script(t, "printf 'changed\\n'\nexit 0\n")
+	other := script(t, "exit 0\n")
 	writeHooks(t, dir, EventSessionState, []string{other}, "# changed\n")
 	d.Emit(sessionEvent("s", status.Waiting))
-	waitUntil(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(shown) >= 2
-	})
+	closeDispatcher(d, 2*time.Second)
+	want := []string{EventSessionState + ": " + hook, EventSessionState + ": " + other}
+	if !slices.Equal(shown, want) {
+		t.Fatalf("shown = %q, want %q", shown, want)
+	}
 }
 
 func TestTwoDispatchersEachRecordOneFailure(t *testing.T) {
@@ -340,9 +328,7 @@ func TestTwoDispatchersEachRecordOneFailure(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		for _, d := range dispatchers {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			d.Close(ctx)
-			cancel()
+			closeDispatcher(d, 2*time.Second)
 		}
 	})
 	dispatchers[0].Emit(Event{Name: EventSessionKill, Session: store.Session{ID: "a"}})
@@ -357,12 +343,14 @@ func openDispatcher(t *testing.T, dir string) (*Dispatcher, *store.Store) {
 	t.Helper()
 	st := openStore(t)
 	d := New(Options{ConfigDir: dir, Store: st, Version: "test"})
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		d.Close(ctx)
-		cancel()
-	})
+	t.Cleanup(func() { closeDispatcher(d, 3*time.Second) })
 	return d, st
+}
+
+func closeDispatcher(d *Dispatcher, limit time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	d.Close(ctx)
 }
 
 func openStore(t *testing.T) *store.Store {
