@@ -76,6 +76,39 @@ func TestHookErroredHoldsOverTheFailedTurnSummary(t *testing.T) {
 	}
 }
 
+// The turn that launched a background agent ends on a wait line, and the
+// agent's report wakes the main agent while the agent still runs, so that
+// turn prints no summary of its own. Once the agent ends the hook holds the
+// last Stop's finished, which the stale wait line must not overrule.
+func TestHookFinishedHoldsOnceBackgroundAgentsEnd(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	m.poller.statusSources["claude"] = hooks.StatusSourceClaude
+	sess := store.Session{ID: "hooked-drained", Tool: "claude", Status: status.Working}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	// real captures, Claude Code 2.1.322
+	wait := "● Agent(Run three sleeps)\n  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)\n\n● launched\n\n" +
+		"✻ Waiting for 1 background agent to finish\n\n"
+	rest := "────\n❯ Is the agent done yet?\n────\n  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)"
+	running := wait + rest + "\n  ● main\n  ◯ general-purpose  Running sleep 20 in Bash      32s · ↓ 34.8k tokens"
+	ended := wait + "› Message from @general-purpose (ctrl+o to expand)\n\n" +
+		"● The background agent finished and reported \"bg done\". It ran the sleep 20 command three times.\n\n" +
+		"● Agent \"Run three sleeps\" finished · 1m 7s\n\n" +
+		"● full  $0.22  last $0.04  8s                                Review  Audit  Board  Details [-]\n\n" + rest
+
+	if got := deriveStatus(t, m, sess, running, true); got != status.Working {
+		t.Fatalf("agent still running = %q, want working", got)
+	}
+	if got := deriveStatus(t, m, sess, ended, true); got != status.Finished {
+		t.Fatalf("agent ended = %q, want finished", got)
+	}
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, ended, true); got != status.Idle {
+		t.Fatalf("agent ended, acked = %q, want idle", got)
+	}
+}
+
 // Text that only reads like a failure, in a tool result, a quote or a
 // submitted prompt, must not turn a successful turn errored.
 func TestHookFinishedHoldsOverQuotedSignedOutText(t *testing.T) {

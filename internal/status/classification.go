@@ -2,6 +2,7 @@ package status
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -45,10 +46,12 @@ func (e *Engine) TypingHold(tool, pane string) string {
 // outlives it. Background agents keep going after the turn that spawned
 // them ends, and the line saying so carries the same shape as a turn-end
 // summary, so turnState would otherwise read the turn as over while the
-// session is still busy. Only a turn that ended below the busy line proves
-// that work drained; transient banners under it say nothing either way.
-// Without turn_end there is no later turn to read, so the line stands until
-// the tool stops drawing it.
+// session is still busy. A turn that ended below the busy line proves that
+// work drained, and so does a busy_done line for every unit it counts: the
+// turn a unit's report wakes can end before the unit does, and then nothing
+// newer than its end line follows. Transient banners under it say nothing
+// either way. Without turn_end there is no later turn to read, so the line
+// stands until the tool stops drawing it.
 func (tr toolRules) isBusy(pane string) bool {
 	if tr.busyLine == nil {
 		return false
@@ -59,12 +62,39 @@ func (tr toolRules) isBusy(pane string) bool {
 	}
 	lines := strings.Split(region, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if !tr.busyLine.MatchString(unwrapped(lines, i)) {
+		counts := tr.busyLine.FindStringSubmatch(unwrapped(lines, i))
+		if counts == nil {
 			continue
 		}
-		return tr.turnEnd == nil || tr.lastTurnEndIndex(lines) <= i
+		if tr.turnEnd != nil && tr.lastTurnEndIndex(lines) > i {
+			return false
+		}
+		return !tr.drained(counts[1:], lines[i+1:])
 	}
 	return false
+}
+
+// drained reports whether the units a busy line counts have each printed
+// their busy_done line below it. A busy line that counts nothing never
+// drains this way.
+func (tr toolRules) drained(counts, below []string) bool {
+	if tr.busyDone == nil {
+		return false
+	}
+	pending := 0
+	for _, count := range counts {
+		n, _ := strconv.Atoi(count) // a group that took no part counts 0
+		pending += n
+	}
+	if pending == 0 {
+		return false
+	}
+	for _, line := range below {
+		if tr.busyDone.MatchString(line) {
+			pending--
+		}
+	}
+	return pending <= 0
 }
 
 // matchScope narrows rule matching to the current turn: the text after

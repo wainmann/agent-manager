@@ -220,6 +220,26 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Waiting for 2 background agents to finish\n※ recap: goal was X; next is Y.\n────\n❯ \n────", Working},
 		{"claude background wait superseded by a newer turn", "claude",
 			"✻ Waiting for 2 background agents to finish\n⏺ all agents reported\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		// 2026-11-11 real captures (Claude Code 2.1.322): an agent's report
+		// wakes the main agent before the agent ends, so that turn prints no
+		// summary, and the agent's own end prints only its finished line.
+		{"claude one of two background agents finished (real capture)", "claude",
+			"✻ Waiting for 2 background agents to finish\n› Message from @general-purpose (ctrl+o to expand)\n" +
+				"● Agent A reported \"A done\".\n● Agent \"Run one sleep\" finished · 9s\n────\n❯ \n────\n" +
+				"  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · /tasks to see subagents\n  ● main\n" +
+				"  ◯ general-purpose  Run three sleeps                                   22s · ↓ 29.7k tokens", Working},
+		{"claude every background agent finished (real capture)", "claude",
+			"● launched\n✻ Waiting for 1 background agent to finish\n› Message from @general-purpose (ctrl+o to expand)\n" +
+				"● The background agent finished and reported \"bg done\". It ran the sleep 20 command three times.\n" +
+				"● Agent \"Run three sleeps\" finished · 1m 7s\n" +
+				"────\n❯ Is the agent done yet?\n────\n  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)", Idle},
+		{"claude last of two background agents finished (real capture)", "claude",
+			"✻ Waiting for 2 background agents to finish\n● Agent \"Run one sleep\" finished · 9s\n" +
+				"● Agent B reported \"B done\".\n✻ Waiting for 1 background agent to finish\n" +
+				"● Agent \"Run three sleeps\" finished · 1m 7s\n────\n❯ \n────", Idle},
+		{"claude background agent finished, its workflow still running", "claude",
+			"✻ Waiting for 1 background agent and 1 dynamic workflow to finish\n" +
+				"● Agent \"Run 60s sleep\" finished · 1m 2s\n────\n❯ \n────", Working},
 		// 2026-10-05 real captures (Claude Code 2.1.289): a dynamic workflow
 		// outlives its turn the way a background agent does, and the wait
 		// line names both when both are pending.

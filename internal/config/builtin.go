@@ -65,7 +65,12 @@ dialog_question = "(?m)^ (?:Quick safety check: )?((?:Do you want|Is this a proj
 # moved to the background ("· 1 MCP task still running"). Shells and
 # monitors can outlive their use, so they do not count, and neither does a
 # mixed "· 2 background tasks still running", which names no kind.
-busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
+# The groups count agents and workflows, which each print a line when they
+# end ("● Agent "Run tests" finished · 9s", "⏺ Dynamic workflow "…" completed");
+# the line is redrawn only when the count changes, so an agent whose report
+# woke the main agent can end after that turn with no newer summary below.
+busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for (\\d+) (?:background agents?(?: and (\\d+) dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
+busy_done = "^[●⏺] (?:Agent|Dynamic workflow) \""
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
