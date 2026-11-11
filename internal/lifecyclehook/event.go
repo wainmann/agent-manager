@@ -108,8 +108,7 @@ type Event struct {
 	Conversation    string
 	UseConversation bool
 	// NotifyEnv is AM_NOTIFY_KIND, AM_TITLE and AM_BODY when the banner
-	// gates passed. A notify hook still runs when this is nil. It then
-	// gets none of those three variables.
+	// fired. A notify hook runs only when it is set.
 	NotifyEnv   []string
 	Task        *TaskInfo
 	Reservation *ReservationInfo

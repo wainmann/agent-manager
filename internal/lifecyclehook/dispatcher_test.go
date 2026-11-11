@@ -211,31 +211,37 @@ func TestDispatcherGatesNotifyAndStatus(t *testing.T) {
 	dir := t.TempDir()
 	gate := filepath.Join(dir, "gate")
 	notified := filepath.Join(dir, "notified")
+	changes := filepath.Join(dir, "changes")
 	barrier := filepath.Join(dir, "barrier")
 	gateHook := script(t, "printf 'gate\\n' > "+quote(gate)+"\n")
-	notifyHook := script(t, "printf '%s\\n' \"$AM_BODY\" > "+quote(notified)+"\n")
+	notifyHook := script(t, "printf '%s\\n' \"$AM_BODY\" >> "+quote(notified)+"\n")
+	changeHook := script(t, "printf '%s\\n' \"$AM_BODY\" >> "+quote(changes)+"\n")
 	barrierHook := script(t, "printf 'barrier\\n' > "+quote(barrier)+"\n")
 	text := "schema_version = 1\n" +
 		"[[hooks.session_state]]\ncommand = [" + strconv.Quote(gateHook) + "]\nevents = [\"waiting\"]\n" +
 		"[[hooks.session_state]]\ncommand = [" + strconv.Quote(notifyHook) + "]\nnotify = true\n" +
+		"[[hooks.session_state]]\ncommand = [" + strconv.Quote(changeHook) + "]\n" +
 		"[hooks.session_kill]\ncommand = [" + strconv.Quote(barrierHook) + "]\n"
 	if err := os.WriteFile(filepath.Join(dir, HooksFile), []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	d, _ := openDispatcher(t, dir)
 	d.Emit(sessionEvent("s", status.Working))
-	d.Emit(Event{Name: EventSessionKill, Session: store.Session{ID: "s", Status: status.Dead}})
-	waitUntil(t, func() bool { return readFile(t, barrier) != "" && readFile(t, notified) != "" })
-	if fileExists(gate) {
-		t.Fatal("the events filter let a working transition through")
-	}
-	if readFile(t, notified) != "\n" {
-		t.Fatalf("notify hook without a banner body = %q", readFile(t, notified))
-	}
+	d.Emit(sessionEvent("s", status.Waiting))
 	ev := sessionEvent("s", status.Waiting)
 	ev.NotifyEnv = []string{"AM_NOTIFY_KIND=waiting", "AM_TITLE=Hello", "AM_BODY=Need you"}
 	d.Emit(ev)
-	waitUntil(t, func() bool { return fileExists(gate) && readFile(t, notified) == "Need you\n" })
+	d.Emit(Event{Name: EventSessionKill, Session: store.Session{ID: "s", Status: status.Dead}})
+	waitUntil(t, func() bool { return readFile(t, barrier) != "" })
+	if !fileExists(gate) {
+		t.Fatal("the events filter dropped a waiting transition")
+	}
+	if got := readFile(t, notified); got != "Need you\n" {
+		t.Fatalf("a notify hook runs only when the banner fired, got %q", got)
+	}
+	if got := readFile(t, changes); got != "\n\n\n" {
+		t.Fatalf("a hook without notify runs on every change with no banner text, got %q", got)
+	}
 }
 
 func TestDispatcherPassesLiteralArgumentsAndStdin(t *testing.T) {

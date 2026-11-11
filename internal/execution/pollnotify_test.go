@@ -53,16 +53,17 @@ func envValue(env []string, name string) string {
 }
 
 // A status change always emits. The banner text rides along only when the
-// banner itself would fire.
-func TestEmitSessionStateSetsNotifyEnvOnlyForABanner(t *testing.T) {
+// banner fired, since notify hooks run only then.
+func TestEmitSessionStateSetsNotifyEnvOnlyWhenTheBannerFired(t *testing.T) {
 	p, sess, _ := newNotifyTestPoller(t)
 	rec := &lifecyclehook.Recorder{}
 	p.events = rec
-	sess.WorktreeBranch = "am/fix-login"
-	p.emitSessionState(sess, status.Waiting, status.Idle, "", "Do you want to proceed?")
+	banner := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Text: "Do you want to proceed?"}
+	p.emitSessionState(sess, status.Waiting, status.Idle, banner, true)
+	p.emitSessionState(sess, status.Working, status.Waiting, notify.Event{}, false)
 	got := rec.Events()
-	if len(got) != 1 || got[0].Name != lifecyclehook.EventSessionState || got[0].PreviousStatus != status.Idle || got[0].Session.Status != status.Waiting {
-		t.Fatalf("event = %+v", got)
+	if len(got) != 2 || got[0].Name != lifecyclehook.EventSessionState || got[0].PreviousStatus != status.Idle || got[0].Session.Status != status.Waiting {
+		t.Fatalf("events = %+v", got)
 	}
 	if envValue(got[0].NotifyEnv, "AM_NOTIFY_KIND") != "waiting" || !strings.Contains(envValue(got[0].NotifyEnv, "AM_BODY"), "Do you want to proceed?") {
 		t.Fatalf("notify env = %q", got[0].NotifyEnv)
@@ -70,26 +71,60 @@ func TestEmitSessionStateSetsNotifyEnvOnlyForABanner(t *testing.T) {
 	if envValue(got[0].NotifyEnv, "AM_CWD") != "" {
 		t.Fatalf("notify env should carry only the banner variables, got %q", got[0].NotifyEnv)
 	}
+	if got[1].NotifyEnv != nil {
+		t.Fatalf("a change with no banner carries no banner text, got %q", got[1].NotifyEnv)
+	}
+}
 
-	p.emitSessionState(sess, status.Finished, status.Working, "write a haiku", "")
-	if later := rec.Events(); len(later) != 2 || later[1].NotifyEnv != nil {
-		t.Fatalf("finished without the opt-in should emit with no banner text, got %+v", later)
+// The poller hands notify hooks the banner it fired, so with banners
+// silenced the status change is still emitted but carries no banner.
+func TestSessionStateCarriesTheBannerOnlyWhenItFires(t *testing.T) {
+	m := buildModel(t)
+	hooked := m.cfg.Tools["claude-hooked"]
+	if runtime.GOOS != "windows" {
+		hooked.Command = `sh -c 'exec cat' --`
 	}
-	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
+	m.cfg.Tools["claude-hooked"] = hooked
+	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
+	sess := m.sessionRows()[0]
+	waitForPane(t, m, sess.ID, "boot-marker")
+	banners := &notifyRecorder{}
+	m.poller.notifyFn = banners.fn()
+	events := &lifecyclehook.Recorder{}
+	m.poller.events = events
+	statusFile := m.poller.hooks.StatusFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	p.emitSessionState(sess, status.Finished, status.Working, "write a haiku", "")
-	if later := rec.Events(); envValue(later[2].NotifyEnv, "AM_NOTIFY_KIND") != "finished" {
-		t.Fatalf("opted-in finished env = %q", later[2].NotifyEnv)
-	}
-	if err := p.store.SetSetting(notificationsSetting, "off"); err != nil {
+	if err := os.WriteFile(statusFile, []byte(status.Waiting), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p.emitSessionState(sess, status.Waiting, status.Idle, "", "still there")
-	p.emitSessionState(sess, status.Working, status.Waiting, "", "")
-	later := rec.Events()
-	if len(later) != 5 || later[3].NotifyEnv != nil || later[4].NotifyEnv != nil {
-		t.Fatalf("a silenced banner and a working change carry no banner text, got %+v", later[3:])
+	enterWaiting := func() {
+		t.Helper()
+		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+			t.Fatal(err)
+		}
+		m.poller.Step()
+	}
+
+	enterWaiting()
+	waitForCalls(t, banners, 1)
+	got := events.Events()
+	if len(got) != 1 || got[0].Session.Status != status.Waiting || envValue(got[0].NotifyEnv, "AM_NOTIFY_KIND") != "waiting" {
+		t.Fatalf("banner on: events = %+v", got)
+	}
+
+	if err := m.store.SetSetting(notificationsSetting, "off"); err != nil {
+		t.Fatal(err)
+	}
+	enterWaiting()
+	settle()
+	got = events.Events()
+	if len(got) != 2 || got[1].Session.Status != status.Waiting || got[1].NotifyEnv != nil {
+		t.Fatalf("banner off: the change is emitted with no banner, got %+v", got)
+	}
+	if calls := banners.all(); len(calls) != 1 {
+		t.Fatalf("banner off: no new banner, got %v", calls)
 	}
 }
 
@@ -98,7 +133,7 @@ func TestEmitSessionStateSkipsAShell(t *testing.T) {
 	rec := &lifecyclehook.Recorder{}
 	p.events = rec
 	p.shellTools = map[string]bool{sess.Tool: true}
-	p.emitSessionState(sess, status.Waiting, status.Idle, "", "hello")
+	p.emitSessionState(sess, status.Waiting, status.Idle, notify.Event{}, false)
 	if got := rec.Events(); len(got) != 0 {
 		t.Fatalf("a shell emits nothing, got %+v", got)
 	}

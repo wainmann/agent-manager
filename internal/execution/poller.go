@@ -539,10 +539,12 @@ func (p *Runner) step(ctx context.Context) Result {
 			// A claim or a delivery can move the stored status while the
 			// listed row already matches, and that move is announced too.
 			if written && changed {
-				p.emitSessionState(sess, newStatus, previous, panePrompts[sess.ID], paneLastLines[sess.ID])
+				var banner notify.Event
+				fired := false
 				if newStatus != sess.Status {
-					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
+					banner, fired = p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
+				p.emitSessionState(sess, newStatus, previous, banner, fired)
 			}
 		}
 		if observed {

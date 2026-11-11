@@ -178,5 +178,5 @@ func match(hook Hook, ev Event) bool {
 	if len(hook.Events) > 0 && !slices.Contains(hook.Events, ev.Session.Status) {
 		return false
 	}
-	return true
+	return !hook.Notify || ev.NotifyEnv != nil
 }

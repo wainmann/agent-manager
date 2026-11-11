@@ -19,21 +19,22 @@ import (
 // There is no focus gate: the poll cannot tell whether the user is looking
 // at the manager, and the session they are watching is precisely the one
 // whose ping they must not miss. The banner quotes what the row shows:
-// a waiting session's question, a finished session's prompt.
-func (p *Runner) notifyTransition(sess store.Session, newStatus, prompt, quote string) {
+// a waiting session's question, a finished session's prompt. It reports
+// the banner it fired, so notify hooks run on exactly the same decision.
+func (p *Runner) notifyTransition(sess store.Session, newStatus, prompt, quote string) (notify.Event, bool) {
 	event, ok := p.attention(sess, newStatus, prompt, quote)
 	if !ok || p.notifyFn == nil {
-		return
+		return notify.Event{}, false
 	}
 	// Delivery can wait on an external process, so it must never run
 	// inside refreshOnce, which holds runMu.
 	go p.notifyFn(event)
+	return event, true
 }
 
-// emitSessionState reports one stored status change. A notify hook runs
-// for the change itself. NotifyEnv is set only when the banner would
-// also fire, and that is the only time the hook receives the banner text.
-func (p *Runner) emitSessionState(sess store.Session, newStatus, previous, prompt, quote string) {
+// emitSessionState reports one stored status change. NotifyEnv is set only
+// when the banner fired, and notify hooks run only then.
+func (p *Runner) emitSessionState(sess store.Session, newStatus, previous string, banner notify.Event, fired bool) {
 	if p.shellTools[sess.Tool] {
 		return
 	}
@@ -44,8 +45,8 @@ func (p *Runner) emitSessionState(sess store.Session, newStatus, previous, promp
 		Session:        sess,
 		PreviousStatus: previous,
 	}
-	if event, ok := p.attention(sess, newStatus, prompt, quote); ok {
-		ev.NotifyEnv = notify.CommandEnv(event)
+	if fired {
+		ev.NotifyEnv = notify.CommandEnv(banner)
 	}
 	lifecyclehook.Or(p.events).Emit(ev)
 }

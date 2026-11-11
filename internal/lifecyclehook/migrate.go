@@ -138,6 +138,7 @@ func migratedDocument(command string) ([]byte, []string, error) {
 func commentLines(command string) string {
 	var b strings.Builder
 	b.WriteString("# Carried over from notify_command by agent-manager.\n")
+	b.WriteString("# notify = true runs it only when the banner fires, as before.\n")
 	for _, line := range strings.Split(command, "\n") {
 		b.WriteString("# ")
 		b.WriteString(line)
