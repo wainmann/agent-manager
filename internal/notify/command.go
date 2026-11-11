@@ -1,11 +1,8 @@
 package notify
 
-// CommandEnv is the environment a notify hook runs with, on top of the
-// hook envelope's own variables. Values carry agent-written text, so they
-// travel as variables and never as part of the command line. The hook
-// dispatcher keeps only the kind, the title and the body. The rest would
-// duplicate the envelope's variables, and a duplicate name is the one the
-// process reads first.
+// CommandEnv is the banner's kind, title and body for a notify hook, on top
+// of the hook envelope's own variables. Values carry agent-written text, so
+// they travel as variables and never as part of the command line.
 func CommandEnv(event Event) []string {
 	detail, ok := describe(event.Kind)
 	if !ok {
@@ -14,11 +11,6 @@ func CommandEnv(event Event) []string {
 	title, body := content(event, detail)
 	return []string{
 		"AM_NOTIFY_KIND=" + kindName(event.Kind),
-		"AM_SESSION_ID=" + event.ID,
-		"AM_SESSION_NAME=" + sanitize(event.Session),
-		"AM_TOOL=" + sanitize(event.Tool),
-		"AM_CWD=" + event.Dir,
-		"AM_BRANCH=" + sanitize(event.Branch),
 		"AM_TITLE=" + title,
 		"AM_BODY=" + body,
 	}

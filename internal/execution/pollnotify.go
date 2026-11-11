@@ -1,7 +1,6 @@
 package execution
 
 import (
-	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -46,7 +45,7 @@ func (p *Runner) emitSessionState(sess store.Session, newStatus, previous, promp
 		PreviousStatus: previous,
 	}
 	if event, ok := p.attention(sess, newStatus, prompt, quote); ok {
-		ev.NotifyEnv = notifyVars(notify.CommandEnv(event))
+		ev.NotifyEnv = notify.CommandEnv(event)
 	}
 	lifecyclehook.Or(p.events).Emit(ev)
 }
@@ -74,17 +73,6 @@ func (p *Runner) attention(sess store.Session, newStatus, prompt, quote string) 
 		ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind,
 		Dir: sess.Cwd, Branch: sess.WorktreeBranch, Repo: sess.WorktreeRepo, Text: text,
 	}, true
-}
-
-func notifyVars(env []string) []string {
-	var out []string
-	for _, item := range env {
-		name, _, ok := strings.Cut(item, "=")
-		if ok && (name == "AM_NOTIFY_KIND" || name == "AM_TITLE" || name == "AM_BODY") {
-			out = append(out, item)
-		}
-	}
-	return out
 }
 
 func (p *Runner) notificationsOn() bool {

@@ -17,11 +17,6 @@ func TestCommandEnvContract(t *testing.T) {
 		got := CommandEnv(event)
 		expected := []string{
 			"AM_NOTIFY_KIND=" + want[0],
-			"AM_SESSION_ID=sess-1",
-			"AM_SESSION_NAME=deploy",
-			"AM_TOOL=claude",
-			"AM_CWD=/src/api-worktrees/am-x",
-			"AM_BRANCH=am/fix-login",
 			"AM_TITLE=deploy · am-x · am/fix-login · claude",
 			"AM_BODY=" + want[1],
 		}
