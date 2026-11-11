@@ -27,7 +27,7 @@ type Options struct {
 	ConfigDir string
 	Store     *store.Store
 	Version   string
-	Show      func(event, command string)
+	Show      func(command string)
 }
 
 // Dispatcher runs hooks off the caller's goroutine. The queue is a slice
@@ -37,20 +37,20 @@ type Options struct {
 // not part of that count.
 type Dispatcher struct {
 	configDir string
-	show      func(event, command string)
+	db        *store.Store
+	version   string
+	show      func(command string)
+	root      context.Context
+	cancel    context.CancelFunc
 
 	mu       sync.Mutex
 	cond     *sync.Cond
-	db       *store.Store
-	ver      string
 	waiting  []Event
 	running  map[string]struct{}
 	active   int
 	started  bool
 	stopping bool
 	shutdown bool
-	root     context.Context
-	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	// cache serves the last load while size and mtime are unchanged. A
 	// rewrite in the same second that keeps the same size leaves both
@@ -79,26 +79,16 @@ func New(opts Options) *Dispatcher {
 	d := &Dispatcher{
 		configDir: opts.ConfigDir,
 		db:        opts.Store,
-		ver:       opts.Version,
+		version:   opts.Version,
 		show:      opts.Show,
 		running:   map[string]struct{}{},
+		failAt:    map[string]time.Time{},
 		claimed:   map[string]bool{},
 		shownErr:  map[string]bool{},
 	}
+	d.root, d.cancel = context.WithCancel(context.Background())
 	d.cond = sync.NewCond(&d.mu)
 	return d
-}
-
-func (d *Dispatcher) SetStore(st *store.Store) {
-	d.mu.Lock()
-	d.db = st
-	d.mu.Unlock()
-}
-
-func (d *Dispatcher) SetVersion(version string) {
-	d.mu.Lock()
-	d.ver = version
-	d.mu.Unlock()
 }
 
 func (d *Dispatcher) Emit(ev Event) {
@@ -130,7 +120,6 @@ func (d *Dispatcher) startLocked() {
 	if d.started {
 		return
 	}
-	d.root, d.cancel = context.WithCancel(context.Background())
 	d.started = true
 	for range Workers {
 		d.wg.Add(1)
@@ -141,9 +130,6 @@ func (d *Dispatcher) startLocked() {
 // Close runs queued hooks until they finish or ctx ends. On the deadline
 // it cancels hooks that have started and drops the rest.
 func (d *Dispatcher) Close(ctx context.Context) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	d.mu.Lock()
 	if d.shutdown {
 		d.mu.Unlock()
@@ -153,6 +139,7 @@ func (d *Dispatcher) Close(ctx context.Context) {
 	started := d.started
 	d.mu.Unlock()
 	defer d.failWG.Wait()
+	defer d.cancel()
 	if !started {
 		return
 	}
@@ -172,7 +159,6 @@ func (d *Dispatcher) Close(ctx context.Context) {
 		d.mu.Unlock()
 		d.cond.Broadcast()
 		d.wg.Wait()
-		d.cancel()
 	case <-ctx.Done():
 		d.mu.Lock()
 		dropped := d.waiting
@@ -244,7 +230,7 @@ func (d *Dispatcher) dispatch(ev Event) {
 	if err != nil || !file.Found {
 		return
 	}
-	line := Line(ev, d.version())
+	line := Line(ev, d.version)
 	base := Env(ev)
 	for _, hook := range file.Hooks {
 		if !match(hook, ev) {
@@ -255,35 +241,18 @@ func (d *Dispatcher) dispatch(ev Event) {
 		if hook.Notify {
 			env = append(env, ev.NotifyEnv...)
 		}
-		ctx, cancel := context.WithTimeout(d.rootContext(), hook.Timeout)
+		ctx, cancel := context.WithTimeout(d.root, hook.Timeout)
 		output, runErr := run(ctx, hook.Command, env, line)
 		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 		cancel()
 		if runErr != nil {
-			d.record(ev, firstArg(hook.Command), failureReason(hook.Timeout, runErr, timedOut), output)
+			reason := runErr.Error()
+			if timedOut {
+				reason = "timed out after " + hook.Timeout.String()
+			}
+			d.record(ev, hook.Command[0], reason, output)
 		}
 	}
-}
-
-func (d *Dispatcher) rootContext() context.Context {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.root == nil {
-		return context.Background()
-	}
-	return d.root
-}
-
-func (d *Dispatcher) version() string {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.ver
-}
-
-func (d *Dispatcher) currentStore() *store.Store {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.db
 }
 
 func (d *Dispatcher) load() (File, error) {
@@ -321,66 +290,22 @@ func (d *Dispatcher) load() (File, error) {
 func (d *Dispatcher) announce(hook Hook) {
 	fp := Fingerprint(hook.Event, hook.Command)
 	d.failMu.Lock()
-	if d.claimed[fp] || d.shownErr[fp] {
-		d.failMu.Unlock()
-		return
-	}
+	settled := d.claimed[fp] || d.shownErr[fp]
 	d.failMu.Unlock()
-	st := d.currentStore()
-	if st == nil {
-		d.failMu.Lock()
-		if d.claimed[fp] {
-			d.failMu.Unlock()
-			return
-		}
-		d.claimed[fp] = true
-		d.failMu.Unlock()
-		d.showHook(hook)
+	if settled {
 		return
 	}
-	fresh, err := st.ClaimHookShown(fp)
+	fresh, err := d.db.ClaimHookShown(fp)
 	d.failMu.Lock()
 	if err != nil {
-		if d.shownErr[fp] {
-			d.failMu.Unlock()
-			return
-		}
+		// A store that cannot answer counts as unshown, once per process.
+		fresh = !d.shownErr[fp]
 		d.shownErr[fp] = true
-		d.failMu.Unlock()
-		d.showHook(hook)
-		return
+	} else {
+		d.claimed[fp] = true
 	}
-	d.claimed[fp] = true
 	d.failMu.Unlock()
-	if fresh {
-		d.showHook(hook)
+	if fresh && d.show != nil {
+		d.show(hook.Event + ": " + strings.Join(hook.Command, " "))
 	}
-}
-
-func (d *Dispatcher) showHook(hook Hook) {
-	if d.show == nil {
-		return
-	}
-	text := hook.Event + ": " + strings.Join(hook.Command, " ")
-	if runes := []rune(text); len(runes) > bannerRunes {
-		text = string(runes[:bannerRunes-1]) + "…"
-	}
-	d.show(hook.Event, text)
-}
-
-func firstArg(argv []string) string {
-	if len(argv) == 0 {
-		return ""
-	}
-	return argv[0]
-}
-
-func failureReason(timeout time.Duration, err error, timedOut bool) string {
-	if timedOut {
-		return "timed out after " + timeout.String()
-	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

@@ -158,10 +158,9 @@ func subcommands() map[string]func(args []string) error {
 		}),
 	}
 	for name := range cli.Commands(version, ui.SettingSpecs) {
-		commandName := name
 		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return withBackend(configDir, commandName, func(backend *sessioncmd.Backend) error {
-				return cli.CommandsWithBackend(version, ui.SettingSpecs, backend)[commandName](args, caller, configDir)
+			return withBackend(configDir, name, func(backend *sessioncmd.Backend) error {
+				return cli.CommandsWithBackend(version, ui.SettingSpecs, backend)[name](args, caller, configDir)
 			})
 		})
 	}
@@ -227,8 +226,6 @@ func withBackend(configDir, commandName string, command func(*sessioncmd.Backend
 		backend.SetDrain(lifecyclehook.DrainCreate)
 	case "mcp":
 		backend.SetDrain(lifecyclehook.DrainQuit)
-	default:
-		backend.SetDrain(lifecyclehook.DrainCall)
 	}
 	defer func() { err = errors.Join(err, backend.Close()) }()
 	return command(backend)

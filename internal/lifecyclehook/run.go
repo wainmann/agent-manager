@@ -32,9 +32,6 @@ func (b *cappedBuffer) String() string {
 }
 
 func run(ctx context.Context, argv, env []string, stdin []byte) (string, error) {
-	if len(argv) == 0 || argv[0] == "" {
-		return "", exec.ErrNotFound
-	}
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
 		return "", err

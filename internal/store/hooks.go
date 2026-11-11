@@ -18,6 +18,8 @@ const (
 	HooksShownKey              = "hooks_shown"
 )
 
+const hookFailureCap = 20
+
 // HookFailure is one hook that did not run as asked. Command is argv[0]
 // only, and Reason is the exit or drop line, never the hook's output.
 type HookFailure struct {
@@ -80,8 +82,8 @@ func (s *Store) AddHookFailure(failure HookFailure) error {
 		return err
 	}
 	failures = append(failures, failure)
-	if len(failures) > 20 {
-		failures = failures[len(failures)-20:]
+	if len(failures) > hookFailureCap {
+		failures = failures[len(failures)-hookFailureCap:]
 	}
 	if err := writeFailures(tx, failures); err != nil {
 		return err

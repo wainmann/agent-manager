@@ -133,7 +133,7 @@ func openRuntime(configDir, version string) (Runtime, error) {
 		ConfigDir: configDir,
 		Store:     st,
 		Version:   version,
-		Show:      func(_, text string) { notify.ShowCommand(text) },
+		Show:      notify.ShowCommand,
 	})
 	return Runtime{
 		Config:   cfg,
@@ -159,11 +159,7 @@ func (b *Backend) Close() error {
 		return nil
 	}
 	if dispatcher, ok := b.runtime.Events.(*lifecyclehook.Dispatcher); ok {
-		limit := b.drain
-		if limit <= 0 {
-			limit = lifecyclehook.DrainCall
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), limit)
+		ctx, cancel := context.WithTimeout(context.Background(), b.drain)
 		dispatcher.Close(ctx)
 		cancel()
 	}

@@ -295,7 +295,7 @@ func TestDispatcherShowsAHookOnce(t *testing.T) {
 	var mu sync.Mutex
 	var shown []string
 	st := openStore(t)
-	d := New(Options{ConfigDir: dir, Store: st, Version: "test", Show: func(_, text string) {
+	d := New(Options{ConfigDir: dir, Store: st, Version: "test", Show: func(text string) {
 		mu.Lock()
 		shown = append(shown, text)
 		mu.Unlock()

@@ -14,9 +14,7 @@ import (
 const (
 	LogFile       = "hooks.log"
 	LogLimit      = 256 << 10
-	FailureCap    = 20
 	FailureWindow = time.Minute
-	bannerRunes   = 120
 )
 
 var logMu sync.Mutex
@@ -35,20 +33,12 @@ func (d *Dispatcher) allow(event string) bool {
 	if last, ok := d.failAt[event]; ok && now.Sub(last) < FailureWindow {
 		return false
 	}
-	if d.failAt == nil {
-		d.failAt = map[string]time.Time{}
-	}
 	d.failAt[event] = now
 	return true
 }
 
 func (d *Dispatcher) writeFailure(ev Event, command, reason, output string) {
-	if st := d.currentStore(); st != nil {
-		_ = st.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Command: command, Reason: reason})
-	}
-	if d.configDir == "" {
-		return
-	}
+	_ = d.db.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Command: command, Reason: reason})
 	line := fmt.Sprintf("%s %s %s: %s\n", time.Now().UTC().Format(time.RFC3339), ev.Name, command, reason)
 	if output != "" {
 		line += output
@@ -61,20 +51,12 @@ func (d *Dispatcher) writeFailure(ev Event, command, reason, output string) {
 
 func (d *Dispatcher) noteConfig(msg string) {
 	d.failMu.Lock()
-	if d.configErr == msg && d.configSet {
-		d.failMu.Unlock()
-		return
-	}
+	unchanged := d.configSet && d.configErr == msg
 	d.failMu.Unlock()
-	st := d.currentStore()
-	if st == nil {
-		d.failMu.Lock()
-		d.configErr = msg
-		d.configSet = true
-		d.failMu.Unlock()
+	if unchanged {
 		return
 	}
-	if err := st.SetHooksConfigError(msg); err != nil {
+	if err := d.db.SetHooksConfigError(msg); err != nil {
 		return
 	}
 	d.failMu.Lock()

@@ -61,7 +61,7 @@ func OpenLocal(profileDir, version string, driver *tmux.Driver) (*Local, error) 
 		ConfigDir: profileDir,
 		Store:     st,
 		Version:   version,
-		Show:      func(_, text string) { notify.ShowCommand(text) },
+		Show:      notify.ShowCommand,
 	})
 	runtime := sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hooks.NewManager(profileDir),
