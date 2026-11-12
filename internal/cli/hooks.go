@@ -124,7 +124,7 @@ func hooksText(report hooksReport) string {
 	if len(report.Failures) > 0 {
 		fmt.Fprintln(w, "failures\t")
 		for _, failure := range report.Failures {
-			fmt.Fprintf(w, "\t%s\t%s\t%s\t%s\n", failure.At.UTC().Format(time.RFC3339), failure.Event, failure.Command, failure.Reason)
+			fmt.Fprintf(w, "\t%s\t%s\t%s\t%s\n", failure.At.Local().Format(time.RFC3339), failure.Event, failure.Command, failure.Reason)
 		}
 	}
 	w.Flush()

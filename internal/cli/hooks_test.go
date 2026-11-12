@@ -63,7 +63,8 @@ func TestHooksJSONReportsTheFileAndAMissingFile(t *testing.T) {
 	if err := runHooks(&out, nil, dir); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"found", "true", "session_state", "shown", "exit status 22"} {
+	failedAt := time.Date(2026, 11, 11, 12, 2, 11, 0, time.UTC).Local().Format(time.RFC3339)
+	for _, want := range []string{"found", "true", "session_state", "shown", "exit status 22", failedAt} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("text lacks %q:\n%s", want, out.String())
 		}
