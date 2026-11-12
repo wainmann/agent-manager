@@ -179,6 +179,7 @@ func TestMainNonInteractiveStartReportsHelpFailures(t *testing.T) {
 		main()
 		return
 	}
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", "")
 	t.Run("config dir", func(t *testing.T) {
 		home := t.TempDir()
 		env, want := nonInteractiveConfigDirFailure(home)
@@ -193,7 +194,8 @@ func TestMainNonInteractiveStartReportsHelpFailures(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(configDir, "state.db"), []byte("not a database"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		assertNonInteractiveFailure(t, env, "not a database")
+		// An empty AGENT_MANAGER_CONFIG_DIR makes the child test binary plant its own config dir.
+		assertNonInteractiveFailure(t, append(env, "AGENT_MANAGER_CONFIG_DIR", configDir), "not a database")
 	})
 }
 
