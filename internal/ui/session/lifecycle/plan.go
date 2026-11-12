@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -94,8 +95,18 @@ func Changes(request Request, result Result, err error) Change {
 	}
 	change.Launches = result.Launches
 
-	if result.Notice != "" {
-		change.Notices = append(change.Notices, result.Notice)
+	notice := result.Notice
+	if result.Warning != nil && err != nil {
+		// A failure must not hide that a session that did start runs without
+		// the agent-manager tools.
+		if notice != "" && request.Target.Batch {
+			// A batch with a notice reports it instead of the error.
+			notice += "; " + result.Warning.Error()
+		}
+		err = fmt.Errorf("%w; %w", err, result.Warning)
+	}
+	if notice != "" {
+		change.Notices = append(change.Notices, notice)
 	}
 	if result.Deleted.Notice != "" {
 		change.Notices = append(change.Notices, result.Deleted.Notice)
@@ -222,11 +233,12 @@ func AfterTurn(request AfterTurnRequest, result AfterTurnResult, err error) Afte
 	return apply
 }
 
-// Acknowledge decides whether the mark-idle key applies: archived rows keep
-// their preserved status, since the poller never re-derives it for them, so an
-// ack would stick forever.
+// Acknowledge decides whether the mark-idle key applies: a finished row, or a
+// waiting one whose prompt the user means to leave. Archived rows keep their
+// preserved status, since the poller never re-derives it for them, so an ack
+// would stick forever.
 func Acknowledge(sess store.Session, ok bool) (string, bool) {
-	if !ok || sess.Archived || sess.Status != status.Finished {
+	if !ok || sess.Archived || (sess.Status != status.Finished && sess.Status != status.Waiting) {
 		return "", false
 	}
 	return sess.ID, true

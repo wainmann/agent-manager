@@ -1,6 +1,8 @@
 package lifecycle
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -103,10 +105,12 @@ func TestAcknowledgeKeepsAnArchivedRowsPreservedStatus(t *testing.T) {
 		t.Fatal("an archived row keeps its preserved status")
 	}
 	if _, ok := Acknowledge(store.Session{ID: "a", Status: "working"}, true); ok {
-		t.Fatal("only a finished row is acknowledged")
+		t.Fatal("only a finished or waiting row is acknowledged")
 	}
-	if id, ok := Acknowledge(store.Session{ID: "a", Status: "finished"}, true); !ok || id != "a" {
-		t.Fatalf("acknowledge = %q %v, want the finished row", id, ok)
+	for _, st := range []string{"finished", "waiting"} {
+		if id, ok := Acknowledge(store.Session{ID: "a", Status: st}, true); !ok || id != "a" {
+			t.Fatalf("acknowledge %s = %q %v, want the row", st, id, ok)
+		}
 	}
 }
 
@@ -134,3 +138,39 @@ func TestDropGroupsAndRemoveSessionKeepTheRest(t *testing.T) {
 type errFake struct{}
 
 func (errFake) Error() string { return "boom" }
+
+func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	result := Result{Warning: errors.New("MCP registration timed out")}
+
+	change := Changes(Request{Target: Target{Action: Restart}}, result, errors.New("second one failed"))
+
+	if change.Warning != nil {
+		t.Fatalf("warning = %v, want it folded into the failure", change.Warning)
+	}
+	if change.Refusal == nil {
+		t.Fatal("refusal = nil, want the failure reported")
+	}
+	if got := change.Refusal.Err.Error(); !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("refusal = %q, want both the failure and the warning", got)
+	}
+}
+
+func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	result := Result{Warning: errors.New("MCP registration timed out")}
+
+	change := Changes(Request{Target: Target{Action: Revive, Batch: true}}, result, errors.New("second one failed"))
+	if change.Refusal == nil {
+		t.Fatal("refusal = nil, want the failure reported")
+	}
+	if got := change.Refusal.Err.Error(); !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("refusal = %q, want both the failure and the warning", got)
+	}
+
+	result.Notice = "revived 1 of 2"
+	change = Changes(Request{Target: Target{Action: Revive, Batch: true}}, result, errors.New("second one failed"))
+	if len(change.Notices) != 1 || !strings.Contains(change.Notices[0], "revived 1 of 2") || !strings.Contains(change.Notices[0], "MCP registration timed out") {
+		t.Fatalf("notices = %q, want the notice with the warning", change.Notices)
+	}
+}

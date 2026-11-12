@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,6 +23,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -47,21 +47,15 @@ var buildSource = ""
 // against release tags.
 func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
 	if embedded != devVersion {
-		return embedded
+		return strings.TrimPrefix(embedded, "v")
 	}
 	if !ok || info == nil {
 		return devVersion
 	}
-	moduleVersion := strings.TrimPrefix(info.Main.Version, "v")
-	if strings.ContainsAny(moduleVersion, "-+") || strings.Count(moduleVersion, ".") != 2 {
+	if !update.IsRelease(info.Main.Version) {
 		return devVersion
 	}
-	for _, field := range strings.Split(moduleVersion, ".") {
-		if _, err := strconv.Atoi(field); err != nil {
-			return devVersion
-		}
-	}
-	return moduleVersion
+	return strings.TrimPrefix(info.Main.Version, "v")
 }
 
 func main() {
@@ -320,6 +314,17 @@ func sessionFromAncestry() (id string, seen bool) {
 	return id, seen
 }
 
+// programFilter resets the pointer while the screen that showed the hand is
+// still up, since kitty keeps one per screen and an interrupt skips Update,
+// and reads the modified keys Bubble Tea leaves undecoded.
+func programFilter(_ tea.Model, msg tea.Msg) tea.Msg {
+	switch msg.(type) {
+	case tea.QuitMsg, tea.InterruptMsg:
+		ui.ResetPointer()
+	}
+	return ui.ReadExtendedKey(msg)
+}
+
 func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
@@ -357,19 +362,12 @@ func run() (resultErr error) {
 		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
-		// The pointer resets while the screen that showed the hand is still
-		// up, since kitty keeps one per screen and an interrupt skips Update.
-		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
-			switch msg.(type) {
-			case tea.QuitMsg, tea.InterruptMsg:
-				ui.ResetPointer()
-			}
-			return msg
-		}),
+		tea.WithFilter(programFilter),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
+	ui.SetHostPalette(systheme.QueryPalette())
 	// The terminal's own text and background colors follow the theme while
 	// the manager runs, so window padding outside the cell grid matches the
 	// frame — through tmux's passthrough envelope when a multiplexer is

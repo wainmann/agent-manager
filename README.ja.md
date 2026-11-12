@@ -86,12 +86,15 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で `scoop update agent-manager --global` を実行します。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
+その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update`、続けて `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で 2 つ目のコマンドに `--global` を付けます。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add a winget section here with:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add a winget section here with:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -114,7 +117,7 @@ sh install.sh
 
 そのタグができるまで上のリリース URL にはファイルがないため、それまでは最初のコマンドを使ってください。古いリリースは `--repo wainmann/agent-manager` の代わりに `--owner YoanWai --signer-repo YoanWai/agent-manager` で検証します。
 
-お使いのプラットフォーム向けの最新リリースをダウンロードし、公開されているチェックサムで検証してから `~/.local/bin` にインストールします。続いて tmux 3.1 以降と git を確認します。macOS では Homebrew を提案し、Homebrew がなければ先にそのインストールを提案します。Linux では apt、dnf、pacman、zypper、apk、Homebrew を提案し、デスクトップ環境ではクリップボードと通知のパッケージも提案します。断った場合はコマンドを表示します。ターミナルがない状態で実行すると、確認をスキップしてバイナリだけをインストールします。`AGENT_MANAGER_INSTALL_DIR` でインストール先を、`AGENT_MANAGER_VERSION` でバージョンを指定でき、`AGENT_MANAGER_INSTALL_DEPS=1` で依存関係の確認にあらかじめ同意できます（`=0` でスキップ）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` を設定すると、ダウンロードしたアーカイブを `gh attestation verify` が受け入れない限りインストールしません。`gh` のないマシンにインストールする場合は設定しないでください。`gh` は証明の拒否、未ログイン、ネットワークエラーに同じ終了コードを返すため、スクリプトはこれらを区別しません。
+お使いのプラットフォーム向けの最新リリースをダウンロードし、公開されているチェックサムで検証してから `~/.local/bin` にインストールします。続いて tmux 3.1 以降と git を確認します。macOS では Homebrew を提案し、Homebrew がなければ先にそのインストールを提案します。Linux では apt、dnf、pacman、zypper、apk、Homebrew を提案し、デスクトップ環境ではクリップボードと通知のパッケージも提案します。断った場合はコマンドを表示します。ターミナルがない状態で実行すると、確認をスキップしてバイナリだけをインストールします。`AGENT_MANAGER_INSTALL_DIR` でインストール先を、`AGENT_MANAGER_VERSION` でバージョンを指定でき、`AGENT_MANAGER_INSTALL_DEPS=1` で依存関係の確認にあらかじめ同意できます（`=0` でスキップ）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` を設定すると、ダウンロードしたアーカイブを `gh attestation verify` が受け入れない限りインストールしません。その検証に失敗すると、古いリリース向けに `--owner YoanWai --signer-repo YoanWai/agent-manager` で再試行し、両方とも失敗した場合にだけ止まります。`gh` のないマシンにインストールする場合は設定しないでください。`gh` は証明の拒否、未ログイン、ネットワークエラーに同じ終了コードを返すため、スクリプトはこれらを区別しません。
 
 先にファイルを確認せずに実行する場合：
 
@@ -161,7 +164,7 @@ if ($?) {
 
 最新リリースを `%LOCALAPPDATA%\Programs\agent-manager` にインストールし、ユーザーの `Path` に追加し、psmux、git、PowerShell 7 がなければインストールを提案します。`AGENT_MANAGER_INSTALL_DEPS=1` で同意、`AGENT_MANAGER_INSTALL_DEPS=0` で確認をスキップします。ターミナルがない場合は確認をスキップし、バイナリはインストールされたままになります。`AGENT_MANAGER_VERIFY_ATTESTATION` はシェルスクリプトと同じように動きます。
 
-Arch Linux、mise、`go install`、ビルド済みバイナリ、Windows（ネイティブと WSL2）、依存関係、更新方法：[docs/install.md](docs/install.md)。
+Arch Linux、mise、`go install`、ビルド済みバイナリ、Windows（ネイティブと WSL2）、依存関係、更新方法、アンインストール：[docs/install.md](docs/install.md)。
 
 ## 使い方
 

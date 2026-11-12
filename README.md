@@ -32,6 +32,7 @@
   <a href="https://github.com/wainmann/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwainmann%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
   <a href="https://github.com/wainmann/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/wainmann/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
   <a href="https://discord.gg/ecS88An7pF"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1f2328" alt="Discord"></a>
+  <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/sponsor-github-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor on GitHub"></a>
   <br>
   <a href="https://github.com/wainmann/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/wainmann/agent-manager/ci.yml?branch=main&style=for-the-badge&label=build&labelColor=1f2328&color=2f7f62" alt="CI status"></a>
   <a href="https://app.codecov.io/gh/wainmann/agent-manager"><img src="https://img.shields.io/codecov/c/github/wainmann/agent-manager?branch=main&style=for-the-badge&label=coverage&labelColor=1f2328" alt="test coverage"></a>
@@ -41,7 +42,7 @@
 
 ![three agents spawned from the quick prompt bar, one each on Claude Code, Codex and Gemini CLI, tab picking the CLI each time, each new agent landing in the list](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, Cursor CLI, and Kiro CLI run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -63,7 +64,7 @@ Not here yet: cost tracking.
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, **Muse Code**, **Oh My Pi**, and **Cursor CLI**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes, Antigravity, Oh My Pi, and Cursor CLI have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/wainmann/agent-manager/issues/new/choose).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, **Muse Code**, **Oh My Pi**, **Cursor CLI**, and **Kiro CLI**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes, Antigravity, Oh My Pi, Cursor CLI, and Kiro CLI have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/wainmann/agent-manager/issues/new/choose).
 
 ## Install
 
@@ -84,12 +85,15 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update agent-manager`. A global install uses `scoop update agent-manager --global` in an elevated PowerShell. The in-app updater shows those instructions instead of replacing Scoop's binary.
+Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update`, then `scoop update agent-manager`. A global install adds `--global` to the second command, in an elevated PowerShell. The in-app updater shows those instructions instead of replacing Scoop's binary.
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add a winget section here with:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add a winget section here with:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -112,7 +116,7 @@ sh install.sh
 
 The release URL above has no file until that tag exists, so the first command is the one that works until then. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. When that check fails, the script tries again with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which older releases need, and stops only if both fail. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
 
 Running it without a file to read first:
 
@@ -159,7 +163,7 @@ On a Windows client with no execution policy set, the effective policy is Restri
 
 Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
 
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
+Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, updating, and uninstalling: [docs/install.md](docs/install.md).
 
 ## Usage
 
@@ -222,7 +226,7 @@ Join the [Agent Manager Community](https://discord.gg/ecS88An7pF) on Discord. As
 
 **Contributors and collaborators wanted.** agent-manager is actively looking for people to help build it. Unassigned issues are free to take, comment on one to claim it, and regular contributors get invited as collaborators. Say hi in #dev on [Discord](https://discord.gg/ecS88An7pF).
 
-Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
+Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Project roles and how decisions are made are in [GOVERNANCE.md](GOVERNANCE.md), with the current roster in [MAINTAINERS.md](MAINTAINERS.md). Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
 
 ### Contributors
 

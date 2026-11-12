@@ -484,12 +484,15 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		t.Fatalf("list text = %q", text)
 	}
 
-	created := callTool(t, session, "create_terminal", map[string]any{"group": group, "directory": "/tmp"})
+	created := callTool(t, session, "create_terminal", map[string]any{"group": group, "directory": "/tmp", "name": "cu-1234-api"})
 	if created.IsError || created.StructuredContent == nil {
 		t.Fatalf("create_terminal = %+v", created)
 	}
 	if fake.createdOpts.Group == nil || *fake.createdOpts.Group != group || fake.createdOpts.Directory != "/tmp" {
 		t.Fatalf("create args = %+v", fake.createdOpts)
+	}
+	if fake.createdOpts.Name != "cu-1234-api" {
+		t.Fatalf("create name = %q, want cu-1234-api", fake.createdOpts.Name)
 	}
 
 	if text, isError := callText(t, session, "send_terminal", map[string]any{
@@ -850,7 +853,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"list_sessions":    {"Call first", "create_session"},
 		"create_session":   {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
 		"read_session":     {"after create_session", "current screen"},
-		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work", "eight messages"},
+		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work", "five messages a minute"},
 		"message_status":   {"delivered", "queued"},
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},

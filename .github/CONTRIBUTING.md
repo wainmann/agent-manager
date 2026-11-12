@@ -61,7 +61,7 @@ each of these with the reason behind it.
 
 ## Setup
 
-You need Go 1.27.3+ and tmux.
+You need Go 1.27.4+ and tmux.
 
 ```bash
 git clone https://github.com/wainmann/agent-manager.git
@@ -70,6 +70,8 @@ go run .
 ```
 
 The manager runs its sessions on a dedicated tmux socket (`-L`), so a development build stays clear of the tmux server your own shell is attached to.
+
+`make build` writes `./agent-manager` (`agent-manager.exe` on Windows) and `make install` puts it in your Go bin directory. Both stamp the commit from `git describe`, such as `0.47.1-10-g1656b508-dirty`, which Settings, `--version` and bug reports show. A build without the stamp, such as `go run .` or a plain `go build`, reports `dev`, except a plain `go build` on a clean checkout of a release tag: Go stamps that tag as the module version, so it reports the release. Add `-buildvcs=false` to keep it `dev`. Source outside its own git repository, such as an unpacked archive, reports `dev` from `make build` too. Neither kind is offered updates or the what's-new notice. Without `make`, pass the stamp yourself: `go build -ldflags "-X main.version=$(git describe --tags --always --dirty --long)" .`
 
 ## Checks
 
@@ -184,7 +186,11 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 [REVIEW.md](../REVIEW.md) states what a review here covers, so you can see what a finding will be about before you open the PR. CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
 
-Collaborators may merge a pull request once @YoanWai has approved it. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) is `* @YoanWai`. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
+Any collaborator may merge a pull request once another collaborator or the maintainer has approved it. Nobody approves their own pull request. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) lists `@YoanWai` and `@wainmann/collaborators` as default owners, with maintainer-only paths for everything under `.github`, security, governance, the installers, the Go module files, the license, and release publishing. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
+
+## Governance
+
+Roles, how decisions are made, and how the roadmap is edited are in [GOVERNANCE.md](../GOVERNANCE.md). The current maintainer, collaborators, and triagers are listed in [MAINTAINERS.md](../MAINTAINERS.md).
 
 ## Code of Conduct
 

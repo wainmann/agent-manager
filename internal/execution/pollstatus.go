@@ -29,7 +29,26 @@ import (
 // A missing prior hash (first observation, or post-resize rebaseline)
 // never invents working and never collapses finished/waiting to the tool
 // default: the stored status holds until the next poll has a baseline.
+//
+// Waiting can be acknowledged too, for a prompt the user means to leave or
+// a screen the rules misread: the acked session reads idle while the pane
+// still shows the screen it was waiting on, and any change to that screen
+// reads as waiting again, so a later prompt is never swallowed.
 func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
+	newStatus, err := p.paneVerdict(sess, pane, agentAlive, paneHashes)
+	if err != nil || newStatus != status.Waiting {
+		delete(p.waitingScreens, sess.ID)
+		return newStatus, err
+	}
+	screen := hashString(p.engine.Plain(sess.Tool, pane))
+	if held, ok := p.waitingScreens[sess.ID]; ok && held == screen && sess.Acked {
+		return status.Idle, nil
+	}
+	p.waitingScreens[sess.ID] = screen
+	return newStatus, nil
+}
+
+func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	text := ansi.Strip(pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
@@ -71,7 +90,7 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					var paneHash uint64
 					if stuck {
 						grace = stuckEndGrace
-						paneHash = hashString(text)
+						paneHash = hashString(pane)
 					}
 					now := time.Now()
 					timer, ok := p.quietSince[sess.ID]
@@ -122,6 +141,9 @@ func turnInFlight(current string) bool {
 // when they finish, so the file would otherwise stay pinned at working
 // forever. The pane only reports finished/waiting/errored once the newest
 // turn is quiet, so this never fires while the agent is still streaming.
+// An errored hook yields only to waiting or working: a failed turn draws
+// a summary under its error, so a finished pane would erase the failure,
+// and the next prompt's UserPromptSubmit or Stop replaces it anyway.
 func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) string {
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
@@ -140,10 +162,7 @@ func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) st
 			return paneStatus
 		}
 	case status.Errored:
-		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Working) {
-			if paneStatus == status.Finished && sess.Acked {
-				return status.Idle
-			}
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Working) {
 			return paneStatus
 		}
 	}

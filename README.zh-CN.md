@@ -86,12 +86,15 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是单独更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中运行 `scoop update agent-manager --global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
+安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是单独更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update`，然后运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中为第二条命令加上 `--global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add a winget section here with:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add a winget section here with:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -114,7 +117,7 @@ sh install.sh
 
 在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。较早的版本请用 `--owner YoanWai --signer-repo YoanWai/agent-manager` 代替 `--repo wainmann/agent-manager` 来验证。
 
-脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
+脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。该检查失败时，脚本会用较早版本所需的 `--owner YoanWai --signer-repo YoanWai/agent-manager` 再试一次，两次都失败才会停止。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
 
 不先下载文件阅读，直接运行：
 
@@ -161,7 +164,7 @@ if ($?) {
 
 脚本会把最新版本安装到 `%LOCALAPPDATA%\Programs\agent-manager`，加入你的用户 `Path`，并在缺少 psmux、git 或 PowerShell 7 时提议安装。`AGENT_MANAGER_INSTALL_DEPS=1` 表示同意，`AGENT_MANAGER_INSTALL_DEPS=0` 跳过提示。没有终端时会跳过提示，仍然安装二进制文件。`AGENT_MANAGER_VERIFY_ATTESTATION` 的行为和 shell 脚本中相同。
 
-Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖和更新方法：[docs/install.md](docs/install.md)。
+Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖、更新和卸载方法：[docs/install.md](docs/install.md)。
 
 ## 使用
 

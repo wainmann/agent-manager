@@ -1,4 +1,5 @@
 /agent-manager
+/agent-manager.exe
 /am
 .worktrees/
 *.db

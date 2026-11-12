@@ -87,6 +87,9 @@ type Runner struct {
 	// flag travels with the timer so a rule classification change restarts
 	// the grace instead of inheriting the previous one.
 	quietSince map[string]quietTimer
+	// waitingScreens is the screen each session last derived waiting on,
+	// which an acknowledgement holds idle until the screen changes.
+	waitingScreens map[string]uint64
 	// heartbeatAt is when this manager last tried to claim the store and
 	// stamp its liveness row.
 	heartbeatAt time.Time
@@ -133,7 +136,7 @@ var stuckEndGrace = 15 * time.Second
 type quietTimer struct {
 	since time.Time
 	stuck bool
-	// pane hashes the whole pane while stuck: pi animates its spinner below the activity region.
+	// pane hashes the raw pane while stuck: pi animates below the region, a cut codex row only in colour.
 	pane uint64
 }
 
@@ -223,11 +226,12 @@ func (p *Runner) run(ctx context.Context, step func() Result) <-chan Result {
 					}
 				default:
 				}
-				select {
-				case results <- result:
-				case <-ctx.Done():
-					return
-				}
+				// The buffer is empty now, whether this loop or the
+				// subscriber took the unread result, and this loop is its
+				// only sender, so the send cannot block. Racing it against
+				// ctx would let cancellation drop both the unread result
+				// and the newer one and close the channel empty.
+				results <- result
 			}
 			select {
 			case <-ticker.C:

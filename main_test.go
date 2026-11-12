@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,14 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
 
 func prepareMainProcess() bool {
 	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
@@ -359,6 +367,74 @@ func TestStartupClaimsMouse(t *testing.T) {
 	}
 }
 
+type extendedKeyRecorder struct {
+	got []uifocus.ExtendedKeyMsg
+}
+
+func (r *extendedKeyRecorder) Init() tea.Cmd { return nil }
+
+func (r *extendedKeyRecorder) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(uifocus.ExtendedKeyMsg); ok {
+		r.got = append(r.got, key)
+		return r, tea.Quit
+	}
+	return r, nil
+}
+
+func (r *extendedKeyRecorder) View() string { return "" }
+
+// Bubble Tea hands Shift+Enter over as a sequence it cannot read, so the
+// program's filter is what turns it into a key focus mode forwards.
+func TestStartupFilterReadsShiftEnter(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse main.go: %v", err)
+	}
+	wired := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if selector, ok := call.Fun.(*ast.SelectorExpr); !ok || selector.Sel.Name != "NewProgram" {
+			return true
+		}
+		for _, arg := range call.Args {
+			option, ok := arg.(*ast.CallExpr)
+			if !ok || len(option.Args) != 1 {
+				continue
+			}
+			name, ok := option.Fun.(*ast.SelectorExpr)
+			filter, isIdent := option.Args[0].(*ast.Ident)
+			if ok && name.Sel.Name == "WithFilter" && isIdent && filter.Name == "programFilter" {
+				wired = true
+			}
+		}
+		return true
+	})
+	if !wired {
+		t.Fatal("the program starts without programFilter")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	recorder := &extendedKeyRecorder{}
+	program := tea.NewProgram(recorder,
+		tea.WithContext(ctx),
+		tea.WithInput(strings.NewReader("\x1b[13;2u")),
+		tea.WithOutput(io.Discard),
+		tea.WithoutRenderer(),
+		tea.WithoutSignalHandler(),
+		tea.WithFilter(programFilter),
+	)
+	if _, err := program.Run(); err != nil {
+		t.Fatalf("Run: %v, got %v", err, recorder.got)
+	}
+	if len(recorder.got) != 1 || recorder.got[0].Name != "S-Enter" {
+		t.Fatalf("program read %v, want S-Enter", recorder.got)
+	}
+}
+
 func TestResolveVersion(t *testing.T) {
 	cases := []struct {
 		label         string
@@ -369,6 +445,7 @@ func TestResolveVersion(t *testing.T) {
 	}{
 		{"ldflags win", "0.11.0", "v0.11.0", true, "0.11.0"},
 		{"ldflags win over missing info", "0.11.0", "", false, "0.11.0"},
+		{"git describe stamp", "v0.11.0-3-g1656b508-dirty", "v0.11.1-0.20260730153639-1656b508abcd+dirty", true, "0.11.0-3-g1656b508-dirty"},
 		{"go install at a tag", devVersion, "v0.11.0", true, "0.11.0"},
 		{"pseudo-version", devVersion, "v0.10.6-0.20260730153639-3b5b8a9a5649", true, devVersion},
 		{"go run", devVersion, "(devel)", true, devVersion},

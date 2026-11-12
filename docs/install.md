@@ -45,7 +45,7 @@ Reads the GitHub release directly, so it needs no registry entry. Install tmux a
 go install github.com/YoanWai/agent-manager@latest
 ```
 
-Requires Go 1.27.3+, tmux 3.1+, and git; installs to `$(go env GOPATH)/bin`.
+Requires Go 1.27.4+, tmux 3.1+, and git; installs to `$(go env GOPATH)/bin`.
 
 ## Prebuilt binaries
 
@@ -65,9 +65,12 @@ scoop install yoanwai/agent-manager
 Installs the version published in [YoanWai/scoop-bucket](https://github.com/YoanWai/scoop-bucket), and Scoop installs psmux from the main bucket. The bucket is updated on its own, so it can lag the latest release. The zip and install script below install the current release. Install git and PowerShell 7 with `scoop install git pwsh` if they are missing.
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -99,7 +102,7 @@ $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw "Checksum mismatch for $archive" }
 ```
 
-Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
+Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
 ```powershell
 Get-Command gh -ErrorAction Stop | Out-Null
@@ -140,7 +143,7 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
@@ -168,7 +171,7 @@ Short form. Piping into `iex` skips the download-and-read step and does not cons
 irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 | iex
 ```
 
-On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
+On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -194,15 +197,15 @@ The release workflow attests every digest in `checksums.txt`. That covers the ar
 gh attestation verify <archive> --repo wainmann/agent-manager
 ```
 
-`<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
+`<archive>` is the file you downloaded, such as `agent-manager_0.47.1_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
-The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
+The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They try `--repo wainmann/agent-manager` first, which releases from v0.47.1 on pass. When that fails they retry with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which earlier releases pass, and they stop only if both fail. They skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats a failure of both as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
 
 ## Updating
 
-The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge when a newer version is out. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. After a successful update the manager restarts into the new build with every session still running.
+The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge once your install can receive that version. A package-manager install waits for its own channel: the Homebrew formula until homebrew-core has the release, mise until `mise latest` returns it (mise holds new releases back for a day by default), and the Homebrew cask, Scoop and the AUR until their packages land. A Nix install shows no badge, because the manager cannot see which version your Nix configuration offers. The badge sits in the header. With the header hidden, the same badge sits in the top edge of the frame. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. After a successful update the manager restarts into the new build with every session still running.
 
-Scoop refuses to update a running app. For a Scoop install, the manager shows instructions instead of replacing the binary or running an update that Scoop would skip. Close agent-manager, run `scoop update agent-manager`, then start it again. For a global install, use `scoop update agent-manager --global` in an elevated PowerShell. Agent sessions keep running while the manager is closed.
+Scoop refuses to update a running app. For a Scoop install, the manager shows instructions instead of replacing the binary or running an update that Scoop would skip. Close agent-manager, run `scoop update`, then `scoop update agent-manager`, then start it again. For a global install, add `--global` to the second command in an elevated PowerShell. Agent sessions keep running while the manager is closed.
 
 Two cases update by hand. A pacman-owned install needs an AUR helper (`yay` or `paru`) on PATH, and without one the manager runs nothing and prints the command to use instead: `yay -S agent-manager-bin`. A Nix install lives in the read-only store, so the manager runs nothing and points you at Nix instead, such as `nix profile upgrade agent-manager` or your flake or NixOS config.
 
@@ -211,7 +214,8 @@ The same commands work from a shell:
 ```bash
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
-scoop update agent-manager                                                               # Scoop, after closing agent-manager
+scoop update                                                                              # Scoop, after closing agent-manager
+scoop update agent-manager                                                                # Scoop, second step
 curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh
 mise upgrade --bump github:wainmann/agent-manager                                         # mise
 mise upgrade --bump ubi:wainmann/agent-manager                                            # mise, earlier installs
@@ -222,3 +226,56 @@ go install github.com/YoanWai/agent-manager@latest                              
 The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.
+
+## Uninstalling
+
+Agent sessions keep running on their own server after the manager quits. Stop them first with `X` in the manager, which kills every live session in view. On macOS and Linux, `tmux -L agentmgr kill-server` ends all of them at once. It touches only the manager's private `agentmgr` server, never your own tmux.
+
+Then remove the binary with the route that installed it:
+
+```bash
+brew uninstall --formula agent-manager                    # Homebrew formula
+brew uninstall --cask agent-manager                       # Homebrew cask
+brew untap yoanwai/tap                                    # Homebrew cask, once nothing else uses the tap
+sudo pacman -Rs agent-manager-bin                         # Arch Linux (AUR)
+mise unuse -g ubi:wainmann/agent-manager                  # mise, removes it from the global config
+mise uninstall --all ubi:wainmann/agent-manager           # mise, removes the installed versions
+rm "$(go env GOPATH)/bin/agent-manager"                   # Go, or "$(go env GOBIN)/agent-manager" when GOBIN is set
+rm ~/.local/bin/agent-manager                             # install script, or the AGENT_MANAGER_INSTALL_DIR you set
+```
+
+For mise, use the backend and slug you installed with. `mise ls` lists them, and an earlier install reads `ubi:YoanWai/agent-manager`. A prebuilt binary from Releases is removed by deleting the file wherever you put it.
+
+On Windows, close agent-manager first. For Scoop:
+
+```powershell
+scoop uninstall agent-manager
+scoop bucket rm yoanwai
+```
+
+For the install script or the zip, delete the install directory and take it off your user `Path`. Use `$env:AGENT_MANAGER_INSTALL_DIR` in place of the default when you set it for the install script.
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\agent-manager'
+Remove-Item -LiteralPath $installDir -Recurse -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$entries = @($userPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ne $installDir.TrimEnd('\') })
+[Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
+```
+
+### Settings and state
+
+Removing the binary keeps your settings, sessions and caches. They live in one directory. It is `AGENT_MANAGER_CONFIG_DIR` when that is set, otherwise `agent-manager` under `XDG_CONFIG_HOME` when that is set, otherwise `agent-manager` under your OS user config directory. It holds `state.db`, the release and message caches, and the generated hook and MCP files the launches load. On macOS it also holds the notification helper app. Delete it to remove everything:
+
+```bash
+rm -rf ~/Library/Application\ Support/agent-manager        # macOS
+rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/agent-manager"    # Linux
+```
+
+```powershell
+Remove-Item -LiteralPath (Join-Path $env:APPDATA 'agent-manager') -Recurse -Force
+```
+
+On macOS the notification sounds are copied to `~/Library/Sounds` as `agent-manager-*.aiff`. Remove them with `rm ~/Library/Sounds/agent-manager-*.aiff`.
+
+Some agent CLIs keep an `agent-manager` MCP server entry in their own user config, which the manager adds when it first launches them. Grok, Gemini CLI, Command Code, Antigravity and Hermes register it through their own `mcp add` command, so remove it with that CLI's MCP commands. Muse Code keeps it in `muse/settings.json` under `XDG_CONFIG_HOME` (`~/.config` by default), and Cursor CLI in `~/.cursor/mcp.json`. Delete the `agent-manager` entry from those files. The other CLIs load the manager's files from its own directory on each launch, so deleting that directory removes them. Launching Grok also sets `theme = "terminal"` under `[ui]` and `terminal_theme = true` under `[features]` in `~/.grok/config.toml` (or `config.toml` in `GROK_HOME`). Change those back if you want Grok's own theme.

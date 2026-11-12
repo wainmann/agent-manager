@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -90,8 +89,8 @@ func setting(st Store, key string) string {
 // show before the first check returns.
 func (s *State) UseCached(configDir string) {
 	cached := update.Cached(configDir, s.Version)
-	s.Latest = cached.Latest
-	s.URL = cached.URL
+	// Availability is resolved off the event loop by the first check.
+	s.Latest, s.URL = "", ""
 	s.Releases = cached.Releases
 	s.Checked = len(cached.Releases) > 0
 }
@@ -322,6 +321,10 @@ func fetchUpdates(version string, force bool) tea.Msg {
 	} else {
 		result, err = update.Check(context.Background(), dir, version)
 	}
+	result, channelErr := forInstall(dir, version, force, result)
+	if err == nil {
+		err = channelErr
+	}
 	if err != nil {
 		return UpdateMsg{
 			Latest: result.Latest, URL: result.URL, Releases: result.Releases,
@@ -329,6 +332,17 @@ func fetchUpdates(version string, force bool) tea.Msg {
 		}
 	}
 	return UpdateMsg{Latest: result.Latest, URL: result.URL, Releases: result.Releases, Manual: force}
+}
+
+func forInstall(dir, version string, force bool, result update.Result) (update.Result, error) {
+	if result.Latest == "" {
+		return result, nil
+	}
+	execPath, err := os.Executable()
+	if err != nil {
+		return update.Result{Releases: result.Releases}, err
+	}
+	return update.ForInstall(context.Background(), dir, version, DetectManager(execPath), force, result)
 }
 
 func fetchFeed(version string, force bool) FeedMsg {
@@ -436,24 +450,27 @@ var RefreshForApply = update.Refresh
 // between the in-place swap and a delegated package manager.
 var DetectManager = update.DetectManager
 
+// Upgraded is the seam for checking what a delegated upgrade actually did.
+var Upgraded = update.Manager.Upgraded
+
 // Apply routes u by install source. A package-manager install hands the
 // terminal to that manager's upgrade command; a direct install downloads the
 // latest release off the event loop and swaps the running binary. Both
 // report the path to restart into.
 func (s *State) Apply() tea.Cmd {
-	execPath, err := os.Executable()
-	if err != nil {
-		return func() tea.Msg { return AppliedMsg{Err: err} }
-	}
-	manager := DetectManager(execPath)
-	if manager.Advice != "" {
-		return func() tea.Msg { return AppliedMsg{Err: errors.New(manager.Advice)} }
-	}
-	if manager.Delegated() {
-		return delegatedCmd(manager, execPath)
-	}
-	version := s.Version
+	version, expected := s.Version, s.Latest
 	return func() tea.Msg {
+		execPath, err := os.Executable()
+		if err != nil {
+			return AppliedMsg{Err: err}
+		}
+		manager := DetectManager(execPath)
+		if manager.Advice != "" {
+			return AppliedMsg{Err: errors.New(manager.Advice)}
+		}
+		if manager.Delegated() {
+			return delegatedCmd(manager, update.RestartTarget(execPath), version, expected)()
+		}
 		dir, err := config.Dir()
 		if err != nil {
 			return AppliedMsg{Err: err}
@@ -475,16 +492,40 @@ func (s *State) Apply() tea.Cmd {
 // delegatedCmd suspends the TUI and runs the manager's upgrade command on
 // the real terminal, so its progress output and any password prompt work as
 // in a plain shell.
-func delegatedCmd(manager update.Manager, execPath string) tea.Cmd {
-	command := exec.Command(manager.Command[0], manager.Command[1:]...)
-	return uiterminal.ExecProcess(command, func(err error) tea.Msg {
-		return delegatedResult(manager, execPath, err)
+func delegatedCmd(manager update.Manager, execPath, version, expected string) tea.Cmd {
+	return uiterminal.ExecProcess(manager.UpgradeCommand(), func(err error) tea.Msg {
+		// Bubble Tea runs this callback on the event loop, and the result
+		// execs the new binary, so it goes out as a command.
+		return tea.BatchMsg{func() tea.Msg { return delegatedResult(manager, execPath, version, expected, err) }}
 	})
 }
 
-func delegatedResult(manager update.Manager, execPath string, err error) AppliedMsg {
+func delegatedResult(manager update.Manager, execPath, version, expected string, err error) AppliedMsg {
 	if err != nil {
 		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.String(), err)}
 	}
-	return AppliedMsg{Path: update.RestartTarget(execPath)}
+	target, upgraded, err := Upgraded(manager, execPath, version, expected)
+	if err != nil {
+		return AppliedMsg{Err: fmt.Errorf("%s: %w", manager.Name, err)}
+	}
+	if !upgraded {
+		if expected == "" {
+			dir, err := config.Dir()
+			var result update.Result
+			if err == nil {
+				result, err = RefreshForApply(context.Background(), dir, version)
+			}
+			if err == nil {
+				result, err = update.ForInstall(context.Background(), dir, version, manager, true, result)
+			}
+			if err != nil {
+				return AppliedMsg{Err: fmt.Errorf("%s finished, still on %s: %w", manager.Name, version, err)}
+			}
+			if result.Latest == "" {
+				return AppliedMsg{Result: result, UpToDate: true}
+			}
+		}
+		return AppliedMsg{Err: fmt.Errorf("%s finished, still on %s", manager.Name, version)}
+	}
+	return AppliedMsg{Path: target}
 }
