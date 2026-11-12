@@ -44,6 +44,10 @@ const (
 
 const commandBudget = 10 * time.Second
 
+// createBudget is longer because GitHub can take over 10s to create an
+// issue, and a kill then can leave a filed issue reported as a failure.
+const createBudget = 30 * time.Second
+
 // Vars so tests can stand in for gh, the version probes and the platform.
 var (
 	lookPath    = exec.LookPath
@@ -152,13 +156,35 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if filed, done := r.filed[previewID]; done {
 		return filed, nil
 	}
-	issueURL, err := runCommand("gh", "issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body)
+	issueURL, err := runCommand(createBudget, "gh", createArgs(preview)...)
 	if err != nil {
-		return Filed{}, fmt.Errorf("gh issue create: %w", err)
+		return Filed{}, fmt.Errorf("gh api create issue: %w", err)
+	}
+	if !strings.HasPrefix(issueURL, "https://") {
+		return Filed{}, fmt.Errorf("gh api create issue answered %q, not an issue url", issueURL)
 	}
 	filed := Filed{Route: RouteGH, URL: issueURL}
 	r.filed[previewID] = filed
 	return filed, nil
+}
+
+// createArgs files the issue and its type in one REST call, which every gh
+// version has; GitHub drops the type for a reporter without push access.
+func createArgs(preview Preview) []string {
+	return []string{"api", "repos/" + repo + "/issues", "-X", "POST",
+		"-f", "title=" + preview.Title, "-f", "body=" + preview.Body, "-f", "type=" + issueType(preview.Kind),
+		"--jq", ".html_url"}
+}
+
+// issueType matches the type each issue form sets.
+func issueType(kind Kind) string {
+	switch kind {
+	case Bug:
+		return "Bug"
+	case Feature:
+		return "Feature"
+	}
+	return "Task"
 }
 
 func (d Draft) validate() error {
@@ -247,7 +273,7 @@ func route() (name, account, reason string) {
 	if _, err := lookPath("gh"); err != nil {
 		return RouteBrowser, "", "gh is not installed"
 	}
-	login, err := runCommand("gh", "api", "user", "--jq", ".login")
+	login, err := runCommand(commandBudget, "gh", "api", "user", "--jq", ".login")
 	if err != nil {
 		return RouteBrowser, "", "gh is installed but cannot reach GitHub as a logged-in account: " + err.Error()
 	}
@@ -277,7 +303,7 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 	gathered.Tool = toolLabel(toolName)
 	// A CLI that will not name its version is context missing, not a failure.
 	if fields := strings.Fields(tool.Command); len(fields) > 0 {
-		if probed, err := runCommand(fields[0], "--version"); err == nil {
+		if probed, err := runCommand(commandBudget, fields[0], "--version"); err == nil {
 			gathered.ToolVersion = firstLine(probed)
 		}
 	}
@@ -345,8 +371,8 @@ func firstLine(text string) string {
 	return strings.TrimSpace(line)
 }
 
-func run(name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), commandBudget)
+func run(budget time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	var stderr strings.Builder
 	command := exec.CommandContext(ctx, name, args...)
