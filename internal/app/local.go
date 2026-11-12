@@ -3,8 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
@@ -85,10 +88,21 @@ func OpenLocal(profileDir, version string, driver *tmux.Driver) (*Local, error) 
 	return &Local{ProfileDir: profileDir, Runtime: runtime, Engine: engine, Backend: backend, Lifecycle: lifecycle, Execution: runner}, nil
 }
 
+// A drain that outlasts drainNoticeAfter says so, since the screen is
+// already gone and the process would otherwise look hung.
+var (
+	drainNoticeAfter           = time.Second
+	drainNoticeOut   io.Writer = os.Stderr
+)
+
 func (l *Local) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), lifecyclehook.DrainQuit)
 	defer cancel()
+	notice := time.AfterFunc(drainNoticeAfter, func() {
+		fmt.Fprintf(drainNoticeOut, "Waiting up to %s for running hooks to finish.\n", lifecyclehook.DrainQuit)
+	})
 	l.closeHooks(ctx)
+	notice.Stop()
 	return l.Runtime.Store.Close()
 }
 
