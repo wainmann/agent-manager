@@ -27,7 +27,8 @@ type LaunchRequest struct {
 	Pane             PaneSize
 	BesideSessionID  string
 	RollbackWorktree bool
-	// Reason is session_start's reason. Empty is emitted as given.
+	// Reason is session_start's reason. A shell launch (a terminal, the
+	// installer tab) leaves it empty, since a shell row emits nothing.
 	Reason string
 }
 

@@ -120,12 +120,13 @@ type Emitter interface {
 	Emit(Event)
 }
 
-// Nop drops every event. Constructors install it so call sites never check.
+// Nop drops every event.
 type Nop struct{}
 
 func (Nop) Emit(Event) {}
 
-// Or returns events, or Nop when it is nil.
+// Or returns events, or Nop when it is nil, as a test that builds a runtime
+// by hand leaves it.
 func Or(events Emitter) Emitter {
 	if events == nil {
 		return Nop{}
