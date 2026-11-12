@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -403,6 +404,29 @@ func TestLastSpawnToolBecomesSettingsDefault(t *testing.T) {
 	m.applyTestMsg(t, m.openForm()())
 	if got := m.form().Tool(); got != "claude" {
 		t.Fatalf("form tool = %q, want the default changed in settings after the spawn", got)
+	}
+}
+
+func TestQuickSpawnToolBecomesSettingsDefault(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "ready-tool"))
+	m.quick().Input.SetValue("build it")
+	_, cmd := m.submitQuick()
+	m.applyCmd(t, cmd)
+
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want the quick bar spawn, ready-tool", tool, err)
+	}
+	m.closeQuick()
+	m.openQuickMode()
+	if got := m.quick().Tool(); got != "ready-tool" {
+		t.Fatalf("reopened quick bar tool = %q, want the last spawn", got)
 	}
 }
 

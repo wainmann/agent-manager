@@ -160,8 +160,8 @@ func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpda
 	s.Cache.ApplyValues(request.Values)
 	for _, value := range request.Values {
 		if _, saving := s.ChoiceGen[value.Key]; saving {
-			// A picker save still on the lane must not reconcile the cache
-			// back to the value this save just replaced.
+			// Supersede any earlier picker save for this key, so its failure
+			// cannot reconcile the cache back over this value.
 			s.AdvanceChoice(value.Key)
 		}
 	}
