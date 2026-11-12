@@ -172,20 +172,12 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 // version has; GitHub drops the type for a reporter without push access.
 func createArgs(preview Preview) []string {
 	return []string{"api", "repos/" + repo + "/issues", "-X", "POST",
-		"-f", "title=" + preview.Title, "-f", "body=" + preview.Body, "-f", "type=" + issueType(preview.Kind),
+		"-f", "title=" + preview.Title, "-f", "body=" + preview.Body, "-f", "type=" + issueTypes[preview.Kind],
 		"--jq", ".html_url"}
 }
 
-// issueType matches the type each issue form sets.
-func issueType(kind Kind) string {
-	switch kind {
-	case Bug:
-		return "Bug"
-	case Feature:
-		return "Feature"
-	}
-	return "Task"
-}
+// issueTypes matches the type each issue form sets.
+var issueTypes = map[Kind]string{Bug: "Bug", Feature: "Feature"}
 
 func (d Draft) validate() error {
 	if d.Kind != Bug && d.Kind != Feature {

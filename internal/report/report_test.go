@@ -539,7 +539,7 @@ func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
 }
 
 func TestCreateArgsSetTheTypeTheIssueFormsSet(t *testing.T) {
-	for kind, want := range map[Kind]string{Bug: "Bug", Feature: "Feature", "other": "Task"} {
+	for kind, want := range map[Kind]string{Bug: "Bug", Feature: "Feature"} {
 		args := createArgs(Preview{Kind: kind, Title: "a=b", Body: "@body"})
 		line := strings.Join(args, " ")
 		wantLine := "api repos/" + repo + "/issues -X POST -f title=a=b -f body=@body -f type=" + want + " --jq .html_url"
