@@ -13,6 +13,7 @@ func addDeleteSession(server *mcp.Server, noCaller error, sessionID string, sess
 		Name: "delete_session",
 		Description: "Remove a finished session the way the user's delete key does: its agent stops, its row and terminals go, and Agent Manager removes the worktree and am/ branch it created. " +
 			"Before anything stops it checks that worktree, and while it holds uncommitted or untracked files, or commits on no remote and not on its base, the call fails naming that work and the session and worktree stay; there is no way to force it. " +
+			"A worktree another session still works in is not checked: the session is deleted and the worktree stays for that session, which the result's notice says. " +
 			"Unlike kill_session the session cannot come back with revive_session, so ask first unless the user asked for it. To end yourself, call kill_self or archive_self.",
 		Annotations: toolAnnotations(false, true, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Deletion, error) {

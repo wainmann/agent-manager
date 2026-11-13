@@ -72,7 +72,8 @@ Sessions of MCP-capable CLIs carry agent-manager's own MCP server over stdio, so
 `create_session` to spawn a peer, `send_session` to message one, `wait_for_session` to block
 on one, `task` to claim shared work, and `reserve_files` to declare what it is editing. Once a
 peer's work is saved, `delete_session` (or `agent-manager delete <id>`) removes it with its
-worktree and branch, and refuses while that worktree holds uncommitted or unpushed work.
+worktree and branch, and refuses while that worktree holds uncommitted or unpushed work. A
+worktree another session still uses is left for that session instead.
 
 ## Reference
 
