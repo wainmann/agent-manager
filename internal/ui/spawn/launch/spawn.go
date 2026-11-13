@@ -208,15 +208,25 @@ func RunGroup(services Services, request GroupRequest) (GroupResult, error) {
 	return GroupResult{Path: request.Path, Dir: dir, Worktree: request.Worktree}, nil
 }
 
-func SaveChoice(st SettingsStore, key, value string) error {
-	if err := st.SetSetting(key, value); err != nil {
-		return fmt.Errorf("saving %s: %w", key, err)
+// SaveChoice persists a choice the form or the quick bar read back. A value
+// the store already holds costs no write; a failed write carries the stored
+// value back so the caller can undo its optimistic cache entry.
+func SaveChoice(st SettingsStore, key, value string) (ChoiceSaveResult, error) {
+	_, err := st.SetSettingIfChanged(key, value)
+	if err == nil {
+		// A concurrent writer already holds this value; the cached one agrees.
+		return ChoiceSaveResult{}, nil
 	}
-	return nil
+	stored, readErr := st.Setting(key)
+	if readErr != nil {
+		return ChoiceSaveResult{}, errors.Join(fmt.Errorf("saving %s: %w", key, err), fmt.Errorf("reading %s back: %w", key, readErr))
+	}
+	return ChoiceSaveResult{Stored: stored, Valid: true}, fmt.Errorf("saving %s: %w", key, err)
 }
 
 type SettingsStore interface {
-	SetSetting(key, value string) error
+	SetSettingIfChanged(key, value string) (bool, error)
+	Setting(key string) (string, error)
 }
 
 // DirectoryPreflight is the read-only filesystem and repository seam a spawn

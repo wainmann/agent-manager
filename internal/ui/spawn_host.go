@@ -195,16 +195,6 @@ func (m *Model) cachedDefaultToolSelection() ([]string, int) {
 	return m.cachedToolSelection(m.cachedHiddenTools(), "")
 }
 
-func (m *Model) cachedSpawnToolSelection() ([]string, int) {
-	names, index := m.cachedDefaultToolSelection()
-	for i, name := range names {
-		if name == m.ledger.spawner.LastSpawnTool {
-			return names, i
-		}
-	}
-	return names, index
-}
-
 func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = uirail.ParentGroup(g) {
 		switch m.workspace.groupWorktrees[g] {
@@ -402,7 +392,7 @@ func (m *Model) groupEffectivelyArchived(path string) bool {
 func (m *Model) applyCachedFormDefaults() tea.Cmd {
 	f := m.form()
 	before := f.Tool()
-	f.SetTools(m.cachedSpawnToolSelection())
+	f.SetTools(m.cachedDefaultToolSelection())
 	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	toolName := f.Tool()
 	if toolName == before || toolName == "" {
@@ -425,7 +415,32 @@ func (m *Model) fitChoices() {
 
 func (m *Model) saveChoiceSetting(key, value string) {
 	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: key, Value: value}})
-	m.enqueueEffect(uilaunch.ChoiceSaveRequest{Key: key, Value: value}, 0, false)
+	m.settings.Pending++
+	generation := m.settings.AdvanceChoice(key)
+	// first lets the save ride a quit drain: a spawn completing while the
+	// manager exits still persists its pick. SaveChoice skips unchanged
+	// values, so repeating the pick costs no write.
+	m.enqueueEffect(uilaunch.ChoiceSaveRequest{Key: key, Value: value, Generation: generation}, 0, m.effects.Quitting)
+}
+
+// applyChoiceSave releases the pending fence a saveChoiceSetting held
+// against settings loads, and on a failed write reconciles the cache to the
+// stored value so the UI shows what a restart will read back. A newer pick
+// for the key, or a readback that failed, leaves the cache alone: the first
+// holds a value the store is about to take, the second has nothing to say
+// about what the store holds.
+func (m *Model) applyChoiceSave(request uilaunch.ChoiceSaveRequest, result uilaunch.ChoiceSaveResult, err error) {
+	if m.settings.Pending > 0 {
+		m.settings.Pending--
+	}
+	if err == nil {
+		return
+	}
+	m.reportErr(err.Error())
+	if !result.Valid || request.Generation != m.settings.ChoiceGen[request.Key] {
+		return
+	}
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: request.Key, Value: result.Stored}})
 }
 
 func (m *Model) choiceSettingKeys() []string {

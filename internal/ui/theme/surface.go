@@ -96,11 +96,15 @@ func FillBackdrop(frame string, width int, backgroundHex, foregroundHex string) 
 
 func fillBackdropLine(line string, width int, fill, ink string, parser *ansi.Parser) string {
 	var out strings.Builder
-	out.WriteString(fill + ink)
-	cells := 0
+	// Terminals can disagree on a grapheme's width. Clear the old row first
+	// so a narrower rendering cannot leave its last cell behind.
+	out.WriteString(fill + ink + ansi.EraseEntireLine)
+	// DecodeSequence can split an ASCII-base grapheme (such as a keycap).
+	// Measure the whole line so padding uses the same width as the layout.
+	cells := ansi.StringWidth(line)
 	var state byte
 	for len(line) > 0 {
-		seq, cellWidth, n, next := ansi.DecodeSequence(line, state, parser)
+		seq, _, n, next := ansi.DecodeSequence(line, state, parser)
 		out.WriteString(seq)
 		if ansi.HasCsiPrefix(seq) && parser.Command() == 'm' {
 			background, foreground := clearedColors(parser.Params())
@@ -111,7 +115,6 @@ func fillBackdropLine(line string, width int, fill, ink string, parser *ansi.Par
 				out.WriteString(ink)
 			}
 		}
-		cells += cellWidth
 		line, state = line[n:], next
 	}
 	if cells < width {
