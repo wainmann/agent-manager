@@ -13,6 +13,7 @@ import (
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
@@ -26,7 +27,7 @@ func (m *Model) openForm() tea.Cmd {
 }
 
 func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
-	tools, toolIndex := m.cachedSpawnToolSelection()
+	tools, toolIndex := m.cachedDefaultToolSelection()
 	if len(tools) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
@@ -514,6 +515,10 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 	if request.Kind != uilaunch.Shell && request.Kind != uilaunch.Import {
 		m.ledger.spawner.RememberSpawn(request.ToolName, request.PickWorktree)
 		spawn.RememberModel(m.spawnHost(), request.ToolName, spawn.Pick(request.Choice))
+		// The pick is the Settings default from now on, so the next form,
+		// the quick bar and an agent-manager spawn open on it. A remote
+		// spawn never reaches here, so it leaves the local default alone.
+		m.saveChoiceSetting(uisettings.DefaultToolSetting, request.ToolName)
 	}
 	// New sessions start as starting, which attention excludes; clear so the
 	// row the spawn just created is on screen.

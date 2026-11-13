@@ -17,7 +17,8 @@ type State struct {
 	BaseFetches   map[BaseFetchKey]BaseFetch
 	Catalogs      map[string]*CatalogState
 	// LastSpawnTool and LastSpawnWorktree are the CLI and the worktree
-	// toggle the last spawn used, so the next form opens on them.
+	// toggle the last spawn used. The toggle seeds the next spawn's
+	// worktree default while that CLI stays enabled.
 	LastSpawnTool     string
 	LastSpawnWorktree bool
 }

@@ -165,10 +165,12 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.applySpawn(request, as[uilaunch.Result](result), err)
 	case uilaunch.GroupRequest:
 		return m.applyGroupEffect(request, as[uilaunch.GroupResult](result), err)
+	case uilaunch.ChoiceSaveRequest:
+		m.applyChoiceSave(request, as[uilaunch.ChoiceSaveResult](result), err)
+		return nil
 	case uiquicksend.SendRequest:
 		return uiquicksend.Apply(quickSendRoot{m}, request, as[uiquicksend.SendResult](result), err)
 	}
-	// A kept model choice carries nothing back: the cache already holds it.
 	if err != nil {
 		m.reportErr(err.Error())
 	}

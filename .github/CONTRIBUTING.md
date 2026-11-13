@@ -12,6 +12,8 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 
 ## Picking up an issue
 
+Every issue has a type next to its labels. The bug form sets Bug, the feature form sets Feature, and anything else gets Task during triage. Search by type, such as `type:Bug`, to find something to pick up.
+
 If an issue is unassigned, it's free to take. Comment that you're on it and I'll assign you. If there's no update in 14 days, it's free again.
 
 ## Before you open a pull request

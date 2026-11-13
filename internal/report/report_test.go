@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -18,14 +19,19 @@ type fakeCommands struct {
 	failing map[string]error
 	ghPath  error
 	ran     [][]string
+	budgets map[string]time.Duration
 }
 
 func swapSeams(t *testing.T, fake *fakeCommands) {
 	t.Helper()
 	oldLookPath, oldRun, oldGoos, oldProc, oldMux := lookPath, runCommand, goos, procVersion, muxVersion
 	lookPath = func(string) (string, error) { return "/usr/bin/gh", fake.ghPath }
-	runCommand = func(name string, args ...string) (string, error) {
+	runCommand = func(budget time.Duration, name string, args ...string) (string, error) {
 		line := strings.Join(append([]string{name}, args...), " ")
+		if fake.budgets == nil {
+			fake.budgets = map[string]time.Duration{}
+		}
+		fake.budgets[line] = budget
 		fake.ran = append(fake.ran, append([]string{name}, args...))
 		if err, failed := fake.failing[line]; failed {
 			return "", err
@@ -48,12 +54,16 @@ func swapSeams(t *testing.T, fake *fakeCommands) {
 	})
 }
 
+func posts(command []string) bool {
+	return len(command) > 2 && command[0] == "gh" && command[1] == "api" && command[2] == "repos/"+repo+"/issues"
+}
+
 func loggedIn() *fakeCommands {
 	return &fakeCommands{
 		answers: map[string]string{
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
-			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody(): "https://github.com/" + repo + "/issues/512",
+			"gh api repos/" + repo + "/issues -X POST -f title=Space lands in the wrong pane -f body=" + bugBody() + " -f type=Bug --jq .html_url": "https://github.com/" + repo + "/issues/512",
 		},
 		failing: map[string]error{},
 	}
@@ -111,7 +121,7 @@ func TestPreviewComposesTheBugFormAndPostsNothing(t *testing.T) {
 		t.Fatalf("context = %+v, want %+v", preview.Context, want)
 	}
 	for _, ran := range fake.ran {
-		if ran[0] == "gh" && ran[1] == "issue" {
+		if posts(ran) {
 			t.Fatalf("a preview posted: %v", ran)
 		}
 	}
@@ -159,12 +169,21 @@ func TestFilingTheSameApprovalTwicePostsOnce(t *testing.T) {
 	}
 	created := 0
 	for _, ran := range fake.ran {
-		if ran[0] == "gh" && ran[1] == "issue" && ran[2] == "create" {
+		if posts(ran) {
 			created++
 		}
 	}
 	if created != 1 {
-		t.Fatalf("gh issue create ran %d times: %v", created, fake.ran)
+		t.Fatalf("issue create ran %d times: %v", created, fake.ran)
+	}
+	for line, budget := range fake.budgets {
+		want := commandBudget
+		if strings.HasPrefix(line, "gh api repos/") {
+			want = createBudget
+		}
+		if budget != want {
+			t.Fatalf("%q ran within %v, want %v", line, budget, want)
+		}
 	}
 }
 
@@ -195,7 +214,7 @@ func TestFilingRefusesAnApprovalThatNoLongerFitsTheOutcome(t *testing.T) {
 		t.Fatalf("File on a changed route = %v", err)
 	}
 	for _, ran := range installed.ran {
-		if ran[0] == "gh" && ran[1] == "issue" {
+		if posts(ran) {
 			t.Fatalf("a stale approval posted: %v", ran)
 		}
 	}
@@ -244,7 +263,7 @@ func TestFilingWithoutAnApprovalIsRefused(t *testing.T) {
 func TestFileReportsAGHFailure(t *testing.T) {
 	fake := loggedIn()
 	for line := range fake.answers {
-		if strings.HasPrefix(line, "gh issue create") {
+		if strings.HasPrefix(line, "gh api repos/") {
 			fake.failing[line] = errors.New("exit status 1: GraphQL: Resource not accessible")
 		}
 	}
@@ -257,7 +276,7 @@ func TestFileReportsAGHFailure(t *testing.T) {
 		t.Fatalf("Preview: %v", err)
 	}
 	_, err = reporter.File(sessionID, bugDraft(), preview.ID)
-	if err == nil || !strings.Contains(err.Error(), "gh issue create: ") || !strings.Contains(err.Error(), "Resource not accessible") {
+	if err == nil || !strings.Contains(err.Error(), "gh api create issue: ") || !strings.Contains(err.Error(), "Resource not accessible") {
 		t.Fatalf("File with a failing gh = %v", err)
 	}
 }
@@ -299,7 +318,7 @@ func TestWithoutGHTheBrowserRouteHandsBackThePrefilledForm(t *testing.T) {
 				t.Fatalf("filed = %+v, preview url %q", filed, preview.URL)
 			}
 			for _, ran := range route.fake.ran {
-				if ran[0] == "gh" && ran[1] == "issue" {
+				if posts(ran) {
 					t.Fatalf("the browser route posted: %v", ran)
 				}
 			}
@@ -516,5 +535,36 @@ func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
 	}
 	if got := FormatFiled(Filed{Route: RouteBrowser, URL: "https://example.test/new"}); got != "nothing was posted; open this prefilled form to file it: https://example.test/new" {
 		t.Fatalf("FormatFiled browser = %q", got)
+	}
+}
+
+func TestCreateArgsSetTheTypeTheIssueFormsSet(t *testing.T) {
+	for kind, want := range map[Kind]string{Bug: "Bug", Feature: "Feature"} {
+		args := createArgs(Preview{Kind: kind, Title: "a=b", Body: "@body"})
+		line := strings.Join(args, " ")
+		wantLine := "api repos/" + repo + "/issues -X POST -f title=a=b -f body=@body -f type=" + want + " --jq .html_url"
+		if line != wantLine {
+			t.Fatalf("createArgs(%s) = %q, want %q", kind, line, wantLine)
+		}
+	}
+}
+
+func TestFileRefusesAnAnswerThatIsNotAnIssueURL(t *testing.T) {
+	fake := loggedIn()
+	for line := range fake.answers {
+		if strings.HasPrefix(line, "gh api repos/") {
+			fake.answers[line] = "null"
+		}
+	}
+	swapSeams(t, fake)
+	configDir, sessionID := workspace(t)
+
+	reporter := New(configDir, "0.31.0")
+	preview, err := reporter.Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if _, err := reporter.File(sessionID, bugDraft(), preview.ID); err == nil || !strings.Contains(err.Error(), `answered "null"`) {
+		t.Fatalf("File with a non-url answer = %v", err)
 	}
 }

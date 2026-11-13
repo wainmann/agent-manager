@@ -488,6 +488,31 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	}
 }
 
+func TestRemoteSpawnLeavesThisMachinesDefaultToolAlone(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	if err := m.services.store.SetDefaultTool("ready-tool"); err != nil {
+		t.Fatal(err)
+	}
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: uisettings.DefaultToolSetting, Value: "ready-tool"}})
+	m.rail.Focus(boxGroup)
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick().Input.SetValue("build it")
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.runRemoteCmd(t, cmd)
+	if calls := fake.taken(); len(calls) != 1 || !slices.Contains(calls[0], "--tool=claude") {
+		t.Fatalf("calls = %q, want one claude spawn on the host", calls)
+	}
+
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want this machine's ready-tool", tool, err)
+	}
+	if got := m.settings.Cache.Value(uisettings.DefaultToolSetting); got != "ready-tool" {
+		t.Fatalf("cached default tool = %q, want this machine's ready-tool", got)
+	}
+}
+
 // Enter in the saved prompts list inserts the pick before anything is
 // sent, as it does on a local target.
 func TestQuickBarSavedPromptsTakeEnterOnARemoteTarget(t *testing.T) {

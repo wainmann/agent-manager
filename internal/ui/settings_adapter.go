@@ -158,6 +158,13 @@ func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpda
 	}
 	d.AdvanceBaseline(request.Values, request.Hidden)
 	s.Cache.ApplyValues(request.Values)
+	for _, value := range request.Values {
+		if _, saving := s.ChoiceGen[value.Key]; saving {
+			// Supersede any earlier picker save for this key, so its failure
+			// cannot reconcile the cache back over this value.
+			s.AdvanceChoice(value.Key)
+		}
+	}
 	if request.Hidden != nil {
 		s.Cache.ApplyHidden(request.Hidden)
 	}
