@@ -143,3 +143,18 @@ func TestReadStyledKeepsColors(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminalReadTail(t *testing.T) {
+	var out bytes.Buffer
+	if err := runTerminalRead(&out, &fakeTerminals{}, []string{"--tail", "1", "t1"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "build passed" {
+		t.Fatalf("terminal read --tail 1 = %q", got)
+	}
+	for _, args := range [][]string{{"--tail", "1", "--styled", "t1"}, {"--tail", "-1", "t1"}} {
+		if err := runTerminalRead(&bytes.Buffer{}, &fakeTerminals{}, args, ""); err == nil {
+			t.Errorf("terminal read %v did not fail", args)
+		}
+	}
+}

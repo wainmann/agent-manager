@@ -193,7 +193,8 @@ turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for (?:<1s|
 # hint rows (usage warning, tip, scroll and copy notices) sit right-aligned
 # between the transcript and the composer; a background terminal still open
 # after the turn adds its own row there
-chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied |\\d+ background terminals? running · )"
+# the app status row below the composer stays under a dialog that replaces it
+chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied |\\d+ background terminals? running · )|^\\s+\\S.* · /daemon\\s*$"
 # a message queued during a turn is drawn under the running step, with its
 # edit hint, until the turn picks it up; a message sent with Enter shows under
 # "Messages to be submitted after next tool call" (or "at end of turn")
@@ -532,7 +533,8 @@ default_status = "finished"
 input_prefix = "^╰─ ?"
 activity_cutoff = "(?ms)\\A.*^╰─(?:[ \\t][^\\n]*)?$"
 # rules, the status band, and the session title omp docks at the right edge
-chrome_line = "^[ \\t]*─{8,}[ \\t]*$|^ [^ \\n](?: \\d+[smh])? [^\\n]*─{4,}[^\\n]*$|^[ \\t]{20,}\\S[^\\n]*$"
+# the spinner row above the status line during a turn
+chrome_line = "^[ \\t]*─{8,}[ \\t]*$|^ [^ \\n](?: \\d+[smh])? [^\\n]*─{4,}[^\\n]*$|^[ \\t]{20,}\\S[^\\n]*$|^[ \\t]*⎋ [^\\n]*…"
 rules = [
   # tool approval and ask dialogs replace the composer
   { state = "waiting", pattern = "(?m)^│ \\S+ navigate  \\S+ select  \\S+ cancel[ \\t]*│$" },
