@@ -2,6 +2,8 @@
 // profiles, without the processes that ask it.
 package value
 
+import "strings"
+
 // Model is one model a CLI offers.
 type Model struct {
 	ID string `json:"id"`
@@ -48,9 +50,11 @@ func (c Catalog) ModelsFor(profile string) []Model {
 	return c.Models
 }
 
-// Match returns the model whose Key is key, else every model with that id.
+// Match returns the model whose Key is key, else every model with that id,
+// else every model whose label is key in any case: Claude on Bedrock lists
+// Sonnet by its Bedrock id, labelled "Sonnet", with no "sonnet" entry.
 func Match(models []Model, key string) []Model {
-	var byID []Model
+	var byID, byLabel []Model
 	for _, model := range models {
 		if model.Key() == key {
 			return []Model{model}
@@ -58,8 +62,14 @@ func Match(models []Model, key string) []Model {
 		if model.ID == key {
 			byID = append(byID, model)
 		}
+		if strings.EqualFold(model.Label, key) {
+			byLabel = append(byLabel, model)
+		}
 	}
-	return byID
+	if len(byID) > 0 {
+		return byID
+	}
+	return byLabel
 }
 
 // Default is the model the CLI starts on when none is given, if it says.
