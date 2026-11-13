@@ -256,9 +256,43 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch, baseOverride string) 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false, nil
 	}
-	unsaved, base, branchMerged, err := d.worktreeUnsaved(root, path, branch, baseOverride)
-	if err != nil || unsaved != "" {
+	porcelain, err := d.run(path, "status", "--porcelain")
+	if err != nil {
 		return false, err
+	}
+	if porcelain != "" {
+		return false, nil
+	}
+	base, err := d.worktreeBase(root, baseOverride)
+	if err != nil {
+		return false, err
+	}
+	if base == "" {
+		return false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
+	}
+	// Only HEAD is read in the worktree: a base of HEAD means the root's checkout.
+	head, err := d.run(path, "rev-parse", "HEAD")
+	if err != nil {
+		return false, err
+	}
+	branchTip, err := d.localBranchTip(root, branch)
+	if err != nil {
+		return false, err
+	}
+	// A worktree can leave its branch, so its HEAD and the branch each hold work.
+	tips := []string{head}
+	if branchTip != "" && branchTip != head {
+		tips = append(tips, branchTip)
+	}
+	branchMerged := false
+	for _, tip := range tips {
+		merged, saved, err := d.tipSaved(root, base, tip)
+		if err != nil || !saved {
+			return false, err
+		}
+		if tip == branchTip {
+			branchMerged = merged
+		}
 	}
 	if _, err := d.run(root, "worktree", "remove", path); err != nil {
 		return false, err
@@ -275,64 +309,6 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch, baseOverride string) 
 		return false, err
 	}
 	return true, nil
-}
-
-// WorktreeUnsaved names the work RemoveWorktreeIfClean would keep the
-// worktree for, or returns "" when it would remove it.
-func (d *Driver) WorktreeUnsaved(root, path, branch, baseOverride string) (string, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return "", nil
-	}
-	unsaved, _, _, err := d.worktreeUnsaved(root, path, branch, baseOverride)
-	return unsaved, err
-}
-
-func (d *Driver) worktreeUnsaved(root, path, branch, baseOverride string) (unsaved, base string, branchMerged bool, err error) {
-	porcelain, err := d.run(path, "status", "--porcelain")
-	if err != nil {
-		return "", "", false, err
-	}
-	if porcelain != "" {
-		return "uncommitted or untracked files in " + path, "", false, nil
-	}
-	base, err = d.worktreeBase(root, baseOverride)
-	if err != nil {
-		return "", "", false, err
-	}
-	if base == "" {
-		return "", "", false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
-	}
-	// Only HEAD is read in the worktree: a base of HEAD means the root's checkout.
-	head, err := d.run(path, "rev-parse", "HEAD")
-	if err != nil {
-		return "", "", false, err
-	}
-	branchTip, err := d.localBranchTip(root, branch)
-	if err != nil {
-		return "", "", false, err
-	}
-	// A worktree can leave its branch, so its HEAD and the branch each hold work.
-	tips := []string{head}
-	if branchTip != "" && branchTip != head {
-		tips = append(tips, branchTip)
-	}
-	for _, tip := range tips {
-		merged, saved, err := d.tipSaved(root, base, tip)
-		if err != nil {
-			return "", "", false, err
-		}
-		if !saved {
-			where := "the HEAD of " + path
-			if tip == branchTip {
-				where = branch
-			}
-			return fmt.Sprintf("commits on %s that are not on %s or any remote", where, base), base, false, nil
-		}
-		if tip == branchTip {
-			branchMerged = merged
-		}
-	}
-	return "", base, branchMerged, nil
 }
 
 // localBranchTip resolves a local branch, or returns "" when it no longer

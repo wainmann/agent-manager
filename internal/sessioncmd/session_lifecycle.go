@@ -57,9 +57,8 @@ type Deletion struct {
 }
 
 // Delete removes a session the way the delete key does, its terminals,
-// worktree and am/ branch included. Unlike the key, which keeps a worktree
-// with work in it and says so, it refuses before anything stops, so
-// discarding unsaved work stays a step the user takes by hand.
+// worktree and am/ branch included. A worktree with unsaved work, or one
+// another session uses, stays with its branch, and the notice says so.
 func (s *Sessions) Delete(sessionID, targetID string) (Deletion, error) {
 	runtime, err := s.open()
 	if err != nil {
@@ -82,32 +81,15 @@ func (s *Sessions) Delete(sessionID, targetID string) (Deletion, error) {
 		return Deletion{}, err
 	}
 	selection := []store.Session{target}
-	sharedWorktree := false
 	for _, sess := range sessions {
-		switch {
-		case sess.ParentID == target.ID:
+		if sess.ParentID == target.ID {
 			selection = append(selection, sess)
-		case sess.ID != target.ID && sess.Cwd == target.Cwd:
-			sharedWorktree = true
 		}
 	}
 	var gitDriver *git.Driver
 	if target.WorktreeRepo != "" {
 		if gitDriver, err = s.newGit(); err != nil {
-			return Deletion{}, fmt.Errorf("cannot check %s's worktree for unsaved work: %w", target.Name, err)
-		}
-		if !sharedWorktree {
-			base, err := groupBase(runtime.store, target.Group)
-			if err != nil {
-				return Deletion{}, err
-			}
-			unsaved, err := gitDriver.WorktreeUnsaved(target.WorktreeRepo, target.Cwd, target.WorktreeBranch, base)
-			if err != nil {
-				return Deletion{}, fmt.Errorf("cannot check %s's worktree for unsaved work: %w", target.Name, err)
-			}
-			if unsaved != "" {
-				return Deletion{}, fmt.Errorf("kept %s: its worktree has %s; save or discard that work first", target.Name, unsaved)
-			}
+			return Deletion{}, fmt.Errorf("cannot clean up %s's worktree: %w", target.Name, err)
 		}
 	}
 	lifecycle, err := s.lifecycle(runtime, gitDriver)

@@ -864,7 +864,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
 		"kill_session":     {"revive_session", "ask first", "kill_self"},
-		"delete_session":   {"worktree", "no way to force it", "ask first", "kill_self"},
+		"delete_session":   {"worktree", "notice", "ask first", "kill_self"},
 		"archive_session":  {"archived false", "archive_self"},
 		"move_session":     {"list_groups", "create_group", "keeps running"},
 		"archive_self":     {"once the turn making this call ends", "finish your reply", "cancel true", "archive_session"},

@@ -397,7 +397,7 @@ func TestSessionsDeleteRemovesACleanWorktreeWithItsBranch(t *testing.T) {
 	}
 }
 
-func TestSessionsDeleteRefusesAWorktreeWithUnsavedWork(t *testing.T) {
+func TestSessionsDeleteKeepsAWorktreeWithUnsavedWork(t *testing.T) {
 	h := newSessionHarness(t)
 	repo := newGitRepo(t)
 	wanted := true
@@ -405,33 +405,30 @@ func TestSessionsDeleteRefusesAWorktreeWithUnsavedWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	refused := func(want string) {
-		t.Helper()
-		if _, err := h.sessions.Delete(h.caller.ID, created.ID); err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("Delete error = %v, want it to name %q", err, want)
-		}
-		if _, err := h.store.Get(created.ID); err != nil {
-			t.Fatalf("a refused delete must keep the row: %v", err)
-		}
-		if !h.driver.Exists(created.ID) {
-			t.Fatal("a refused delete must leave the agent running")
-		}
-		if _, err := os.Stat(filepath.Join(created.Directory, "work.txt")); err != nil {
-			t.Fatalf("a refused delete must keep the work: %v", err)
-		}
-	}
 	if err := os.WriteFile(filepath.Join(created.Directory, "work.txt"), []byte("draft"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	refused("uncommitted or untracked files")
-	for _, args := range [][]string{{"add", "work.txt"}, {"commit", "-m", "work"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = created.Directory
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
+	deleted, err := h.sessions.Delete(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
 	}
-	refused("commits on " + created.Branch)
+	if want := "worktree kept (has work): " + created.Directory; deleted.Notice != want {
+		t.Fatalf("notice = %q, want %q", deleted.Notice, want)
+	}
+	if _, err := h.store.Get(created.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if h.driver.Exists(created.ID) {
+		t.Fatal("deleted session still has a pane")
+	}
+	if _, err := os.Stat(filepath.Join(created.Directory, "work.txt")); err != nil {
+		t.Fatalf("the unsaved work must stay: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+created.Branch)
+	branch.Dir = repo
+	if err := branch.Run(); err != nil {
+		t.Fatalf("branch %s of a kept worktree must stay: %v", created.Branch, err)
+	}
 }
 
 // A worktree another session still works in is that session's too, so the
