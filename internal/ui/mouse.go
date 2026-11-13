@@ -222,6 +222,9 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // leaves focus for that row, and a left press on the rail's blank leaves;
 // everything else is the pane's.
 func (m *Model) focusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.pressOnDivider(msg) {
+		return m.beginDividerDrag()
+	}
 	railPress := msg.Action == tea.MouseActionPress &&
 		(msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonRight)
 	if !railPress {
@@ -346,16 +349,8 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 	if split.Dragging && !split.ResizeMode {
 		m.exitResizeMode(split.Moved)
 	}
-	y0, y1 := m.bodyYRange()
-	onDivider := msg.Button == tea.MouseButtonLeft && !m.prefs.fullLayout && !m.rail.Searching() &&
-		msg.Y >= y0 && msg.Y < y1 && uigeometry.OnDivider(msg.X, m.dividerX())
-	if onDivider {
-		split.Dragging, split.Moved = true, false
-		if !split.ResizeMode {
-			split.RatioBefore = split.Ratio
-			m.push(newResizeSurface(m))
-		}
-		return m, nil
+	if m.pressOnDivider(msg) {
+		return m.beginDividerDrag()
 	}
 	if split.ResizeMode {
 		return m, nil
@@ -370,6 +365,27 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		return m.focusFromPreview()
 	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
+}
+
+// pressOnDivider reports a left press on the split's divider.
+func (m *Model) pressOnDivider(msg tea.MouseMsg) bool {
+	if !isLeftPress(msg) || m.prefs.fullLayout || m.rail.Searching() {
+		return false
+	}
+	y0, y1 := m.bodyYRange()
+	return msg.Y >= y0 && msg.Y < y1 && uigeometry.OnDivider(msg.X, m.dividerX())
+}
+
+// beginDividerDrag starts a drag of the divider, from the list or from a
+// focused session, whose pane the resize surface then stacks over.
+func (m *Model) beginDividerDrag() (tea.Model, tea.Cmd) {
+	split := &m.layout.split
+	split.Dragging, split.Moved = true, false
+	if !split.ResizeMode {
+		split.RatioBefore = split.Ratio
+		m.push(newResizeSurface(m))
+	}
+	return m, nil
 }
 
 // onRailColumn and onContentColumn place a point in the split's body on

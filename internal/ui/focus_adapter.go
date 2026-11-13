@@ -66,6 +66,14 @@ func ReadExtendedKey(msg tea.Msg) tea.Msg { return uifocus.ExtendedKey(msg) }
 // forwardExtendedKey sends a modified key to the focused pane while focus
 // holds the keyboard. Anywhere else it is dropped, as Bubble Tea drops it.
 func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
+	// A drag the mouse started holds the keyboard only until the first key,
+	// which ends it where it stands, plain or modified alike. Without this the
+	// resize surface on top drops the key instead of forwarding it. The armed
+	// keyboard resize keeps the keyboard, as it does for a plain key, and a
+	// modified key there is consumed rather than forwarded.
+	if m.layout.split.Dragging && !m.layout.split.ResizeMode {
+		m.exitResizeMode(m.layout.split.Moved)
+	}
 	top, _ := m.top()
 	if _, focusOnTop := top.(*uifocus.Surface); !focusOnTop || m.effects.Quitting {
 		return nil
