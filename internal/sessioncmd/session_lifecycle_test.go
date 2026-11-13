@@ -467,6 +467,56 @@ func TestSessionsDeleteKeepsAWorktreeAnotherSessionUses(t *testing.T) {
 	}
 }
 
+// newWorkerWithTerminal spawns an agent with a terminal nested under it.
+func newWorkerWithTerminal(t *testing.T, h *sessionHarness) (Session, Terminal) {
+	t.Helper()
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "parent-worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	terminal, err := h.terminals.Create(worker.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("terminal Create: %v", err)
+	}
+	if terminal.ParentID != worker.ID {
+		t.Fatalf("terminal = %+v, want it nested under %s", terminal, worker.ID)
+	}
+	return worker, terminal
+}
+
+func TestSessionsDeleteRemovesTheTerminalsUnderIt(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, terminal := newWorkerWithTerminal(t, h)
+	if _, err := h.sessions.Delete(h.caller.ID, worker.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	for _, id := range []string{worker.ID, terminal.ID} {
+		if _, err := h.store.Get(id); err == nil {
+			t.Fatalf("%s still has a row", id)
+		}
+		if h.driver.Exists(id) {
+			t.Fatalf("%s still has a pane", id)
+		}
+	}
+}
+
+// A terminal deleting the session it hangs under would end itself with it.
+func TestSessionsDeleteRefusesATerminalItsParent(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, terminal := newWorkerWithTerminal(t, h)
+	if _, err := h.sessions.Delete(terminal.ID, worker.ID); err == nil || !strings.Contains(err.Error(), "cannot delete itself") {
+		t.Fatalf("a terminal deleting its parent = %v, want a self refusal", err)
+	}
+	for _, id := range []string{worker.ID, terminal.ID} {
+		if _, err := h.store.Get(id); err != nil {
+			t.Fatalf("a refused delete must keep %s: %v", id, err)
+		}
+		if !h.driver.Exists(id) {
+			t.Fatalf("a refused delete must leave %s running", id)
+		}
+	}
+}
+
 func TestSessionsDeleteRefusesItsOwnCaller(t *testing.T) {
 	h := newSessionHarness(t)
 	if _, err := h.sessions.Delete(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
