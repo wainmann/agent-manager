@@ -1,14 +1,19 @@
 package app
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -25,7 +30,7 @@ type Local struct {
 	Execution  *execution.Runner
 }
 
-func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
+func OpenLocal(profileDir, version string, driver *tmux.Driver) (*Local, error) {
 	if driver == nil {
 		return nil, errors.New("local application requires an explicit tmux driver")
 	}
@@ -51,9 +56,19 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 	}
 	driver.SetSessionKeys(keys)
 	optionalGitDriver, _ := git.New()
+	// A notify_command from an older release is carried into hooks.toml
+	// here, on the profile this process already chose. A short command
+	// and the MCP server leave that to the next manager start.
+	_ = lifecyclehook.MigrateNotifyCommand(profileDir, st)
+	events := lifecyclehook.New(lifecyclehook.Options{
+		ConfigDir: profileDir,
+		Store:     st,
+		Version:   version,
+		Show:      notify.ShowCommand,
+	})
 	runtime := sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hooks.NewManager(profileDir),
-		Git: optionalGitDriver, Snapshot: st.SetSnapshot,
+		Git: optionalGitDriver, Snapshot: st.SetSnapshot, Events: events,
 	}
 	backend, err := sessioncmd.BorrowBackend(runtime)
 	if err != nil {
@@ -67,12 +82,40 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 	}
 	runner := execution.New(execution.Dependencies{
 		Store: st, TMux: driver, Engine: engine, Hooks: runtime.Hooks, Git: optionalGitDriver,
-		Inbox: sessioncmd.NewInboxOwner(st), Notify: notify.Notify, ShowCommand: notify.ShowCommand,
+		Inbox: sessioncmd.NewInboxOwner(st), Notify: notify.Notify, Events: events,
 		TakeFocus: func() (string, bool) { return notify.TakeFocus(profileDir) },
 	}, execution.OptionsFromConfig(cfg))
 	return &Local{ProfileDir: profileDir, Runtime: runtime, Engine: engine, Backend: backend, Lifecycle: lifecycle, Execution: runner}, nil
 }
 
+// A drain that outlasts drainNoticeAfter says so, since the screen is
+// already gone and the process would otherwise look hung.
+var (
+	drainNoticeAfter           = time.Second
+	drainNoticeOut   io.Writer = os.Stderr
+)
+
 func (l *Local) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), lifecyclehook.DrainQuit)
+	defer cancel()
+	notice := time.AfterFunc(drainNoticeAfter, func() {
+		fmt.Fprintf(drainNoticeOut, "Waiting up to %s for running hooks to finish.\n", lifecyclehook.DrainQuit)
+	})
+	l.closeHooks(ctx)
+	notice.Stop()
 	return l.Runtime.Store.Close()
+}
+
+// StopHooks cancels running hooks and drops queued ones without closing the
+// store, for a quit that abandoned effects still holding it.
+func (l *Local) StopHooks() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	l.closeHooks(ctx)
+}
+
+func (l *Local) closeHooks(ctx context.Context) {
+	if dispatcher, ok := l.Runtime.Events.(*lifecyclehook.Dispatcher); ok {
+		dispatcher.Close(ctx)
+	}
 }

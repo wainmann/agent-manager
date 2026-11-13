@@ -20,6 +20,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -139,7 +140,7 @@ func printHelp(w io.Writer, configDir string) error {
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+			return withBackend(configDir, "mcp", func(backend *sessioncmd.Backend) error {
 				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
 			})
 		}),
@@ -159,7 +160,7 @@ func subcommands() map[string]func(args []string) error {
 	}
 	for name := range cli.Commands(version, ui.SettingSpecs) {
 		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+			return withBackend(configDir, name, func(backend *sessioncmd.Backend) error {
 				return cli.CommandsWithBackend(version, ui.SettingSpecs, backend)[name](args, caller, configDir)
 			})
 		})
@@ -208,7 +209,7 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 	if err != nil {
 		return err
 	}
-	local, err := app.OpenLocal(dir, driver)
+	local, err := app.OpenLocal(dir, version, driver)
 	if err != nil {
 		return err
 	}
@@ -218,8 +219,15 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 	return local.Close()
 }
 
-func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
+func withBackend(configDir, commandName string, command func(*sessioncmd.Backend) error) (err error) {
 	backend := sessioncmd.OpenBackend(configDir)
+	backend.SetVersion(version)
+	switch commandName {
+	case "spawn":
+		backend.SetDrain(lifecyclehook.DrainCreate)
+	case "mcp":
+		backend.SetDrain(lifecyclehook.DrainQuit)
+	}
 	defer func() { err = errors.Join(err, backend.Close()) }()
 	return command(backend)
 }
@@ -334,7 +342,7 @@ func run() (resultErr error) {
 	if err != nil {
 		return err
 	}
-	local, err := app.OpenLocal(dir, driver)
+	local, err := app.OpenLocal(dir, version, driver)
 	if err != nil {
 		return err
 	}
@@ -347,7 +355,7 @@ func run() (resultErr error) {
 	rt := local.Runtime
 	model, err := ui.NewWithServices(ui.Dependencies{
 		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
-		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, Events: rt.Events, ProfileDir: dir,
 	}, version)
 	if err != nil {
 		return err
@@ -384,6 +392,7 @@ func run() (resultErr error) {
 			if len(model.AbandonedEffects()) > 0 {
 				// Abandoned workers keep their resources until the process exits.
 				closeLocal = false
+				local.StopHooks()
 				return
 			}
 			<-done

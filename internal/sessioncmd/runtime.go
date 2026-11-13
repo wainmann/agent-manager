@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
@@ -31,6 +32,7 @@ type commands struct {
 	newDriver func() (*tmux.Driver, error)
 	// loadConfig is config.Default outside the tests, which inject fake CLIs.
 	loadConfig func() (config.Config, error)
+	events     lifecyclehook.Emitter
 }
 
 type runtime struct {
@@ -39,6 +41,7 @@ type runtime struct {
 	store  *store.Store
 	driver *tmux.Driver
 	close  func() error
+	events lifecyclehook.Emitter
 }
 
 func (r *runtime) Close() error {
@@ -70,7 +73,7 @@ func (c *commands) open() (*runtime, error) {
 		return nil, err
 	}
 	driver.SetSessionKeys(keys)
-	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver, close: st.Close}, nil
+	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver, close: st.Close, events: c.events}, nil
 }
 
 func (c *commands) lifecycle(opened *runtime, gitDriver *git.Driver) (*Lifecycle, error) {
@@ -91,6 +94,7 @@ func (c *commands) lifecycle(opened *runtime, gitDriver *git.Driver) (*Lifecycle
 		Hooks:    hooks.NewManager(c.configDir),
 		Git:      gitDriver,
 		Snapshot: opened.store.SetSnapshot,
+		Events:   opened.events,
 	})
 }
 

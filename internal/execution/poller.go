@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -62,11 +63,8 @@ type Runner struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
-	// commandFn runs the user's notify command for the same event, or logs
-	// why it could not; tests swap in a recorder.
-	commandFn func(event notify.Event, command string, readErr error)
-	// showCommandFn shows a new notify command; tests swap in a recorder.
-	showCommandFn func(command string)
+	// events receives session_state after this process's status write.
+	events lifecyclehook.Emitter
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -529,17 +527,24 @@ func (p *Runner) step(ctx context.Context) Result {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
-			written, changed, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			written, changed, previous, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
 			if err != nil {
 				return Result{Err: err}
 			}
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
-				// Managers sharing a server derive the same transition; only
-				// the one whose write moved the stored status announces it.
-				if changed {
-					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
+			}
+			// Managers sharing a server derive the same transition; only
+			// the one whose write moved the stored status announces it.
+			// A claim or a delivery can move the stored status while the
+			// listed row already matches, and that move is announced too.
+			if written && changed {
+				var banner notify.Event
+				triggered := false
+				if newStatus != sess.Status {
+					banner, triggered = p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
+				p.emitSessionState(sess, newStatus, previous, banner, triggered)
 			}
 		}
 		if observed {
@@ -651,6 +656,17 @@ func (p *Runner) step(ctx context.Context) Result {
 			msg.FocusID = id
 		}
 	}
+	// A hook record the worker is still writing, or a store that cannot
+	// answer this pass, leaves the previous panel contents in place.
+	if failures, err := p.store.HookFailures(); err == nil {
+		msg.HookFailures = failures
+	}
+	if text, err := p.store.HooksConfigError(); err == nil {
+		msg.HooksConfigError = text
+	}
+	if text, err := p.store.Setting(store.NotifyCommandNotCarriedKey); err == nil {
+		msg.NotifyNotCarried = text
+	}
 	if sampleStats {
 		p.statsSampledAt = sampledAt
 		msg.Snap = sysstat.Sample("/")
@@ -718,11 +734,3 @@ func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 
 const notificationsSetting = "notifications"
 const notifyFinishedSetting = "notify_finished"
-
-// notifyCommandSetting is a shell command run on every notification, with
-// the event in AM_* variables. Empty runs nothing.
-const notifyCommandSetting = "notify_command"
-
-// notifyCommandShownSetting is the last notify command a banner showed the
-// user, so a new one is announced once, before its first run.
-const notifyCommandShownSetting = "notify_command_shown"

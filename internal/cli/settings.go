@@ -117,6 +117,12 @@ func runSettingsSet(out io.Writer, specs settingSpecs, args []string, configDir 
 		return err
 	}
 	value := operands[1]
+	if spec.Key == store.NotifyCommandKey {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return fmt.Errorf("notify_command is set in hooks.toml; run agent-manager hooks")
+		}
+	}
 	if err := spec.Check(value); err != nil {
 		return err
 	}

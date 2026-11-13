@@ -45,8 +45,10 @@ const (
 	CoordinationSetting   = "coordination"
 	NotificationsSetting  = "notifications"
 	NotifyFinishedSetting = "notify_finished"
-	// NotifyCommandSetting is a shell command run on every notification,
-	// with the event in AM_* variables. Empty runs nothing.
+	// NotifyCommandSetting is the leftover of the shell command an older
+	// release ran on a notification. It stays so an old export still
+	// imports. The command now lives in hooks.toml, and a non-empty
+	// settings set is refused.
 	NotifyCommandSetting = "notify_command"
 	// HiddenToolsSetting lists CLI tools omitted from new-session pickers
 	// (comma-separated names). Empty means every configured tool is shown.

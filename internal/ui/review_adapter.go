@@ -3,10 +3,12 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -413,7 +415,29 @@ func (m *Model) handleReviewComment(result uireview.HandleCommentResult) tea.Cmd
 }
 
 func (m *Model) handleReviewSend(result uireview.SendResult) tea.Cmd {
+	if result.Outcome == uireview.SendConfirmed {
+		m.emitReviewRound(result)
+	}
 	return m.applyReviewResult(m.review.ApplySend(result))
+}
+
+func (m *Model) emitReviewRound(result uireview.SendResult) {
+	sess := store.Session{ID: result.TargetID, Name: result.TargetName}
+	for _, row := range m.workspace.sessions {
+		if row.ID == result.TargetID {
+			sess = row
+			break
+		}
+	}
+	if tool, ok := m.services.cfg.Tools[sess.Tool]; ok && tool.Shell {
+		return
+	}
+	lifecyclehook.Or(m.services.events).Emit(lifecyclehook.Event{
+		Name:    lifecyclehook.EventReviewRound,
+		At:      time.Now().UTC(),
+		Session: sess,
+		Review:  &lifecyclehook.ReviewInfo{CommentCount: result.Count, Round: result.Round, Repo: result.RepoRoot},
+	})
 }
 
 // applyReviewChange hands one finished Review change back to the screen it

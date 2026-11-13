@@ -490,7 +490,7 @@ func TestRelaunchKillsTheNewPaneWhenItsLaunchCannotPersist(t *testing.T) {
 		}
 		return h.store.SetAgentLaunchedAt(sess.ID, launchedAt)
 	}
-	_, err = lifecycle.launchExisting(sess, tool, "sleep 30", PaneSize{Width: 80, Height: 24}, false, false, bind)
+	_, err = lifecycle.launchExisting(sess, tool, "sleep 30", PaneSize{Width: 80, Height: 24}, false, false, "", "", false, bind)
 	if !errors.Is(err, store.ErrSessionGone) {
 		t.Fatalf("relaunch error = %v, want ErrSessionGone", err)
 	}

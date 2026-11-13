@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/google/uuid"
 )
@@ -155,6 +156,7 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 		if !ok {
 			return Task{}, errors.New("no task is ready to claim; every pending task is blocked, or the list is empty")
 		}
+		runtime.emitTask(caller, lifecyclehook.EventTaskClaim, claimed.ID, claimed.Title)
 		return runtime.task(caller.ID, claimed.ID)
 	}
 	claimed, err := runtime.store.ClaimTask(taskID, caller.ID, now)
@@ -164,7 +166,12 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 	if !claimed {
 		return Task{}, runtime.refusedClaim(caller.ID, taskID)
 	}
-	return runtime.task(caller.ID, taskID)
+	task, err := runtime.task(caller.ID, taskID)
+	runtime.emitTask(caller, lifecyclehook.EventTaskClaim, taskID, task.Title)
+	if err != nil {
+		return Task{}, err
+	}
+	return task, nil
 }
 
 func holderOf(task Task) string {
@@ -234,7 +241,14 @@ func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error)
 		}
 		return Task{}, fmt.Errorf("task %s is %s, not in progress", taskID, task.State)
 	}
-	return runtime.task(caller.ID, taskID)
+	task, err := runtime.task(caller.ID, taskID)
+	if done {
+		runtime.emitTask(caller, lifecyclehook.EventTaskFinish, taskID, task.Title)
+	}
+	if err != nil {
+		return Task{}, err
+	}
+	return task, nil
 }
 
 func (s *Sessions) DeleteTask(sessionID, taskID string) error {

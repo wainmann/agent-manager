@@ -480,34 +480,7 @@ For Claude Code, built-in status detection reads [hook events](https://docs.anth
 
 When a session's status flips to `waiting` or `errored`, the manager fires one notification with the session name, tool, and state — once per transition, never per poll — so you can look away from the list without missing an agent that needs you. The title names the session, its directory, the branch when the manager made a worktree for it, and the tool (`deploy · api · am/fix-login · codex`), so two sessions sharing a name read apart. The banner quotes what the session's row shows: a waiting one carries the question the agent is asking (`◆ Waiting: Do you want to create probe.txt?`), a finished one the prompt it was given (`● Finished: write the release notes`), so you can tell from the banner alone which task ended and what the agent needs. The line is cut at 120 characters, and the state word stands alone when the row has nothing to quote; errored banners keep the state word. This is tool-neutral: every configured CLI reaches the same notification path after the manager classifies its status, and the quote is the same one the session list shows. Clicking a notification puts the cursor on the session it named, and brings the terminal running the manager to the front on macOS and on Linux under X11. On macOS the banner is the manager's own: the first time one fires, macOS asks whether Agent Manager may send notifications, and from then on every banner carries the manager's name and icon, with waiting, finished, and errored getting the Funk, Hero, and Basso sounds. The manager keeps a small app bundle of itself under `~/Library/Application Support/agent-manager` for this and refreshes it after an upgrade. Should that bundle ever fail to build, the older AppleScript notification still fires so the ping is not lost; macOS attributes that one to Script Editor, and clicking it opens Script Editor. Linux sends matching standard sound, icon, category, and urgency hints through `notify-send`; the desktop notification server uses the capabilities it supports and safely ignores the rest. Acting on a click needs a `notify-send` new enough to report actions, which is libnotify 0.7.9 and later; with an older one the banner still appears and the click does nothing. Where it is supported, the click raises the terminal window on X11 (through `xdotool` or `wmctrl` when installed) while Wayland compositors leave the window where it is. Under WSL the banner is a native Windows toast posted through PowerShell, which replaces the bell there; Windows attributes a toast to whoever posted it, so that click does not reach the manager and carrying it across is left for a follow-up. Inside Ghostty or cmux the state travels as an OSC 777 escape to the drawing terminal, which owns its presentation and sound and attributes it to the right window and workspace. Because that escape rides the terminal connection, it also reaches you when the manager runs on a remote host over SSH. A headless box without a desktop falls back to the terminal bell. Settings (`s`) has a `notifications` row that silences them (on by default) and a `notify on finish` row that adds `finished` transitions (off by default).
 
-To send notifications somewhere else as well, such as your phone, a chat, or a script, set a shell command with `agent-manager settings set notify_command '<command>'`, and clear it with `agent-manager settings set notify_command ''`. It has no row in Settings, so `agent-manager settings get notify_command` is where to read it back. A running manager uses the new value from its next notification. The manager runs it through `sh -c` for every notification it fires, after the native banner and in addition to it. The `notifications` and `notify on finish` rows gate it the same way, and with several managers open it runs once per transition, from the manager that posts the banner. The command gets the event in its environment:
-
-| Variable | Value |
-|----------|-------|
-| `AM_NOTIFY_KIND` | `waiting`, `finished`, or `errored` |
-| `AM_SESSION_ID` | the session's id |
-| `AM_SESSION_NAME` | the session's name |
-| `AM_TOOL` | the CLI it runs |
-| `AM_CWD` | its working directory |
-| `AM_BRANCH` | its branch, when the manager made it a worktree; empty otherwise |
-| `AM_TITLE` | the banner's title |
-| `AM_BODY` | the banner's text |
-
-The values come from the session and the agent, so quote them (`"$AM_BODY"`) and they stay data. Single quotes around the whole command keep your shell from expanding the variables when you set it. For example, to get a push notification through [ntfy](https://ntfy.sh):
-
-```sh
-agent-manager settings set notify_command 'curl -fsS -H "Title: $AM_TITLE" -H "Tags: $AM_NOTIFY_KIND" -d "$AM_BODY" https://ntfy.sh/your-private-topic'
-```
-
-On Windows the manager runs the command through PowerShell instead, the shell its panes run, so the variables read as `$env:AM_BODY` and the command is PowerShell. Set it from PowerShell 7.3 or later: Windows PowerShell 5.1 drops the inner double quotes before `agent-manager` receives them.
-
-```powershell
-agent-manager settings set notify_command 'curl.exe -fsS -H "Title: $env:AM_TITLE" -H "Tags: $env:AM_NOTIFY_KIND" -d "$env:AM_BODY" https://ntfy.sh/your-private-topic'
-```
-
-A command that runs past 15 seconds is stopped. When one fails, exits non-zero, or is stopped, the time, the session, the error, and the start of what it printed go to `notify-command.log` in the manager's config directory (`~/Library/Application Support/agent-manager` on macOS, `~/.config/agent-manager` on Linux, `%AppData%\agent-manager` on Windows), a file only you can read, and nothing interrupts the manager.
-
-The command runs as you, with everything your account can reach, so give it the same trust as your shell rc file. Nothing on screen lists it, so before the manager runs a command it has not shown you, it posts a `New notify command` banner with the command itself. That happens once for each new command, the first one you set included, and a command that changed without your knowing shows up there.
+A command that should also run when a session changes, such as a push to your phone, lives in `hooks.toml`. See [Lifecycle hooks](configuration.md#lifecycle-hooks). A hook marked `notify` runs on the same transitions that trigger the banner, with that banner's title and body, even with the `notifications` row off. The `notify on finish` row adds `finished` to those transitions for both.
 
 ## Stats
 
@@ -560,7 +533,7 @@ agent-manager settings set notifications off
 agent-manager settings get list_density
 ```
 
-A running manager shows the change the next time Settings (`s`) is opened and uses it from then on, or from its next start. Keys it reads each time it uses them, such as `notifications`, `coordination` and `notify_command`, apply at once. `notify_command` is the one key with no Settings row. A command does not fit a one-line field, so it is set from the shell alone (see [Notifications](#notifications)).
+A running manager shows the change the next time Settings (`s`) is opened and uses it from then on, or from its next start. Keys it reads each time it uses them, such as `notifications` and `coordination`, apply at once. A command that runs on a lifecycle event is not a setting. It lives in `hooks.toml` (see [Lifecycle hooks](configuration.md#lifecycle-hooks)). `settings get notify_command` still prints a value an older release stored. `settings set notify_command ''` clears that leftover, and any other value is refused.
 
 ## Updates
 
