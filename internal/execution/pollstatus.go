@@ -40,12 +40,25 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 		delete(p.waitingScreens, sess.ID)
 		return newStatus, err
 	}
-	screen := hashString(p.engine.Plain(sess.Tool, pane))
+	screen := hashString(p.waitingScreen(sess.Tool, pane))
 	if held, ok := p.waitingScreens[sess.ID]; ok && held == screen && sess.Acked {
 		return status.Idle, nil
 	}
 	p.waitingScreens[sess.ID] = screen
 	return newStatus, nil
+}
+
+// waitingScreen is what a waiting session asks the user: the conversation
+// above the input box and the question of a dialog drawn below it. The rest
+// of the pane is the tool's frame, where a status line ticks on its own.
+func (p *Runner) waitingScreen(tool, pane string) string {
+	text := p.engine.Plain(tool, pane)
+	region, ok := p.engine.ActivityRegion(tool, text)
+	if !ok {
+		return text
+	}
+	question, _, _ := p.engine.LastMessage(tool, text)
+	return p.engine.RegionContent(tool, region) + "\x00" + question
 }
 
 func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
