@@ -487,8 +487,12 @@ func newWorkerWithTerminal(t *testing.T, h *sessionHarness) (Session, Terminal) 
 func TestSessionsDeleteRemovesTheTerminalsUnderIt(t *testing.T) {
 	h := newSessionHarness(t)
 	worker, terminal := newWorkerWithTerminal(t, h)
-	if _, err := h.sessions.Delete(h.caller.ID, worker.ID); err != nil {
+	deleted, err := h.sessions.Delete(h.caller.ID, worker.ID)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+	if deleted.ID != worker.ID || deleted.Name != worker.Name {
+		t.Fatalf("deleted = %+v, want %s", deleted, worker.Name)
 	}
 	for _, id := range []string{worker.ID, terminal.ID} {
 		if _, err := h.store.Get(id); err == nil {
