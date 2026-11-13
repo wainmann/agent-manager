@@ -52,6 +52,8 @@ func (h geometryHost) TakeForeground() { h.m.takeForeground() }
 
 func (h geometryHost) Quit() tea.Cmd { return h.m.quit() }
 
+func (h geometryHost) AgentOwnsKeys() bool { return h.m.focused() }
+
 func newResizeSurface(m *Model) *uigeometry.Surface {
 	return uigeometry.NewSurface(geometryHost{m}, m.services.listKeys)
 }

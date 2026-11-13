@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,7 +27,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -2651,6 +2654,231 @@ func TestPressOnTheDividerKeepsFocus(t *testing.T) {
 		if m = leftPress(m, x, y0+1); !m.focused() {
 			t.Fatalf("a press on the divider at %d left focus", x)
 		}
+	}
+}
+
+func mouseMotionAt(m *Model, x, y int) *Model {
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: x, Y: y, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
+	})
+	return updated.(*Model)
+}
+
+// A drag that starts on the divider while a session is focused moves the
+// split like the list's drag does: the press never reaches the agent, focus
+// survives the gesture, and letting go commits and stores the ratio.
+func TestDividerDragInFocusMovesAndPersistsTheSplit(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	before := m.layout.split.Ratio
+	target := m.dividerX() + 12
+
+	m = leftPress(m, m.dividerX(), y0+1)
+	if !m.layout.split.Dragging || !m.focused() {
+		t.Fatalf("press on the divider: dragging = %v, focused = %v", m.layout.split.Dragging, m.focused())
+	}
+	m = mouseMotionAt(m, target, y0+1)
+	if m.layout.split.Ratio <= before {
+		t.Fatalf("motion left the ratio at %v, was %v", m.layout.split.Ratio, before)
+	}
+	m = leftRelease(m, target, y0+1)
+	m.drainEffects(t)
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
+		t.Fatal("release should end the drag")
+	}
+	if !m.focused() {
+		t.Fatalf("the drag should leave focus where it was, screen = %v", m.screenID())
+	}
+	if left, _ := m.splitWidths(); left != target {
+		t.Fatalf("left panel = %d, want the release column %d", left, target)
+	}
+	if got := uigeometrypanes.Load(m.services.store); got != m.layout.split.Ratio {
+		t.Fatalf("stored ratio = %v, want %v", got, m.layout.split.Ratio)
+	}
+}
+
+// esc during a focused drag cancels it and restores the ratio, and keys
+// afterwards reach the agent again rather than the resize surface.
+func TestDividerDragInFocusCancelsOnEsc(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	before := m.layout.split.Ratio
+
+	m = leftPress(m, m.dividerX(), y0+1)
+	m = mouseMotionAt(m, m.dividerX()+12, y0+1)
+	if !m.layout.split.Dragging || m.layout.split.Ratio <= before {
+		t.Fatalf("test setup: the drag should be live and moved, dragging = %v, ratio = %v", m.layout.split.Dragging, m.layout.split.Ratio)
+	}
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(*Model)
+	if m.layout.split.Dragging || m.layout.split.Ratio != before {
+		t.Fatalf("esc: dragging = %v, ratio = %v, want %v", m.layout.split.Dragging, m.layout.split.Ratio, before)
+	}
+	if !m.focused() {
+		t.Fatalf("esc should leave focus in place, screen = %v", m.screenID())
+	}
+	if top, ok := m.top(); ok {
+		if _, resize := top.(*uigeometry.Surface); resize {
+			t.Fatal("the resize surface should be gone")
+		}
+	}
+}
+
+// wroteToFocus reports whether the focused pane's next queued write sends
+// text, and whether that write carries want. Typed runes travel as a hex
+// send-keys command, so this reads the write itself: a pane is not asked to
+// echo it back, which psmux does not always do by the time a test looks.
+func wroteToFocus(m *Model, want string) bool {
+	job := m.effects.Input.Active
+	if job == nil {
+		return false
+	}
+	request, ok := job.Request.(focusruntime.InputRequest)
+	if !ok || request.Value.Kind != focusruntime.Keys {
+		return false
+	}
+	var hex []string
+	for i := 0; i < len(want); i++ {
+		hex = append(hex, fmt.Sprintf("%02x", want[i]))
+	}
+	return strings.Contains(request.Value.Command, "-H "+strings.Join(hex, " "))
+}
+
+// The resize key belongs to the agent while focused: the divider's drag
+// adds no keyboard grab of its own, so "|" is typed into the pane and never
+// arms resize mode.
+func TestFocusedResizeKeyStillReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a|b")})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode || m.layout.split.Dragging || !m.focused() {
+		t.Fatalf("resize = %v, dragging = %v, focused = %v", m.layout.split.ResizeMode, m.layout.split.Dragging, m.focused())
+	}
+	if !wroteToFocus(m, "a|b") {
+		t.Fatal("the resize key never reached the pane")
+	}
+}
+
+// A key typed while the button is still down ends the drag where it stands
+// and goes on to the agent instead of being swallowed.
+func TestKeyDuringAFocusedDragEndsItAndReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	m = leftPress(m, m.dividerX(), y0+1)
+	m = mouseMotionAt(m, m.dividerX()+6, y0+1)
+	if !m.layout.split.Dragging {
+		t.Fatal("test setup: the drag should be live")
+	}
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c|d")})
+	m = updated.(*Model)
+	if m.layout.split.Dragging || m.layout.split.ResizeMode || !m.focused() {
+		t.Fatalf("dragging = %v, resize = %v, focused = %v", m.layout.split.Dragging, m.layout.split.ResizeMode, m.focused())
+	}
+	if !wroteToFocus(m, "c|d") {
+		t.Fatal("the key typed mid-drag never reached the pane")
+	}
+}
+
+// The quit key is text to a focused agent: typed while the button is still
+// down it ends the drag and reaches the pane rather than quitting.
+func TestQuitKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	m = leftPress(m, m.dividerX(), y0+1)
+	m = mouseMotionAt(m, m.dividerX()+6, y0+1)
+	if !m.layout.split.Dragging {
+		t.Fatal("test setup: the drag should be live")
+	}
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = updated.(*Model)
+	if m.effects.Quitting || m.layout.split.Dragging || !m.focused() {
+		t.Fatalf("quitting = %v, dragging = %v, focused = %v", m.effects.Quitting, m.layout.split.Dragging, m.focused())
+	}
+	if !wroteToFocus(m, "q") {
+		t.Fatal("the quit key never reached the pane")
+	}
+}
+
+// A modified key such as Shift+Enter ends a focused drag the way a plain key
+// does, and reaches the agent instead of being dropped under the resize
+// surface.
+func TestModifiedKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	m = leftPress(m, m.dividerX(), y0+1)
+	m = mouseMotionAt(m, m.dividerX()+6, y0+1)
+	if !m.layout.split.Dragging {
+		t.Fatal("test setup: the drag should be live")
+	}
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	if m.layout.split.Dragging || m.layout.split.ResizeMode || !m.focused() {
+		t.Fatalf("dragging = %v, resize = %v, focused = %v", m.layout.split.Dragging, m.layout.split.ResizeMode, m.focused())
+	}
+	want, wantArgs := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want ||
+		!slices.Equal(request.Value.Args, wantArgs) || request.Value.Submit {
+		t.Fatalf("Shift+Enter = %q %q, want %q %q", request.Value.Command, request.Value.Args, want, wantArgs)
+	}
+}
+
+// The armed keyboard resize keeps the keyboard: a modified key is consumed
+// there, as a plain key is, without ending the gesture or committing a ratio.
+func TestModifiedKeyLeavesAKeyboardResizeAlone(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "keys-resize", t.TempDir(), "")
+	m.selectSessionRow(t, "keys-resize")
+	preparedView(m)
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(4)
+	moved := m.layout.split.Ratio
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	if !m.layout.split.ResizeMode || m.layout.split.Dragging {
+		t.Fatalf("resize = %v, dragging = %v, want the gesture still armed", m.layout.split.ResizeMode, m.layout.split.Dragging)
+	}
+	if m.layout.split.Ratio != moved {
+		t.Fatalf("ratio = %v, want the nudged %v", m.layout.split.Ratio, moved)
+	}
+	if focusInputQueued(m) {
+		t.Fatal("a modified key during the keyboard resize reached a pane")
+	}
+}
+
+// Full screen has no divider, so a focused press in that column is the pane's.
+func TestFocusedPressOnTheDividerColumnDoesNotDragInFullScreen(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.prefs.fullLayout = true
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	if m = leftPress(m, m.dividerX(), y0+1); m.layout.split.Dragging {
+		t.Fatal("full screen has no divider to drag")
 	}
 }
 

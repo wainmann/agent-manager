@@ -14,6 +14,7 @@ type fakeRoot struct {
 	nudges  []int
 	exits   []bool
 	quit    bool
+	agent   bool
 }
 
 func (r *fakeRoot) Gesture() Gesture { return r.gesture }
@@ -28,6 +29,8 @@ func (r *fakeRoot) Quit() tea.Cmd {
 	r.quit = true
 	return nil
 }
+
+func (r *fakeRoot) AgentOwnsKeys() bool { return r.agent }
 
 func (r *fakeRoot) TakeForeground() {}
 
@@ -112,5 +115,22 @@ func TestLeaveRestoresTheUncommittedRatio(t *testing.T) {
 	}
 	if root.gesture.ResizeMode || root.gesture.Dragging || root.gesture.Moved {
 		t.Fatalf("gesture left armed: %+v", root.gesture)
+	}
+}
+
+// A drag the mouse armed over a focused agent claims esc alone: the quit key
+// is the agent's text, so it ends the drag and falls through, while on the
+// list it still quits.
+func TestMouseDragLeavesTheQuitKeyToAFocusedAgent(t *testing.T) {
+	for _, agent := range []bool{true, false} {
+		root := &fakeRoot{gesture: Gesture{Ratio: 0.34, RatioBefore: 0.34, Dragging: true, Moved: true}, agent: agent}
+		s := NewSurface(root, keybind.DefaultList())
+		handled, _ := s.Key(nil, key("q"))
+		if agent && (handled || root.quit || len(root.exits) != 1) {
+			t.Fatalf("over an agent: handled = %v, quit = %v, exits = %v", handled, root.quit, root.exits)
+		}
+		if !agent && (!handled || !root.quit) {
+			t.Fatalf("on the list: handled = %v, quit = %v", handled, root.quit)
+		}
 	}
 }
