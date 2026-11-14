@@ -41,7 +41,7 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 	openFormOnClaude(t, m)
-	if list := m.form().Choice().Suggestions(m.spawnHost(), "claude"); len(list) != 3 {
+	if list := m.form().Choice().Suggestions(m.spawnHost(), "claude"); len(list) != 4 {
 		t.Fatalf("list from the kept answer = %+v", list)
 	}
 }

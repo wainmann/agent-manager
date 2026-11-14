@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	catalog "github.com/YoanWai/agent-manager/internal/catalog/value"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 var fiveLevels = []string{"low", "medium", "high", "xhigh", "max"}
@@ -109,7 +110,7 @@ func TestModelListListsARecentPickOnce(t *testing.T) {
 	h.answers["hermes"] = &Answer{Loaded: true, Cat: catalog.Catalog{Models: []catalog.Model{{ID: "grok-4.6", Provider: "xai-oauth"}, {ID: "claude-opus-5", Provider: "anthropic"}}}}
 	h.settings[recentModelsKey("hermes")] = `["grok-4.6"]`
 	ch := NewChoice(h, "hermes")
-	if keys := ch.Suggestions(h, "hermes"); !slices.Equal(keys, []string{"xai-oauth:grok-4.6", "anthropic:claude-opus-5"}) {
+	if keys := ch.Suggestions(h, "hermes"); !slices.Equal(keys, []string{"", "xai-oauth:grok-4.6", "anthropic:claude-opus-5"}) {
 		t.Fatalf("list = %v", keys)
 	}
 }
@@ -121,5 +122,41 @@ func TestPickKeepsTheStoredChoiceShape(t *testing.T) {
 	ch.pickModel(h, "claude", "opus")
 	if got, want := h.settings[savedChoiceKey("claude")], `{"Provider":"","Model":"opus","Effort":"","Profile":""}`; got != want {
 		t.Fatalf("kept %s, want %s", got, want)
+	}
+}
+
+// The list leads with the CLI's default, so a kept model has a way back
+// to none from the list alone. It still opens on a model, a filter leaves
+// the row out, and an emptied filter lands on it as the form's does.
+func TestModelListLeadsWithTheCLIsDefault(t *testing.T) {
+	h := newFakeChoiceHost()
+	h.settings[savedChoiceKey("claude")] = `{"Model":"opus","Effort":"high"}`
+	ch := NewChoice(h, "claude")
+	ch.OpenFilter(h, "claude")
+	if got := ch.sugg.index; got != 2 {
+		t.Fatalf("the list opened on entry %d, want the kept model under the default row", got)
+	}
+	ch.PickEntry(h, "claude", 0)
+	if got := ch.current(h, "claude"); got != (Pick{Effort: "high"}) {
+		t.Fatalf("the default row picked %+v", got)
+	}
+	if got, want := h.settings[savedChoiceKey("claude")], `{"Provider":"","Model":"","Effort":"high","Profile":""}`; got != want {
+		t.Fatalf("kept %s, want %s", got, want)
+	}
+	ch.OpenFilter(h, "claude")
+	if ch.sugg.index != 1 {
+		t.Fatalf("with no model picked the list opened on entry %d, want the first model", ch.sugg.index)
+	}
+	ch.TypeFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("op")})
+	ch.PickHighlighted(h, "claude")
+	if got := ch.Model(); got != "opus" {
+		t.Fatalf("enter on a filter picked %q", got)
+	}
+	ch.OpenFilter(h, "claude")
+	ch.TypeFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	ch.TypeFilter(tea.KeyMsg{Type: tea.KeyBackspace})
+	ch.PickHighlighted(h, "claude")
+	if got := ch.Model(); got != "" {
+		t.Fatalf("enter on an emptied filter picked %q, want the default as in the form", got)
 	}
 }
