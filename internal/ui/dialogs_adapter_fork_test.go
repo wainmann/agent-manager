@@ -1579,9 +1579,17 @@ func TestForkCardScrollsALongNameToItsCursor(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: height})
 	m.Update(tea.KeyMsg{Type: tea.KeyHome})
 	m.Update(tea.WindowSizeMsg{Width: 44, Height: height})
+	row := ""
 	for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
-		if strings.Contains(line, "❯ name") && strings.Contains(line, "…") {
-			t.Fatalf("with the cursor inside the name a resize left the field wider than the card: %q", line)
+		if strings.Contains(line, "❯ name") {
+			row = line
 		}
+	}
+	if row == "" || strings.Contains(row, "…") {
+		t.Fatalf("with the cursor inside the name a resize left the field wider than the card: %q", row)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if name := openFork(m).Name(); !strings.HasPrefix(name, "xlong-name-") {
+		t.Fatalf("the resize moved the cursor off the start: %q", name)
 	}
 }
