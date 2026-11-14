@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -362,5 +363,167 @@ func TestSessionsReviveRefusesArchivedSession(t *testing.T) {
 	}
 	if !after.Archived || !after.AgentLaunchedAt.Equal(before.AgentLaunchedAt) || h.driver.Exists(created.ID) {
 		t.Fatalf("archived revive changed state: %+v", after)
+	}
+}
+
+func TestSessionsDeleteRemovesACleanWorktreeWithItsBranch(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "done-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	deleted, err := h.sessions.Delete(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if deleted.ID != created.ID || deleted.Notice != "" {
+		t.Fatalf("deleted = %+v", deleted)
+	}
+	if _, err := h.store.Get(created.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if h.driver.Exists(created.ID) {
+		t.Fatal("deleted session still has a pane")
+	}
+	if _, err := os.Stat(created.Directory); !os.IsNotExist(err) {
+		t.Fatalf("worktree still on disk: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+created.Branch)
+	branch.Dir = repo
+	if branch.Run() == nil {
+		t.Fatalf("branch %s should be deleted", created.Branch)
+	}
+}
+
+func TestSessionsDeleteKeepsAWorktreeWithUnsavedWork(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "busy-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(created.Directory, "work.txt"), []byte("draft"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := h.sessions.Delete(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if want := "worktree kept (has work): " + created.Directory; deleted.Notice != want {
+		t.Fatalf("notice = %q, want %q", deleted.Notice, want)
+	}
+	if _, err := h.store.Get(created.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if h.driver.Exists(created.ID) {
+		t.Fatal("deleted session still has a pane")
+	}
+	if _, err := os.Stat(filepath.Join(created.Directory, "work.txt")); err != nil {
+		t.Fatalf("the unsaved work must stay: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+created.Branch)
+	branch.Dir = repo
+	if err := branch.Run(); err != nil {
+		t.Fatalf("branch %s of a kept worktree must stay: %v", created.Branch, err)
+	}
+}
+
+// A worktree another session still works in is that session's too, so the
+// delete leaves it and its branch, and says why.
+func TestSessionsDeleteKeepsAWorktreeAnotherSessionUses(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	wanted := true
+	owner, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "first-worker", Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create owner: %v", err)
+	}
+	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "successor", Directory: owner.Directory}); err != nil {
+		t.Fatalf("Create successor: %v", err)
+	}
+	deleted, err := h.sessions.Delete(h.caller.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if want := "worktree kept (used by another session): " + owner.Directory; deleted.Notice != want {
+		t.Fatalf("notice = %q, want %q", deleted.Notice, want)
+	}
+	if _, err := h.store.Get(owner.ID); err == nil {
+		t.Fatal("deleted session still has a row")
+	}
+	if _, err := os.Stat(owner.Directory); err != nil {
+		t.Fatalf("a shared worktree must stay: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+owner.Branch)
+	branch.Dir = repo
+	if err := branch.Run(); err != nil {
+		t.Fatalf("branch %s of a shared worktree must stay: %v", owner.Branch, err)
+	}
+}
+
+// newWorkerWithTerminal spawns an agent with a terminal nested under it.
+func newWorkerWithTerminal(t *testing.T, h *sessionHarness) (Session, Terminal) {
+	t.Helper()
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "parent-worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	terminal, err := h.terminals.Create(worker.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("terminal Create: %v", err)
+	}
+	if terminal.ParentID != worker.ID {
+		t.Fatalf("terminal = %+v, want it nested under %s", terminal, worker.ID)
+	}
+	return worker, terminal
+}
+
+func TestSessionsDeleteRemovesTheTerminalsUnderIt(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, terminal := newWorkerWithTerminal(t, h)
+	deleted, err := h.sessions.Delete(h.caller.ID, worker.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if deleted.ID != worker.ID || deleted.Name != worker.Name {
+		t.Fatalf("deleted = %+v, want %s", deleted, worker.Name)
+	}
+	for _, id := range []string{worker.ID, terminal.ID} {
+		if _, err := h.store.Get(id); err == nil {
+			t.Fatalf("%s still has a row", id)
+		}
+		if h.driver.Exists(id) {
+			t.Fatalf("%s still has a pane", id)
+		}
+	}
+}
+
+// A terminal deleting the session it hangs under would end itself with it.
+func TestSessionsDeleteRefusesATerminalItsParent(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, terminal := newWorkerWithTerminal(t, h)
+	if _, err := h.sessions.Delete(terminal.ID, worker.ID); err == nil || !strings.Contains(err.Error(), "cannot delete itself") {
+		t.Fatalf("a terminal deleting its parent = %v, want a self refusal", err)
+	}
+	for _, id := range []string{worker.ID, terminal.ID} {
+		if _, err := h.store.Get(id); err != nil {
+			t.Fatalf("a refused delete must keep %s: %v", id, err)
+		}
+		if !h.driver.Exists(id) {
+			t.Fatalf("a refused delete must leave %s running", id)
+		}
+	}
+}
+
+func TestSessionsDeleteRefusesItsOwnCaller(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.Delete(h.caller.ID, h.caller.ID); err == nil || !strings.Contains(err.Error(), "kill_self") {
+		t.Fatalf("deleting itself = %v, want kill_self named", err)
+	}
+	if !h.driver.Exists(h.caller.ID) {
+		t.Fatal("a refused self-delete must leave the caller running")
 	}
 }

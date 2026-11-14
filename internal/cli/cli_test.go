@@ -44,6 +44,7 @@ type fakeSessions struct {
 	note      string
 	ttl       time.Duration
 	deleted   bool
+	notice    string
 
 	session   sessioncmd.Session
 	wait      sessioncmd.WaitResult
@@ -121,6 +122,11 @@ func (f *fakeSessions) MessageStatus(sessionID string, messageID int64) (session
 func (f *fakeSessions) Kill(sessionID, targetID string) (sessioncmd.Session, error) {
 	f.callerID, f.targetID = sessionID, targetID
 	return f.session, f.failWith
+}
+
+func (f *fakeSessions) Delete(sessionID, targetID string) (sessioncmd.Deletion, error) {
+	f.callerID, f.targetID = sessionID, targetID
+	return sessioncmd.Deletion{Session: f.session, Notice: f.notice}, f.failWith
 }
 
 func (f *fakeSessions) Revive(sessionID, targetID string) (sessioncmd.Session, error) {
@@ -289,6 +295,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
+		{"delete", []string{"beef1234"}, func(out io.Writer, args []string) error { return runDelete(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
 		{"move", []string{"beef1234", "api/web"}, func(out io.Writer, args []string) error {
@@ -362,6 +369,9 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 		},
 		"kill": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runKill(out, f, args, "cafe0001")
+		},
+		"delete": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runDelete(out, f, args, "cafe0001")
 		},
 		"revive": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runRevive(out, f, args, "cafe0001")
@@ -558,7 +568,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}

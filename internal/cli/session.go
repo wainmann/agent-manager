@@ -25,6 +25,7 @@ const (
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
 	usageKill          = "kill <session-id> [--json]"
+	usageDelete        = "delete <session-id> [--json]"
 	usageRevive        = "revive <session-id> [--json]"
 	usageArchive       = "archive <session-id> [--restore] [--json]"
 	usageMove          = "move <session-id> <group> [--json]"
@@ -48,6 +49,7 @@ type sessionCommands interface {
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
+	Delete(sessionID, targetID string) (sessioncmd.Deletion, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
 	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
@@ -107,6 +109,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(open, runWait)},
 			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(open, runMessageStatus)},
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
+			{name: "delete", usage: usageDelete, about: "remove a finished session the way the delete key does, its terminals, worktree and am/ branch included; a worktree with work that exists nowhere else stays, and the notice says so", run: bind(open, runDelete)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
 			{name: "move", usage: usageMove, about: "file a session under another existing group, the way the move key does; an empty group is the root, and a host::id moves it on that SSH connection", run: bind(func(configDir string) moveLayer { return moveLayer{open(configDir), storedHosts(configDir)} }, runMove)},
@@ -322,6 +325,20 @@ func runKill(out io.Writer, sessions sessionCommands, args []string, sessionID s
 		return err
 	}
 	return emit(out, *asJSON, killed, "killed "+sessioncmd.FormatSession(killed))
+}
+
+func runDelete(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageDelete)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	deleted, err := sessions.Delete(sessionID, operands[0])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, deleted, sessioncmd.FormatDeletion(deleted))
 }
 
 func runRevive(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {

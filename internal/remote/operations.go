@@ -225,6 +225,21 @@ func (c *Client) Kill(ctx context.Context, ref Ref) (sessioncmd.Session, error) 
 	return c.lifecycle(ctx, ref, []string{"kill", "--json"})
 }
 
+// Delete removes the session on its host, which refuses while its worktree
+// holds unsaved work.
+func (c *Client) Delete(ctx context.Context, ref Ref) (sessioncmd.Deletion, error) {
+	var deleted sessioncmd.Deletion
+	if err := validRef(ref); err != nil {
+		return deleted, err
+	}
+	if err := c.decode(ctx, ref.Host, callTimeout, &deleted, "delete", "--json", "--", ref.ID); err != nil {
+		return deleted, err
+	}
+	session, err := cleanSession(deleted.Session)
+	deleted.Session, deleted.Notice = session, cleanText(deleted.Notice)
+	return deleted, unreadable(ref.Host, "delete", err)
+}
+
 func (c *Client) Revive(ctx context.Context, ref Ref) (sessioncmd.Session, error) {
 	return c.lifecycle(ctx, ref, []string{"revive", "--json"})
 }

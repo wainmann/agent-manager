@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/conversation"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -46,6 +47,60 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 		return Session{}, fmt.Errorf("killed %s, but could not read which conversation it was on: %w", target.Name, followErr)
 	}
 	return runtime.sessionInfo(killed, false, false), nil
+}
+
+// Deletion is a session Delete removed, and why its worktree stayed when it
+// did.
+type Deletion struct {
+	Session
+	Notice string `json:"notice,omitempty" jsonschema:"why the session's worktree stayed on disk, when it did"`
+}
+
+// Delete removes a session the way the delete key does, its terminals,
+// worktree and am/ branch included. A worktree with unsaved work, or one
+// another session uses, stays with its branch, and the notice says so.
+func (s *Sessions) Delete(sessionID, targetID string) (Deletion, error) {
+	runtime, err := s.open()
+	if err != nil {
+		return Deletion{}, err
+	}
+	defer runtime.Close()
+	caller, err := runtime.optionalCaller(sessionID)
+	if err != nil {
+		return Deletion{}, err
+	}
+	target, err := runtime.agent(targetID)
+	if err != nil {
+		return Deletion{}, err
+	}
+	if target.ID == sessionID || (caller.ParentID != "" && caller.ParentID == target.ID) {
+		return Deletion{}, fmt.Errorf("a session cannot delete itself; end it with %s or %s, which wait for this turn to end", runtime.words.ArchiveSelf, runtime.words.KillSelf)
+	}
+	sessions, err := runtime.store.ListSessions(true)
+	if err != nil {
+		return Deletion{}, err
+	}
+	selection := []store.Session{target}
+	for _, sess := range sessions {
+		if sess.ParentID == target.ID {
+			selection = append(selection, sess)
+		}
+	}
+	var gitDriver *git.Driver
+	if target.WorktreeRepo != "" {
+		if gitDriver, err = s.newGit(); err != nil {
+			return Deletion{}, fmt.Errorf("cannot clean up %s's worktree: %w", target.Name, err)
+		}
+	}
+	lifecycle, err := s.lifecycle(runtime, gitDriver)
+	if err != nil {
+		return Deletion{}, err
+	}
+	result, err := lifecycle.DeleteForHuman(DeleteSelection{Sessions: selection})
+	if err != nil {
+		return Deletion{}, err
+	}
+	return Deletion{Session: runtime.sessionInfo(target, false, false), Notice: result.Notice}, nil
 }
 
 // Revive relaunches a dead session under its old id, keeping its name,

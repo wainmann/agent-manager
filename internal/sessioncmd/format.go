@@ -60,6 +60,15 @@ func FormatSession(session Session) string {
 	return line
 }
 
+// FormatDeletion is what both fronts print once a delete went through.
+func FormatDeletion(deleted Deletion) string {
+	line := "deleted " + FormatSession(deleted.Session)
+	if deleted.Notice != "" {
+		line += "\n" + deleted.Notice
+	}
+	return line
+}
+
 func FormatSessionList(sessions []Session) string {
 	if len(sessions) == 0 {
 		return "no agent sessions"

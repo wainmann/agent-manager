@@ -110,6 +110,10 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.Kill(ctx, ref)
 			return err
 		}, []string{"kill", "--json", "--", "a1b2c3d4"}},
+		{"delete", func(ctx context.Context, c *Client) error {
+			_, err := c.Delete(ctx, ref)
+			return err
+		}, []string{"delete", "--json", "--", "a1b2c3d4"}},
 		{"revive", func(ctx context.Context, c *Client) error {
 			_, err := c.Revive(ctx, ref)
 			return err
