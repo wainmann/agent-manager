@@ -36,6 +36,12 @@ func (d Fork) Name() string { return cleanName(d.name.Value()) }
 
 func (d *Fork) SetName(name string) { d.name.SetValue(name) }
 
+// SetWidth fits the name field to the card, so a long name scrolls.
+func (d *Fork) SetWidth(width int) {
+	d.name.Width = width
+	d.name.SetCursor(d.name.Position())
+}
+
 type ForkAction uint8
 
 const (

@@ -1547,3 +1547,27 @@ func TestForkRefusesSourceMovedIntoArchivedGroupAfterDispatch(t *testing.T) {
 		t.Fatal("queued fork launched from an archived source")
 	}
 }
+
+func TestForkCardScrollsALongNameToItsCursor(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	tool := m.services.cfg.Tools["claude"]
+	tool.ForkCommand = "true {id}"
+	m.services.cfg.Tools["claude"] = tool
+	long := strings.Repeat("long-name-", 15)
+	if err := m.spawnSession("claude", long, t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	for i := range m.workspace.sessions {
+		m.workspace.sessions[i].AgentSessionID = "source-conversation"
+	}
+	m.rebuildRows()
+	m.selectSessionRow(t, long)
+	m.openFork()
+	if _, ok := surfaceOf[*uidialogs.ForkSurface](m); !ok {
+		t.Fatalf("fork card did not open: %q", m.errBar.text)
+	}
+	if view := preparedView(m); !strings.Contains(view, "-fork") {
+		t.Fatalf("the name's tail under the cursor is cut from the card:\n%s", view)
+	}
+}

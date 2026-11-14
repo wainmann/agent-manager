@@ -208,7 +208,9 @@ func (m *Model) openFork() {
 		return
 	}
 	m.gens.dialog++
-	m.push(uidialogs.NewForkSurface(forkRoot{m, entry.sess}, entry.sess.Name, entry.sess.Group, int(m.gens.dialog)))
+	fork := uidialogs.NewForkSurface(forkRoot{m, entry.sess}, entry.sess.Name, entry.sess.Group, int(m.gens.dialog))
+	fork.SetWidth(m.formValueWidth() - 3)
+	m.push(fork)
 	m.clearErr()
 }
 
