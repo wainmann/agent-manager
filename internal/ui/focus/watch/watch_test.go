@@ -111,36 +111,50 @@ func echoAfterUpdate(t *testing.T, arrivals <-chan focusArrival, token string, s
 	}
 }
 
-func TestFocusWatchSpacesAStreamByTheFrameBudget(t *testing.T) {
-	driver, id, sends, _ := startFocusArrivalWatch(t)
+// A focused pane streams at the frame budget; one only previewed beside the
+// list streams on the live tick.
+func TestFocusWatchSpacesAStreamByItsPace(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		fast bool
+		gap  time.Duration
+	}{
+		{"focused", true, frameBudget},
+		{"previewed", false, 300 * time.Millisecond},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			driver, id, sends, watch := startFocusArrivalWatch(t)
+			watch.Pace(tt.fast)
 
-	waitFocusArrival(t, sends, "")
+			waitFocusArrival(t, sends, "")
 
-	if err := driver.SendText(id, "for i in $(seq 1 300); do echo line$i; sleep 0.005; done"); err != nil {
-		t.Fatalf("SendText: %v", err)
-	}
-	waitFocusArrival(t, sends, "line1")
-	var changes []time.Time
-	shown := ""
-	collect := time.After(time.Second)
-	for collecting := true; collecting; {
-		select {
-		case got := <-sends:
-			if got.preview != shown {
-				shown = got.preview
-				changes = append(changes, got.at)
+			if err := driver.SendText(id, "for i in $(seq 1 600); do echo line$i; sleep 0.005; done"); err != nil {
+				t.Fatalf("SendText: %v", err)
 			}
-		case <-collect:
-			collecting = false
-		}
-	}
-	if len(changes) < 5 {
-		t.Fatalf("stream changed the preview %d times in a second, want at least 5", len(changes))
-	}
-	for index := 1; index < len(changes); index++ {
-		if gap := changes[index].Sub(changes[index-1]); gap < frameBudget {
-			t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, frameBudget)
-		}
+			waitFocusArrival(t, sends, "line1")
+			var changes []time.Time
+			shown := ""
+			collect := time.After(6 * tt.gap)
+			for collecting := true; collecting; {
+				select {
+				case got := <-sends:
+					if got.preview != shown {
+						shown = got.preview
+						changes = append(changes, got.at)
+					}
+				case <-collect:
+					collecting = false
+				}
+			}
+			if len(changes) < 3 {
+				t.Fatalf("stream changed the preview %d times in %v, want at least 3", len(changes), 6*tt.gap)
+			}
+			for index := 1; index < len(changes); index++ {
+				if gap := changes[index].Sub(changes[index-1]); gap < tt.gap {
+					t.Fatalf("previews %d and %d came %v apart, want at least %v", index-1, index, gap, tt.gap)
+				}
+			}
+		})
 	}
 }
 
@@ -232,6 +246,7 @@ func startFocusArrivalWatch(t *testing.T) (*tmux.Driver, string, <-chan focusArr
 		}
 	})
 	t.Cleanup(watch.Close)
+	watch.Pace(true)
 	watch.SetFocus(id)
 	return driver, id, arrivals, watch
 }

@@ -18,7 +18,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		mm.prepareFrame()
+		if !mm.layout.keepFrame {
+			mm.prepareFrame()
+		}
+		mm.layout.keepFrame = false
+		mm.focus.runtime.Pace(mm.focused())
 		mm.syncPointerShape()
 		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase(), mm.nextEffectCmd())
 	}

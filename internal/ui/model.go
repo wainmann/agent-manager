@@ -89,6 +89,8 @@ type layoutState struct {
 	// reviewFilesTop is the frame row Review's file list first painted on,
 	// under the commit rail when the commit scope shows one, for clicks.
 	reviewFilesTop int
+	// keepFrame skips the next render: the message left the frame as drawn.
+	keepFrame bool
 }
 
 type focusState struct {
