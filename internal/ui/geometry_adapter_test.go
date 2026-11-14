@@ -50,11 +50,11 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
 	m := &Model{layout: layoutState{split: uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio}, width: 120, height: 40}, services: services{listKeys: keybind.DefaultList()}}
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if !m.layout.split.ResizeMode {
-		t.Fatal("| should enter resize mode")
+		t.Fatal("ctrl+] should enter resize mode")
 	}
 	if cmd != nil {
 		t.Fatal("enter should not toggle mouse reporting")
@@ -103,14 +103,14 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	if left, _ := m.splitWidths(); left != before {
 		t.Fatalf("left arrow should undo nudge, left=%d want %d", left, before)
 	}
-	// Nudge once more, then | commits.
+	// Nudge once more, then ctrl+] commits.
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.drainEffects(t)
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.layout.split.ResizeMode {
-		t.Fatal("| should commit and exit resize mode")
+		t.Fatal("ctrl+] should commit and exit resize mode")
 	}
 	if cmd != nil {
 		t.Fatal("commit should not toggle mouse reporting")
@@ -144,6 +144,101 @@ func TestEnterCommitsResize(t *testing.T) {
 	}
 	if got := uigeometrypanes.Load(st); got != 0.42 {
 		t.Fatalf("reloaded ratio = %v want 0.42", got)
+	}
+}
+
+// With a session focused the resize key arms the same gesture over the
+// pane: the arrows nudge, enter stores the ratio, and no key reaches the
+// agent while the mode holds the keyboard.
+func TestFocusedResizeKeyArmsTheDivider(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	st := m.services.store
+	m.layout.width, m.layout.height, m.layout.split.Ratio = 100, 40, 0.34
+	before := m.layout.split.Ratio
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if !m.layout.split.ResizeMode || m.layout.split.Dragging {
+		t.Fatalf("ctrl+] should arm the divider, resize = %v, dragging = %v", m.layout.split.ResizeMode, m.layout.split.Dragging)
+	}
+	if !m.focused() {
+		t.Fatalf("arming the divider left focus, screen = %v", m.screenID())
+	}
+	if focusInputQueued(m) {
+		t.Fatal("the resize key reached the agent")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if left, _ := m.splitWidths(); left <= 34 {
+		t.Fatalf("right arrow left the divider at %d", left)
+	}
+	if focusInputQueued(m) {
+		t.Fatal("a nudge reached the agent")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode || m.layout.split.Dragging {
+		t.Fatal("enter should commit and leave the mode")
+	}
+	if !m.focused() {
+		t.Fatalf("committing left focus, screen = %v", m.screenID())
+	}
+	if got, want := uigeometrypanes.Load(st), m.layout.split.Ratio; got != want || got == before {
+		t.Fatalf("stored ratio = %v, want the committed %v", got, want)
+	}
+}
+
+// esc puts back the ratio the focused gesture started from.
+func TestFocusedResizeCancelRestoresTheRatio(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height, m.layout.split.Ratio = 100, 40, 0.34
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode || m.layout.split.Dragging {
+		t.Fatal("esc should leave the mode")
+	}
+	if !m.focused() {
+		t.Fatalf("esc left focus, screen = %v", m.screenID())
+	}
+	if left, _ := m.splitWidths(); left != 34 {
+		t.Fatalf("esc restored left=%d, want 34", left)
+	}
+}
+
+// The list answers to the same key, and the character it used to take is
+// free again.
+func TestListResizeKeyIsTheOneKeyEverywhere(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	preparedView(m)
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode {
+		t.Fatal("| should no longer arm the divider")
+	}
+	if _, bound := m.services.listKeys.ActionFor("|"); bound {
+		t.Fatal("| is still bound on the list")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("ctrl+] should arm the divider on the list")
 	}
 }
 

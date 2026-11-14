@@ -116,7 +116,7 @@ Only a key you moved is stored. An action at its shipped default follows that de
 
 ### Inside a session
 
-Inside a session, attached or focused, the manager keeps a few keys for itself and hands every other key to the agent. The actions are `detach` (default `ctrl+q` and `ctrl+\`, back to the manager), `review` (default `ctrl+r`, the session's diff review), `editor` (default `f3`, its directory in your editor) and `tmux_prefix` (off by default). Moving one frees a key that collides with a key your agent uses, and turning one off hands its key to the agent like any other.
+Inside a session, attached or focused, the manager keeps a few keys for itself and hands every other key to the agent. The actions are `detach` (default `ctrl+q` and `ctrl+\`, back to the manager), `review` (default `ctrl+r`, the session's diff review), `editor` (default `f3`, its directory in your editor), `resize` (default `ctrl+]`, the split's divider, the same gesture the list has) and `tmux_prefix` (off by default). Moving one frees a key that collides with a key your agent uses, and turning one off hands its key to the agent like any other.
 
 In a focused session, PgUp/PgDn scroll the pane's tmux history when the pane is on its normal screen, has not claimed mouse input, and has history to show. Otherwise the agent gets them, and alt+PgUp/alt+PgDn always reach the agent. Hermes recalls earlier prompts with Up/Down.
 

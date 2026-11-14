@@ -210,7 +210,7 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 		"right": StepIn, "left": StepOut, "n": NewSession, "T": Terminal, "g": NewGroup, "C": NewConnection, "f": Fork,
 		"space": Prompt, "ctrl+r": Review, ".": MarkIdle, "r": Rename, "m": Move, "o": Editor, "R": Restart,
 		"x": Kill, "X": KillAll, "v": Revive, "V": ReviveAll, "a": Archive, "u": Restore, "d": Delete,
-		"/": Search, "w": Filter, "t": Archived, "e": EmptyGroups, "F": FoldAll, "|": Resize,
+		"/": Search, "w": Filter, "t": Archived, "e": EmptyGroups, "F": FoldAll, "ctrl+]": Resize,
 		"s": Settings, "M": Messages, "?": Help, "q": Quit,
 	} {
 		if got, bound := list.ActionFor(key); !bound || got != want {

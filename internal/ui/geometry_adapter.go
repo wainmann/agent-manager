@@ -56,7 +56,7 @@ func (m *Model) setSplitFromX(x int) {
 
 // enterResizeMode arms divider dragging, which the arrow keys drive.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
-	if !m.listClear() || m.rail.Busy() || m.quick() != nil {
+	if !m.resizeAllowed() {
 		return m, nil
 	}
 	gesture := m.layout.split
@@ -67,6 +67,15 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.push(newResizeSurface(m))
 	m.clearErr()
 	return m, nil
+}
+
+// resizeAllowed reports whether the divider gesture may arm: on the clear
+// list, or over a focused pane the same gesture already drags.
+func (m *Model) resizeAllowed() bool {
+	if m.focused() {
+		return true
+	}
+	return m.listClear() && !m.rail.Busy() && m.quick() == nil
 }
 
 // endDrag drops a press on the divider that moved nothing.

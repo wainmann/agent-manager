@@ -36,7 +36,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | click the list / mouse back | Focused: back to the list |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished or waiting session idle without entering it |
-| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move in the **keybindings** row of Settings, and so does every key of the list itself (see [Key bindings](configuration.md#key-bindings)) |
+| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3`, `ctrl+]` and this pair move in the **keybindings** row of Settings, and so does every key of the list itself (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. Settings (`s`) can turn the pair off |
@@ -57,7 +57,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
 | `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, review scope, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, environments, first-run setup, docs, report a bug, suggest a change, and the version row that updates in place) |
-| `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
+| `ctrl+]` | Resize the split, in the list and with a session focused: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
 | `M` | Messages (the update notice with a release's highlights and thanks, maintainer messages, and tips, where `x` dismisses one for good). New notices open automatically. A long message scrolls with the wheel, `pgup`/`pgdn`, and `home`/`end`. While any message is left, the key legend leads with `messages`, and a click on it reopens them in either layout. |
@@ -192,7 +192,7 @@ The line is run directly, never through a shell, so nothing in it is expanded an
 
 Inside a session, attached or focused, `F3` opens that session's directory the same way. It costs an attach its client, so the manager steps back into the session once a windowed editor is running, or once one that draws in the terminal exits. An editor that fails to start keeps the manager on screen, where you can read why.
 
-Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every other `ctrl` combination reaches the program, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out. The **keybindings** row in Settings moves any of the three keys, or turns one off so the agent gets it (see [Key bindings](configuration.md#key-bindings)).
+Like `ctrl+q`, `ctrl+r` and `ctrl+]`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every other `ctrl` combination reaches the program, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out. The **keybindings** row in Settings moves any of the three keys, or turns one off so the agent gets it (see [Key bindings](configuration.md#key-bindings)).
 
 A known windowed editor (the six above, plus `open` and `xdg-open`) starts detached and the manager stays on screen, with the status line naming what opened. Everything else takes the terminal over the way an attach does and hands it back on exit — that way round because a terminal editor started detached would have nowhere to draw, while a windowed one launched this way only costs a repaint.
 

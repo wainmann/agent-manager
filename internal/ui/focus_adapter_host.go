@@ -28,6 +28,7 @@ func (h focusHost) Bindings(pressed string) uifocus.Bindings {
 	keys := h.m.services.keys
 	bindings := uifocus.Bindings{
 		Detach:    keys.Binding(keybind.Detach).Has(pressed),
+		Resize:    keys.Binding(keybind.Resize).Has(pressed),
 		Editor:    keys.Binding(keybind.Editor).Has(pressed),
 		Review:    keys.Binding(keybind.Review).Has(pressed),
 		Saved:     keys.Binding(keybind.SavedPrompt).Has(pressed),
@@ -40,6 +41,13 @@ func (h focusHost) Bindings(pressed string) uifocus.Bindings {
 }
 
 func (h focusHost) RuntimeReady() bool { return h.m.focus.runtime.Ready() }
+
+// Resize arms the divider gesture over the focused pane, the way the list's
+// key does on the list.
+func (h focusHost) Resize() tea.Cmd {
+	_, cmd := h.m.enterResizeMode()
+	return cmd
+}
 
 func (h focusHost) Queued(id string, write uifocus.Write) tea.Cmd {
 	sess, ok := h.m.sessionByID(id)

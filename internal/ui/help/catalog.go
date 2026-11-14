@@ -265,6 +265,9 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, 
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
+	if label := keys.Binding(keybind.Resize).Label(); label != "" {
+		rows = append(rows, [2]string{label, "resize the split: ←/→ nudge, enter sets, esc cancels"})
+	}
 	if label := keys.Binding(keybind.SavedPrompt).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open saved prompts and paste the pick"})
 	}

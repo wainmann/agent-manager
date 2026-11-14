@@ -2084,7 +2084,7 @@ func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
 }
 
 // The key picker spends every row the terminal has on its list, short of
-// the one a table heading can push past the window.
+// what a table heading and the "more" counter can push past the window.
 func TestKeyPickerFillsTheTerminal(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width = 160
@@ -2094,7 +2094,7 @@ func TestKeyPickerFillsTheTerminal(t *testing.T) {
 		m.settingsCard().State().Field = uisettings.FieldKeybindings
 		m.handleSettingsKey(key("enter"))
 		m.viewSettings()
-		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {
+		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-2 {
 			t.Fatalf("height %d: the key picker card is %d rows tall", height, rows)
 		}
 	}

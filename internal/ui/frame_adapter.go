@@ -343,6 +343,7 @@ func (m *Model) focusFooter() uiframe.Focus {
 	focus := uiframe.Focus{
 		Keys: uiframe.FocusKeys{
 			Detach:      m.services.keys.Binding(keybind.Detach).Label(),
+			Resize:      m.services.keys.Binding(keybind.Resize).Label(),
 			Review:      m.services.keys.Binding(keybind.Review).Label(),
 			Editor:      m.services.keys.Binding(keybind.Editor).Label(),
 			SavedPrompt: m.services.keys.Binding(keybind.SavedPrompt).Label(),

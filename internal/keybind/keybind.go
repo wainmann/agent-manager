@@ -288,6 +288,7 @@ var sessionActions = []Action{
 	{Editor, "open its directory", keys("f3")},
 	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
 	{SavedPrompt, "open saved prompts", keys("f4")},
+	{Resize, "resize the split", keys("ctrl+]")},
 }
 
 var listActions = []Action{
@@ -325,7 +326,7 @@ var listActions = []Action{
 	{Archived, "archived view", keys("t")},
 	{EmptyGroups, "hide / show empty groups", keys("e")},
 	{FoldAll, "fold / unfold every group", keys("F")},
-	{Resize, "resize the split", keys("|")},
+	{Resize, "resize the split", keys("ctrl+]")},
 	{Settings, "settings", keys("s")},
 	{Messages, "messages", keys("M")},
 	{Help, "the key map", keys("?")},

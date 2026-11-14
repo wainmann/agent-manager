@@ -19,6 +19,7 @@ type fakeKeyHost struct {
 	left     bool
 	mode     bool
 	editor   bool
+	resize   bool
 	review   string
 	saved    bool
 	openURL  string
@@ -41,6 +42,11 @@ func (h *fakeKeyHost) Queued(id string, write Write) tea.Cmd {
 func (h *fakeKeyHost) Region(*RegionRequest) tea.Cmd { return nil }
 
 func (h *fakeKeyHost) Reported(report string, echo bool) { h.reports = append(h.reports, report) }
+
+func (h *fakeKeyHost) Resize() tea.Cmd {
+	h.resize = true
+	return nil
+}
 
 func (h *fakeKeyHost) Editor() (tea.Model, tea.Cmd) {
 	h.editor = true

@@ -2750,10 +2750,10 @@ func wroteToFocus(m *Model, want string) bool {
 	return strings.Contains(request.Value.Command, "-H "+strings.Join(hex, " "))
 }
 
-// The resize key belongs to the agent while focused: the divider's drag
-// adds no keyboard grab of its own, so "|" is typed into the pane and never
-// arms resize mode.
-func TestFocusedResizeKeyStillReachesTheAgent(t *testing.T) {
+// Ordinary typing reaches the agent while focused, the "|" character the
+// old split key used included: the divider's gesture takes its own key and
+// nothing else.
+func TestFocusedTypingStillReachesTheAgent(t *testing.T) {
 	t.Parallel()
 	m := focusedModel(t)
 	preparedView(m)
