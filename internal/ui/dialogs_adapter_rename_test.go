@@ -1807,3 +1807,23 @@ func TestReopenedGroupEditDropsTheLastOpeningsScan(t *testing.T) {
 		t.Fatal("the cancelled opening's scan replaced this opening's pick")
 	}
 }
+
+func TestGroupEditCompletionKeepsACardChangedWhileSaving(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openRename()
+	for range 3 {
+		m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	save := m.saveGroupEdit()
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyCmd(t, save)
+	if !m.groupFormOpen() {
+		t.Fatal("the first save's completion closed the card holding a later worktree change")
+	}
+}

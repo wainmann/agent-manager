@@ -423,7 +423,8 @@ func (m *Model) renameDialogSubmitted(request uiapply.RenameEffect) bool {
 	}
 	if request.Kind == uiapply.Group {
 		s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
-		return ok && s.Edit() == request.OldGroup && s.Name() == request.Name && s.Dir() == request.DraftDir
+		return ok && s.Edit() == request.OldGroup && s.Name() == request.Name && s.Dir() == request.DraftDir &&
+			uidialogs.WorktreeValue(s.Worktree()) == request.Worktree && s.Base() == request.Base && s.Env() == request.Env
 	}
 	s, ok := surfaceOf[*uidialogs.RenameSurface](m)
 	return ok && s.Name() == request.Name
