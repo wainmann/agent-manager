@@ -209,6 +209,7 @@ func (m *Model) openFork() {
 	}
 	m.gens.dialog++
 	m.push(uidialogs.NewForkSurface(forkRoot{m, entry.sess}, entry.sess.Name, entry.sess.Group, int(m.gens.dialog)))
+	m.syncForkFieldWidth()
 	m.clearErr()
 }
 
@@ -222,6 +223,13 @@ func (m *Model) viewFork(form *uidialogs.Fork) string {
 		Input:       uiframe.TextInputView,
 	})
 	return m.CardSized(m.cardWidth(), card.Title, card.Body, card.Hints)
+}
+
+// syncForkFieldWidth fits an open fork card's name field to the card.
+func (m *Model) syncForkFieldWidth() {
+	if s, ok := surfaceOf[*uidialogs.ForkSurface](m); ok {
+		s.SetWidth(m.formValueWidth() - 3)
+	}
 }
 
 // queueFork admits the fork dialog's request onto the effect lane once per

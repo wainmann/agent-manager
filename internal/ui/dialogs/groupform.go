@@ -57,7 +57,7 @@ const (
 // NewGroupForm opens the form on the name field. The path field inherits
 // dir until the user types a path of their own.
 func NewGroupForm(dir string, gen int) GroupForm {
-	name := newField("group-name", 60)
+	name := newField("group-name", 0)
 	name.Focus()
 	path := newField("default working directory", 400)
 	path.SetValue(dir)

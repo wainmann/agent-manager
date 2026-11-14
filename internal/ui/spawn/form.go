@@ -145,7 +145,7 @@ func TextField(placeholder string, limit int) textinput.Model {
 }
 
 func NewForm(h ChoiceHost, tools []string, toolIndex int) Form {
-	name := TextField("my-session", 60)
+	name := TextField("my-session", 0)
 	name.Focus()
 	return Form{
 		name:      name,
