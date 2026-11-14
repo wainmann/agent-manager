@@ -122,6 +122,7 @@ func buildModel(t *testing.T) *harness {
 				TurnEnd:        `^[✻✳✶✽✢·✦✧+*] \S+ for \d.*$`,
 				BusyLine:       `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`,
 				LimitLine:      `(?m)You've hit your .+limit`,
+				DialogQuestion: `(?m)^ ((?:Do you want)[^?\n]*\?)`,
 				Rules: []config.Rule{
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
