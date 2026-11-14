@@ -328,12 +328,6 @@ func (m *Model) handleGroupBaseStep(msg uilaunch.BaseStepMsg) {
 			return
 		}
 		base = s.BaseRef()
-	case uilaunch.BaseRename:
-		s, ok := surfaceOf[*uidialogs.RenameSurface](m)
-		if !ok || m.gens.dialog != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))) != msg.Dir {
-			return
-		}
-		base = &s.Base
 	default:
 		return
 	}

@@ -8,7 +8,6 @@ import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
-	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
@@ -71,35 +70,7 @@ func (r forkRoot) Paint(form *uidialogs.Fork) string { return r.viewFork(form) }
 // lane it runs on, so the row hands over the values and the root builds it.
 type renameRoot struct{ *Model }
 
-func (r renameRoot) ApplyPathSuggestion() tea.Cmd { return r.applyPathSuggestion() }
-
-func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
-	return r.stepGroupBase(uilaunch.BaseRename, r.gens.dialog, r.capturedAbsolutePath(s.Dir(), r.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))), s.Base, delta)
-}
-
-func (r renameRoot) WorktreeCount() int { return len(uidialogs.WorktreeOptions) }
-
-func (r renameRoot) EnvProfiles() []string { return r.workspace.envProfiles }
-
-func (r renameRoot) FieldsLine(x, y int) (int, bool) {
-	leftWidth, _ := r.splitWidths()
-	return y - r.listChromeRows() - 1, !r.fullRows() && x > leftWidth
-}
-
-func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base, env string) tea.Cmd {
-	if request.Group {
-		return r.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
-			Kind:     uiapply.Group,
-			OldGroup: request.OldGroup,
-			NewGroup: request.NewGroup,
-			RawDir:   request.Dir,
-			DraftDir: request.Dir,
-			Worktree: uidialogs.WorktreeValue(request.Worktree),
-			Base:     base,
-			Env:      env,
-			Name:     request.Name,
-		}})
-	}
+func (r renameRoot) QueueRename(request uidialogs.RenameRequest) tea.Cmd {
 	return r.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
 		Kind:   uiapply.Session,
 		SessID: request.SessionID,

@@ -43,7 +43,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move a session to a group, a terminal into a session, or a group under another group |
-| `r` | Rename session / edit tool; edit group name and default path |
+| `r` | Rename session / edit tool; on a group, open the Edit Group card (name, path, worktree, base, env) |
 | `y` | Copy the selected session's newest reply to the system clipboard, without attaching |
 | `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
 | `X` | Kill every live session in view |

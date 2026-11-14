@@ -9,12 +9,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// GroupForm is the New Group form: its fields, focus, keys, validation and
-// the group a submit builds. The root seeds its path from the parent, owns
-// the parent picker it shares with the New Session form, the path completion
-// under its path field, the group base choice it probes and the environment
-// choice it steps through the defined profiles, runs the create
-// on the effect lane and closes it from the fenced completion.
+// GroupForm is the New Group form, and the Edit Group form when it edits an
+// existing group: its fields, focus, keys, validation and the group a submit
+// builds. The root seeds its path from the parent, owns the parent picker it
+// shares with the New Session form, the path completion under its path field,
+// the group base choice it probes and the environment choice it steps through
+// the defined profiles, runs the save on the effect lane and closes it from
+// the fenced completion.
 type GroupForm struct {
 	name          textinput.Model
 	path          textinput.Model
@@ -24,6 +25,8 @@ type GroupForm struct {
 	// remote names the SSH connection the group is created on; its rows
 	// stop at the path, since the host owns the worktree choice.
 	remote string
+	// edit names the group the form edits; its parent stays fixed.
+	edit string
 	// gen tells this group form from the one that stood in the same place
 	// before it, so a completion cannot close a form the user since reopened.
 	gen int
@@ -60,6 +63,20 @@ func NewGroupForm(dir string, gen int) GroupForm {
 	path.SetValue(dir)
 	return GroupForm{name: name, path: path, pathAuto: true, gen: gen}
 }
+
+// NewGroupEdit opens the form on an existing group, seeded with its name,
+// directory and worktree choice.
+func NewGroupEdit(group, dir string, worktree, gen int) GroupForm {
+	d := NewGroupForm(dir, gen)
+	d.name.SetValue(baseName(group))
+	d.pathAuto = false
+	d.worktreeIndex = worktree
+	d.edit = group
+	return d
+}
+
+// Edit is the group the form edits, empty for a new group.
+func (d GroupForm) Edit() string { return d.edit }
 
 // AimRemote points the form at a connection: the parent is fixed, the
 // directory is the host's to resolve, and the worktree rows are left out.
@@ -113,6 +130,13 @@ func (d *GroupForm) SyncWidths(width int) {
 	d.path.SetCursor(d.path.Position())
 }
 
+type PathSuggestions interface {
+	Active() bool
+	Chosen() bool
+	Move(delta int) bool
+	Reset()
+}
+
 type GroupFormAction uint8
 
 const (
@@ -130,11 +154,12 @@ const (
 	GroupFormSubmit
 )
 
-// GroupFormRequest is a validated new group: Path under Parent, the
-// worktree choice index, the name and directory as typed, and the dialog
-// generation the submit came from.
+// GroupFormRequest is a validated group: Path under Parent, the group it
+// replaces when the form edits one, the worktree choice index, the name and
+// directory as typed, and the dialog generation the submit came from.
 type GroupFormRequest struct {
 	Parent   string
+	Edit     string
 	Path     string
 	Worktree int
 	Name     string
@@ -198,7 +223,7 @@ func (d *GroupForm) Key(msg tea.KeyMsg, paths PathSuggestions, parent string, wo
 		case GroupFormEnvField:
 			return GroupFormKey{Action: GroupFormStepEnv, Delta: delta}
 		case GroupFormParentField:
-			if d.remote != "" {
+			if d.remote != "" || d.edit != "" {
 				return GroupFormKey{}
 			}
 			return GroupFormKey{Action: GroupFormStepParent, Delta: delta}
@@ -288,6 +313,7 @@ func (d GroupForm) Submit(parent string) GroupFormKey {
 	}
 	return GroupFormKey{Action: GroupFormSubmit, Request: GroupFormRequest{
 		Parent:   parent,
+		Edit:     d.edit,
 		Path:     full,
 		Worktree: d.worktreeIndex,
 		Name:     d.name.Value(),
@@ -350,22 +376,36 @@ func (d *GroupForm) View(view GroupFormView) Card {
 		if d.envShown = view.Env != ""; d.envShown {
 			field("env", view.Env, GroupFormEnvField)
 		}
-		if d.focus == GroupFormParentField {
+		if d.focus == GroupFormParentField && d.edit == "" {
 			add("\n", GroupFormParentField, -1)
 			for i, line := range strings.Split(view.Picker(), "\n") {
 				add(line+"\n", GroupFormParentField, i)
 			}
 		}
 	}
-	hints := [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", "create"}, {"esc", "cancel"}}
+	verb := d.submitVerb()
+	hints := [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", verb}, {"esc", "cancel"}}
 	switch {
 	case suggesting:
 		hints = view.SuggestHints
 	case d.remote != "":
-	case d.focus == GroupFormParentField:
-		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "←→"), "pick parent"}, {presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", "create"}, {"esc", "cancel"}}
+	case d.focus == GroupFormParentField && d.edit == "":
+		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "←→"), "pick parent"}, {presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", verb}, {"esc", "cancel"}}
 	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField || d.focus == GroupFormEnvField:
-		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {presentation.NavigationLabel(view.GlyphMode, "←→"), "change"}, {"↵", "create"}, {"esc", "cancel"}}
+		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {presentation.NavigationLabel(view.GlyphMode, "←→"), "change"}, {"↵", verb}, {"esc", "cancel"}}
 	}
-	return Card{Title: presentation.GlyphsFor(view.GlyphMode).NewGlyph + " New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
+	glyphs := presentation.GlyphsFor(view.GlyphMode)
+	title := glyphs.NewGlyph + " New Group"
+	if d.edit != "" {
+		title = glyphs.GroupOpenGlyph + " Edit Group"
+	}
+	return Card{Title: title, Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
+}
+
+// submitVerb names what enter does: create a new group or save an edit.
+func (d GroupForm) submitVerb() string {
+	if d.edit != "" {
+		return "save"
+	}
+	return "create"
 }

@@ -19,6 +19,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// saveGroupEdit presses enter on the Edit Group card and hands its submit to
+// the root, returning the queued rename.
+func (m *Model) saveGroupEdit() tea.Cmd {
+	_, submit := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if submit == nil {
+		return nil
+	}
+	_, cmd := m.Update(submit())
+	return cmd
+}
+
 // applyRename submits the open rename the way enter does.
 func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 	return m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -56,10 +67,10 @@ func TestRenameGroupCascades(t *testing.T) {
 	m.rail.SetCollapsed("old", true)
 	m.rebuildRows()
 	m.openRename()
-	if !openRename(m).IsGroup() || openRename(m).Path() != "old" {
-		t.Fatalf("rename target wrong: %+v", openRename(m))
+	if m.groupSurface().Edit() != "old" {
+		t.Fatalf("edit target wrong: %q", m.groupSurface().Edit())
 	}
-	openRename(m).SetName("fresh")
+	m.groupSurface().SetName("fresh")
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
@@ -548,15 +559,15 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 	}
 
 	m.openRename()
-	if !renameOpen(m) || !openRename(m).IsGroup() {
+	if !m.groupFormOpen() || m.groupSurface().Edit() != "backend" {
 		t.Fatalf("edit group should open, screen = %v", m.screenID())
 	}
-	if openRename(m).Dir() != oldDir {
-		t.Fatalf("path prefill = %q want %q", openRename(m).Dir(), oldDir)
+	if m.groupSurface().Dir() != oldDir {
+		t.Fatalf("path prefill = %q want %q", m.groupSurface().Dir(), oldDir)
 	}
-	openRename(m).SetName("platform")
-	openRename(m).SetDir(newDir)
-	if _, _ = m.applyRename(); m.errBar.text != "" {
+	m.groupSurface().SetName("platform")
+	m.groupSurface().SetDir(newDir)
+	if m.applyCmd(t, m.saveGroupEdit()); m.errBar.text != "" {
 		t.Fatalf("apply: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -582,13 +593,13 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 		}
 	}
 	m.openRename()
-	openRename(m).SetDir("/nope/definitely/missing")
-	_, cmd := m.applyRename()
+	m.groupSurface().SetDir("/nope/definitely/missing")
+	cmd := m.saveGroupEdit()
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("missing path should be rejected")
 	}
-	if !renameOpen(m) {
+	if !m.groupFormOpen() {
 		t.Fatal("modal should stay open on error")
 	}
 }
@@ -617,11 +628,11 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		}
 	}
 	m.openRename()
-	if openRename(m).Dir() == "" {
+	if m.groupSurface().Dir() == "" {
 		t.Fatal("edit modal should prefill the path")
 	}
-	openRename(m).SetDir("")
-	if _, _ = m.applyRename(); m.errBar.text != "" {
+	m.groupSurface().SetDir("")
+	if m.applyCmd(t, m.saveGroupEdit()); m.errBar.text != "" {
 		t.Fatalf("apply: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -673,10 +684,11 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openRename()
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if openRename(m).Focus() != 2 {
-		t.Fatalf("focus should reach the worktree field, got %d", openRename(m).Focus())
+	for range 3 {
+		m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.groupSurface().Focus() != uidialogs.GroupFormWorktreeField {
+		t.Fatalf("focus should reach the worktree field, got %d", m.groupSurface().Focus())
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -705,15 +717,15 @@ func TestGroupEditPersistsBase(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openRename()
-	for range 3 {
+	for range 4 {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if openRename(m).Focus() != 3 {
-		t.Fatalf("focus should reach the base field, got %d", openRename(m).Focus())
+	if m.groupSurface().Focus() != uidialogs.GroupFormBaseField {
+		t.Fatalf("focus should reach the base field, got %d", m.groupSurface().Focus())
 	}
-	_, step := m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	m.applyTestMsg(t, step())
-	if view := m.viewGroupDetail("grp", 80); !strings.Contains(view, "◂ develop ▸") {
+	_, ask := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m.applyTestMsg(t, m.stepCmd(t, ask)())
+	if view := preparedView(m); !strings.Contains(view, "◂ develop ▸") {
 		t.Fatalf("base row should show the pick, got %q", view)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -806,8 +818,7 @@ func TestRenameIsARowNotACard(t *testing.T) {
 		t.Fatalf("rename painted a card: %+v", m.layout.card)
 	}
 	if m.cardOpen() {
-		// The rename takes the mouse itself: its group fields answer clicks
-		// and the rest of the list holds still.
+		// The rename takes the mouse itself: the list holds still.
 		t.Fatal("the rename row counts as a card")
 	}
 	if m = leftClick(m, 0, 0); !renameOpen(m) {
@@ -862,12 +873,12 @@ func TestRenameDefersGroupPersistence(t *testing.T) {
 		}
 	}
 	m.openRename()
-	if !openRename(m).IsGroup() || openRename(m).Path() != "old" {
-		t.Fatalf("rename target wrong: %+v", openRename(m))
+	if m.groupSurface().Edit() != "old" {
+		t.Fatalf("edit target wrong: %q", m.groupSurface().Edit())
 	}
-	openRename(m).SetName("fresh")
-	openRename(m).SetDir(dir)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("fresh")
+	m.groupSurface().SetDir(dir)
+	cmd := m.saveGroupEdit()
 	if cmd == nil {
 		t.Fatal("group rename dispatch returned no command")
 	}
@@ -877,7 +888,7 @@ func TestRenameDefersGroupPersistence(t *testing.T) {
 			t.Fatalf("group rename persisted on the update path: %v", groups)
 		}
 	}
-	if !renameOpen(m) {
+	if !m.groupFormOpen() {
 		t.Fatalf("dialog should stay open until completion, screen = %v", m.screenID())
 	}
 	m.applyCmd(t, cmd)
@@ -961,9 +972,9 @@ func TestRenameGroupDirectoryCheckRunsBeforeMutation(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "old")
 	m.openRename()
-	openRename(m).SetName("new")
-	openRename(m).SetDir("/definitely/missing/agent-manager")
-	_, cmd := m.applyRename()
+	m.groupSurface().SetName("new")
+	m.groupSurface().SetDir("/definitely/missing/agent-manager")
+	cmd := m.saveGroupEdit()
 	groups, _ := m.services.store.Groups()
 	if len(groups) != 1 || groups[0].Name != "old" {
 		t.Fatalf("rename mutated before directory preflight: %+v", groups)
@@ -1079,7 +1090,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 		Gen:      7,
 	}}
 	job := &uieffects.Job{Request: request}
-	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), "", ""))
+	m.openGroupEdit("old")
 	m.gens.dialog = 7
 	m.applyRenameOutcome(job, uiapply.Outcome{GroupRenamed: true}, errRenameStageTwo)
 
@@ -1096,7 +1107,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	if m.workspace.groupPaths["fresh"] != "" {
 		t.Fatalf("uncommitted default dir mirrored: %v", m.workspace.groupPaths)
 	}
-	if !renameOpen(m) {
+	if !m.groupFormOpen() {
 		t.Fatalf("dialog should stay open on failure, screen = %v", m.screenID())
 	}
 	if m.errBar.text != "second stage failed" {
@@ -1125,20 +1136,20 @@ func TestRenameCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 
 	m.selectGroupRow(t, "one")
 	m.openRename()
-	openRename(m).SetName("one-renamed")
-	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("one-renamed")
+	cmd1 := m.saveGroupEdit()
 	if cmd1 == nil {
 		t.Fatal("first rename dispatch returned no command")
 	}
 	m.selectGroupRow(t, "two")
 	m.openRename()
-	openRename(m).SetName("two-renamed")
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("two-renamed")
+	m.saveGroupEdit()
 
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
-	if !renameOpen(m) || openRename(m).Path() != "two" {
-		t.Fatalf("older completion replaced the newer dialog: screen = %v path=%q", m.screenID(), openRename(m).Path())
+	if !m.groupFormOpen() || m.groupSurface().Edit() != "two" {
+		t.Fatalf("older completion replaced the newer dialog: screen = %v path=%q", m.screenID(), m.groupSurface().Edit())
 	}
 	m.drainEffects(t)
 	groups, _ := m.services.store.Groups()
@@ -1203,9 +1214,9 @@ func TestQuitDrainsRenameEffects(t *testing.T) {
 		}
 	}
 	m.openRename()
-	openRename(m).SetName("fresh")
-	openRename(m).SetDir(dir)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("fresh")
+	m.groupSurface().SetDir(dir)
+	cmd := m.saveGroupEdit()
 	if cmd == nil {
 		t.Fatal("group rename dispatch returned no command")
 	}
@@ -1420,8 +1431,8 @@ func TestRenameCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 
 	m.selectGroupRow(t, "one")
 	m.openRename()
-	openRename(m).SetName("renamed")
-	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("renamed")
+	cmd1 := m.saveGroupEdit()
 	if cmd1 == nil {
 		t.Fatal("first dispatch returned no command")
 	}
@@ -1432,20 +1443,20 @@ func TestRenameCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 	m.clearSurfaces()
 	m.selectGroupRow(t, "one")
 	m.openRename()
-	if openRename(m).Path() != "one" {
-		t.Fatalf("reopened wrong target: %q", openRename(m).Path())
+	if m.groupSurface().Edit() != "one" {
+		t.Fatalf("reopened wrong target: %q", m.groupSurface().Edit())
 	}
-	openRename(m).SetName("renamed-again")
+	m.groupSurface().SetName("renamed-again")
 
 	updated, _ := m.Update(cmd1())
 	*m = *updated.(*Model)
-	if !renameOpen(m) {
+	if !m.groupFormOpen() {
 		t.Fatalf("older completion closed the reopened dialog, screen = %v", m.screenID())
 	}
-	if openRename(m).Name() != "renamed-again" {
-		t.Fatalf("older completion clobbered the reopened input: %q", openRename(m).Name())
+	if m.groupSurface().Name() != "renamed-again" {
+		t.Fatalf("older completion clobbered the reopened input: %q", m.groupSurface().Name())
 	}
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.saveGroupEdit()
 	m.drainEffects(t)
 	if !m.onList() {
 		t.Fatalf("matching completion did not close the dialog, screen = %v", m.screenID())
@@ -1468,9 +1479,9 @@ func TestRenameCompletionFencesStalePolls(t *testing.T) {
 		}
 	}
 	m.openRename()
-	openRename(m).SetName("fresh")
-	openRename(m).SetDir(dir)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.groupSurface().SetName("fresh")
+	m.groupSurface().SetDir(dir)
+	cmd := m.saveGroupEdit()
 	if cmd == nil {
 		t.Fatal("group rename dispatch returned no command")
 	}
@@ -1776,7 +1787,7 @@ func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 
 // A scan the previous opening asked for answers into a fresh completer; its
 // generation must not match this opening's, or it replaces the current pick.
-func TestReopenedGroupRenameDropsTheLastOpeningsScan(t *testing.T) {
+func TestReopenedGroupEditDropsTheLastOpeningsScan(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
@@ -1784,15 +1795,15 @@ func TestReopenedGroupRenameDropsTheLastOpeningsScan(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.openRename()
 	typed := filepath.Join(root, "a")
-	openRename(m).SetDir(typed)
-	stale := m.requestPathSuggestions(pathcomplete.Rename, typed)().(pathcomplete.Msg)
+	m.groupSurface().SetDir(typed)
+	stale := m.requestPathSuggestions(pathcomplete.Group, typed)().(pathcomplete.Msg)
 	m.Update(key("esc"))
 
 	m.openRename()
-	loadPathSuggestions(m, pathcomplete.Rename, typed)
-	openRename(m).Paths().Chosen = true
-	m.completer(pathcomplete.Rename).Handle(pathCompleter{m}, stale)
-	if !openRename(m).Paths().Chosen {
+	loadPathSuggestions(m, pathcomplete.Group, typed)
+	m.groupSurface().Paths().Chosen = true
+	m.completer(pathcomplete.Group).Handle(pathCompleter{m}, stale)
+	if !m.groupSurface().Paths().Chosen {
 		t.Fatal("the cancelled opening's scan replaced this opening's pick")
 	}
 }
