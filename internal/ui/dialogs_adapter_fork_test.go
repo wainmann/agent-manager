@@ -21,6 +21,7 @@ import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestExpandForkCommandQuotesPlaceholders(t *testing.T) {
@@ -1570,8 +1571,17 @@ func TestForkCardScrollsALongNameToItsCursor(t *testing.T) {
 	if view := preparedView(m); !strings.Contains(view, "-fork") {
 		t.Fatalf("the name's tail under the cursor is cut from the card:\n%s", view)
 	}
-	m.Update(tea.WindowSizeMsg{Width: 44, Height: m.layout.height})
+	height := m.layout.height
+	m.Update(tea.WindowSizeMsg{Width: 44, Height: height})
 	if view := preparedView(m); !strings.Contains(view, "-fork") {
 		t.Fatalf("after a resize the name's tail is cut from the card:\n%s", view)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: height})
+	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m.Update(tea.WindowSizeMsg{Width: 44, Height: height})
+	for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
+		if strings.Contains(line, "❯ name") && strings.Contains(line, "…") {
+			t.Fatalf("with the cursor inside the name a resize left the field wider than the card: %q", line)
+		}
 	}
 }
