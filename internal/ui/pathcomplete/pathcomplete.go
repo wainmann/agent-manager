@@ -1,7 +1,7 @@
 // Package pathcomplete is directory completion for a path field: the
 // suggestions a field offers, the highlight over them, and the read that
-// fills them. The New Session form, the New Group form and a group rename
-// each hold one State and hand the root only the typed text.
+// fills them. The New Session form and the group form each hold one State
+// and hand the root only the typed text.
 package pathcomplete
 
 import (
@@ -39,7 +39,6 @@ type Target uint8
 const (
 	Form Target = iota
 	Group
-	Rename
 )
 
 // Request is the read a field started, carried by its answer so the field

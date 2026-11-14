@@ -18,8 +18,6 @@ func loadPathSuggestions(m *Model, target pathcomplete.Target, typed string) {
 		m.form().SetDir(typed)
 	case pathcomplete.Group:
 		m.groupSurface().SetDir(typed)
-	case pathcomplete.Rename:
-		openRename(m).SetDir(typed)
 	}
 	msg := m.requestPathSuggestions(target, typed)().(pathcomplete.Msg)
 	m.completer(target).Handle(pathCompleter{m}, msg)
@@ -174,27 +172,29 @@ func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	}
 }
 
-func TestRenamePathSuggestionsExitToName(t *testing.T) {
+func TestGroupEditPathSuggestionsExitToName(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
-	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("", "", 0), "", ""))
+	seedGroups(t, m, "work")
+	m.openGroupEdit("work")
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	loadPathSuggestions(m, pathcomplete.Rename, filepath.Join(root, "a"))
-	openRename(m).Paths().Chosen = true
-	openRename(m).Paths().Index = len(openRename(m).Paths().Suggestions) - 1
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	loadPathSuggestions(m, pathcomplete.Group, filepath.Join(root, "a"))
+	m.groupSurface().Paths().Chosen = true
+	m.groupSurface().Paths().Index = len(m.groupSurface().Paths().Suggestions) - 1
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if openRename(m).Focus() != 2 {
-		t.Fatalf("down past last suggestion should move to worktree, focus=%d", openRename(m).Focus())
+	if m.groupSurface().Focus() != uidialogs.GroupFormWorktreeField {
+		t.Fatalf("down past last suggestion should move to worktree, focus=%d", m.groupSurface().Focus())
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if openRename(m).Focus() != 3 {
-		t.Fatalf("down past worktree should move to base, focus=%d", openRename(m).Focus())
+	if m.groupSurface().Focus() != uidialogs.GroupFormBaseField {
+		t.Fatalf("down past worktree should move to base, focus=%d", m.groupSurface().Focus())
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if openRename(m).Focus() != 0 {
-		t.Fatalf("down past base should wrap to name, focus=%d", openRename(m).Focus())
+	if m.groupSurface().Focus() != uidialogs.GroupFormNameField {
+		t.Fatalf("down past base should wrap to name, focus=%d", m.groupSurface().Focus())
 	}
 }
 

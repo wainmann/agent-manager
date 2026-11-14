@@ -15,7 +15,7 @@ import (
 func (m *Model) groupSurface() *uidialogs.GroupFormSurface {
 	s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
 	if !ok {
-		panic("the New Group card is not open")
+		panic("no group card is open")
 	}
 	return s
 }

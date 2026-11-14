@@ -1,43 +1,19 @@
 package dialogs
 
 import (
-	"strings"
-
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-// Rename edits the selected session's name and tool, or a group's name,
-// default path and worktree choice. It owns the fields, focus, keys and
-// validation. The root seeds it from the selected row, owns the path
-// completion under the path field and the group base choice it probes, runs
-// the rename on the effect lane and closes it from the fenced completion.
+// Rename edits the selected session's name and tool. It owns the field,
+// keys and validation. The root seeds it from the selected row, runs the
+// rename on the effect lane and closes it from the fenced completion.
 type Rename struct {
-	group     bool
-	path      string
 	sessionID string
 	input     textinput.Model
-	dir       textinput.Model
-	worktree  int
-	focus     int
-	// lines is the field each line of the group fields shows, for clicks;
-	// envShown says they drew the environment row.
-	lines     presentation.Lines[fieldLine]
-	envShown  bool
 	tools     []string
 	toolIndex int
 }
-
-// Rename fields, in focus order; a session has the name alone.
-const (
-	RenameNameField = iota
-	RenamePathField
-	RenameWorktreeField
-	RenameBaseField
-	RenameEnvField
-)
 
 func nameField(name string) textinput.Model {
 	input := textinput.New()
@@ -46,19 +22,6 @@ func nameField(name string) textinput.Model {
 	input.Focus()
 	input.SetValue(name)
 	return input
-}
-
-func RenameGroup(path, dir string, worktree int) Rename {
-	field := newField("default working directory", 400)
-	field.Prompt = ""
-	field.SetValue(dir)
-	return Rename{
-		group:    true,
-		path:     path,
-		input:    nameField(baseName(path)),
-		dir:      field,
-		worktree: worktree,
-	}
 }
 
 // RenameSession opens a rename of one session, its tool picked from tools.
@@ -84,24 +47,13 @@ func RenameSession(id, name, tool string, tools []string) Rename {
 	}
 }
 
-func (d Rename) IsGroup() bool     { return d.group }
-func (d Rename) Path() string      { return d.path }
 func (d Rename) SessionID() string { return d.sessionID }
-func (d Rename) Focus() int        { return d.focus }
-func (d Rename) Worktree() int     { return d.worktree }
 
 func (d Rename) Name() string { return cleanName(d.input.Value()) }
 
 func (d *Rename) SetName(name string) { d.input.SetValue(name) }
 
 func (d Rename) Tools() []string { return d.tools }
-
-func (d Rename) Dir() string { return d.dir.Value() }
-
-func (d *Rename) SetDir(path string) {
-	d.dir.SetValue(path)
-	d.dir.CursorEnd()
-}
 
 func (d *Rename) NameField(width int) textinput.Model {
 	if width >= 5 {
@@ -110,7 +62,7 @@ func (d *Rename) NameField(width int) textinput.Model {
 	return d.input
 }
 
-// Tool is the tool a session rename would save, empty for a group.
+// Tool is the tool the rename would save.
 func (d Rename) Tool() string {
 	if len(d.tools) == 0 {
 		return ""
@@ -126,151 +78,46 @@ func (d *Rename) cycleTool(delta int) {
 	d.toolIndex = (d.toolIndex + delta + n) % n
 }
 
-type PathSuggestions interface {
-	Active() bool
-	Chosen() bool
-	Move(delta int) bool
-	Reset()
-}
-
-func (d *Rename) focusField(paths PathSuggestions, delta int) {
-	fields := 2
-	if d.group {
-		fields = RenameEnvField
-		if d.envShown {
-			fields++
-		}
-	}
-	d.focusOn(paths, (d.focus+delta+fields)%fields)
-}
-
-func (d *Rename) focusOn(paths PathSuggestions, field int) {
-	paths.Reset()
-	d.focus = field
-	d.input.Blur()
-	d.dir.Blur()
-	switch d.focus {
-	case RenameNameField:
-		d.input.Focus()
-	case RenamePathField:
-		d.dir.Focus()
-	}
-}
-
 type RenameAction uint8
 
 const (
 	RenameStay RenameAction = iota
 	RenameCancel
-	RenameComplete
-	RenameStepBase
-	// RenameStepEnv steps the root's group environment choice by Delta.
-	RenameStepEnv
-	// RenamePickPath completes the path suggestion at Entry.
-	RenamePickPath
 	// RenameInvalid carries the error the root reports.
 	RenameInvalid
 	RenameSubmit
 )
 
-// RenameRequest is a validated rename. A group edit fills OldGroup,
-// NewGroup, Dir and Worktree; a session rename fills SessionID and Tool.
+// RenameRequest is a validated session rename.
 type RenameRequest struct {
-	Group     bool
 	SessionID string
 	Tool      string
-	OldGroup  string
-	NewGroup  string
-	Dir       string
-	Worktree  int
 	Name      string
 }
 
-// RenameKey is a key's outcome. Cmd is the focused field's own command;
-// Suggest asks for completions of the path field as it now reads.
+// RenameKey is a key's outcome. Cmd is the name field's own command.
 type RenameKey struct {
 	Action  RenameAction
-	Delta   int
-	Entry   int
 	Err     string
 	Request RenameRequest
 	Cmd     tea.Cmd
-	Suggest bool
 }
 
-// Key handles one key. worktrees is how many worktree choices the group
-// field cycles through.
-func (d *Rename) Key(msg tea.KeyMsg, paths PathSuggestions, worktrees int) RenameKey {
-	suggesting := d.group && d.focus == RenamePathField && paths.Active()
+func (d *Rename) Key(msg tea.KeyMsg) RenameKey {
 	switch msg.String() {
 	case "esc":
-		if suggesting {
-			paths.Reset()
-			return RenameKey{}
-		}
 		return RenameKey{Action: RenameCancel}
 	case "tab":
-		if !d.group {
-			d.cycleTool(1)
-			return RenameKey{}
-		}
-		if suggesting {
-			return RenameKey{Action: RenameComplete}
-		}
-		d.focusField(paths, 1)
+		d.cycleTool(1)
 		return RenameKey{}
 	case "shift+tab":
-		if !d.group {
-			d.cycleTool(-1)
-			return RenameKey{}
-		}
-		if suggesting {
-			return RenameKey{}
-		}
-		d.focusField(paths, -1)
+		d.cycleTool(-1)
 		return RenameKey{}
-	case "up", "down":
-		if !d.group {
-			break
-		}
-		delta := 1
-		if msg.String() == "up" {
-			delta = -1
-		}
-		if suggesting && paths.Move(delta) {
-			return RenameKey{}
-		}
-		d.focusField(paths, delta)
-		return RenameKey{}
-	case "left", "right":
-		delta := 1
-		if msg.String() == "left" {
-			delta = -1
-		}
-		if d.group && d.focus == RenameWorktreeField {
-			d.worktree = (d.worktree + delta + worktrees) % worktrees
-			return RenameKey{}
-		}
-		if d.group && d.focus == RenameBaseField {
-			return RenameKey{Action: RenameStepBase, Delta: delta}
-		}
-		if d.group && d.focus == RenameEnvField {
-			return RenameKey{Action: RenameStepEnv, Delta: delta}
-		}
 	case "enter":
-		if suggesting && paths.Chosen() {
-			return RenameKey{Action: RenameComplete}
-		}
 		return d.submit()
 	}
 	var cmd tea.Cmd
-	switch d.focus {
-	case RenameNameField:
-		d.input, cmd = d.input.Update(msg)
-	case RenamePathField:
-		d.dir, cmd = d.dir.Update(msg)
-		return RenameKey{Cmd: cmd, Suggest: true}
-	}
+	d.input, cmd = d.input.Update(msg)
 	return RenameKey{Cmd: cmd}
 }
 
@@ -278,20 +125,6 @@ func (d *Rename) submit() RenameKey {
 	name := d.Name()
 	if name == "" {
 		return RenameKey{Action: RenameInvalid, Err: "name cannot be empty"}
-	}
-	if d.group {
-		newPath := name
-		if parent := parentGroup(d.path); parent != "" {
-			newPath = parent + "/" + name
-		}
-		return RenameKey{Action: RenameSubmit, Request: RenameRequest{
-			Group:    true,
-			OldGroup: d.path,
-			NewGroup: newPath,
-			Dir:      d.dir.Value(),
-			Worktree: d.worktree,
-			Name:     name,
-		}}
 	}
 	return RenameKey{Action: RenameSubmit, Request: RenameRequest{
 		SessionID: d.sessionID,
@@ -301,87 +134,8 @@ func (d *Rename) submit() RenameKey {
 }
 
 func (d Rename) Hints() [][2]string {
-	if d.group {
-		return [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
-	}
 	if tool := d.Tool(); tool != "" {
 		return [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 	}
 	return [][2]string{{"↵", "save"}, {"esc", "cancel"}}
-}
-
-// GroupFieldsView is what the group edit's fields draw with: the root's
-// styles, its field renderer, the open path suggestions, the worktree
-// choice labels and the rendered base and environment choices. An empty
-// environment choice leaves its row off.
-type GroupFieldsView struct {
-	GlyphMode   presentation.GlyphMode
-	Width       int
-	Label       lipgloss.Style
-	Focused     lipgloss.Style
-	Subtle      lipgloss.Style
-	Value       lipgloss.Style
-	Input       func(textinput.Model) string
-	Suggestions func() string
-	Worktrees   []string
-	Base        string
-	Env         string
-}
-
-// GroupFields draws the path, worktree, base and environment rows under a group's head,
-// the focused row's label in the accent.
-func (d *Rename) GroupFields(view GroupFieldsView) string {
-	chrome := presentation.ChromeFor(view.GlyphMode)
-	label := func(field int) lipgloss.Style {
-		if d.focus == field {
-			return view.Focused
-		}
-		return view.Label
-	}
-	if fieldWidth := view.Width - 12; fieldWidth >= 10 {
-		d.dir.Width = fieldWidth
-	}
-	d.lines.Reset()
-	d.lines.Show(fieldLine{field: RenamePathField, entry: -1}, 1)
-	out := label(RenamePathField).Width(10).Render("path") + view.Input(d.dir)
-	if d.focus == RenamePathField && view.Suggestions != nil {
-		for i, line := range strings.Split(view.Suggestions(), "\n") {
-			out += "\n" + line
-			d.lines.Show(fieldLine{field: RenamePathField, entry: i}, 1)
-		}
-	}
-	out += "\n" + label(RenameWorktreeField).Width(10).Render("worktree") +
-		view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
-	out += "\n" + label(RenameBaseField).Width(10).Render("base") + view.Base
-	d.lines.Show(fieldLine{field: RenameWorktreeField, entry: -1}, 1)
-	d.lines.Show(fieldLine{field: RenameBaseField, entry: -1}, 1)
-	if d.envShown = view.Env != ""; d.envShown {
-		out += "\n" + label(RenameEnvField).Width(10).Render("env") + view.Env
-		d.lines.Show(fieldLine{field: RenameEnvField, entry: -1}, 1)
-	}
-	return out
-}
-
-// Click acts on the line of the group fields a click landed on, the way the
-// New Group form does: a field takes the focus, a second click on the
-// worktree, base or environment row steps it, and a path suggestion is
-// picked.
-func (d *Rename) Click(line int, paths PathSuggestions, worktrees int) RenameKey {
-	at, ok := d.lines.At(line)
-	if !ok || !d.group {
-		return RenameKey{}
-	}
-	switch {
-	case at.field == RenamePathField && at.entry >= 0:
-		return RenameKey{Action: RenamePickPath, Entry: at.entry}
-	case at.field != d.focus:
-		d.focusOn(paths, at.field)
-	case at.field == RenameWorktreeField:
-		d.worktree = (d.worktree + 1) % worktrees
-	case at.field == RenameBaseField:
-		return RenameKey{Action: RenameStepBase, Delta: 1}
-	case at.field == RenameEnvField:
-		return RenameKey{Action: RenameStepEnv, Delta: 1}
-	}
-	return RenameKey{}
 }
