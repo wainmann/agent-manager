@@ -134,7 +134,7 @@ func turnInFlight(current string) bool {
 // started it, so a matched pane verdict upgrades finished to waiting,
 // errored or working (Stop fires when the main agent stops responding,
 // which leaves background agents reported as finished while they run),
-// and working to waiting (an Esc interrupt fires no Stop event). A
+// and working to waiting (a dialog opens before its Notification fires). A
 // working hook also reconciles to
 // the pane verdict when the pane shows the turn already ended: background
 // subagents write working via PreToolUse/PostToolUse but fire no Stop
@@ -144,6 +144,11 @@ func turnInFlight(current string) bool {
 // An errored hook yields only to waiting or working: a failed turn draws
 // a summary under its error, so a finished pane would erase the failure,
 // and the next prompt's UserPromptSubmit or Stop replaces it anyway.
+// Esc fires no hook at all, so a turn the user cut short leaves the file at
+// working, or at waiting when a dialog's Notification already fired. The
+// user who pressed it has nothing left to answer, so once the pane is at
+// rest that session reads idle: a waiting hook as soon as no dialog trips a
+// rule, a working one when the newest turn shows the interrupt.
 func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) string {
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
@@ -155,6 +160,9 @@ func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) st
 			return status.Idle
 		}
 	case status.Working:
+		if p.atRest(sess.Tool, text, paneStatus, matched) && p.engine.Interrupted(sess.Tool, text) {
+			return status.Idle
+		}
 		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Errored) {
 			if paneStatus == status.Finished && sess.Acked {
 				return status.Idle
@@ -165,8 +173,25 @@ func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) st
 		if matched && (paneStatus == status.Waiting || paneStatus == status.Working) {
 			return paneStatus
 		}
+	case status.Waiting:
+		if p.atRest(sess.Tool, text, paneStatus, matched) {
+			return status.Idle
+		}
+		if matched && (paneStatus == status.Working || paneStatus == status.Errored) {
+			return paneStatus
+		}
 	}
 	return hookStatus
+}
+
+// atRest reports a pane that needs no verdict from a hook: no dialog trips
+// a rule, and no turn runs or failed.
+func (p *Runner) atRest(tool, text, paneStatus string, matched bool) bool {
+	if matched && (paneStatus == status.Working || paneStatus == status.Errored) {
+		return false
+	}
+	rule, ok := p.engine.RuleMatch(tool, text)
+	return !ok || rule != status.Waiting
 }
 
 func hashString(s string) uint64 { h := fnv.New64a(); h.Write([]byte(s)); return h.Sum64() }

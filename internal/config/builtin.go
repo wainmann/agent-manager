@@ -46,7 +46,9 @@ chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Rest
 # hint; the spinner owns the tip, effort badge and notices drawn under it;
 # the welcome logo owns the version, model and directory beside it
 chrome_block = "^❯ |^[✻✳✶✽✢·✦✧+*] \\S+…|^\\s*▐▛███▛█ "
-blocked_line = "Interrupted ·"
+# Esc cuts a turn short with the interrupt banner, or on a question dialog
+# with the decline; neither fires a hook
+blocked_line = "Interrupted ·|^[●⏺] User declined to answer questions"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
 # a question dialog draws its selected option on the composer's own row
@@ -65,7 +67,12 @@ dialog_question = "(?m)^ (?:Quick safety check: )?((?:Do you want|Is this a proj
 # moved to the background ("· 1 MCP task still running"). Shells and
 # monitors can outlive their use, so they do not count, and neither does a
 # mixed "· 2 background tasks still running", which names no kind.
-busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
+# The groups count agents and workflows, which each print a line when they
+# end ("● Agent "Run tests" finished · 9s", "⏺ Dynamic workflow "…" completed");
+# the line is redrawn only when the count changes, so an agent whose report
+# woke the main agent can end after that turn with no newer summary below.
+busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for (\\d+) (?:background agents?(?: and (\\d+) dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
+busy_done = "^[●⏺] (?:Agent|Dynamic workflow) \""
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
