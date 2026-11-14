@@ -411,7 +411,8 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 		m.reportErr(err.Error())
 	} else if m.renameDialogSubmitted(request) {
 		m.Pop()
-	} else if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && request.Kind == uiapply.Group && s.Edit() == request.OldGroup {
+	}
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && stages.GroupRenamed && s.Edit() == request.OldGroup {
 		s.Retarget(request.NewGroup)
 	}
 	m.rebuildRows()

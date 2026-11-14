@@ -1110,6 +1110,9 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 	if !m.groupFormOpen() {
 		t.Fatalf("dialog should stay open on failure, screen = %v", m.screenID())
 	}
+	if m.groupSurface().Edit() != "fresh" {
+		t.Fatalf("kept card still targets %q after the committed rename", m.groupSurface().Edit())
+	}
 	if m.errBar.text != "second stage failed" {
 		t.Fatalf("errBar=%q", m.errBar.text)
 	}
