@@ -1063,12 +1063,12 @@ func TestRetainedRepoPickerRendersCurrentMode(t *testing.T) {
 	for _, tc := range []struct {
 		mode          presentation.GlyphMode
 		title, cursor string
-	}{{presentation.GlyphModeBasic, "D", ">"}, {presentation.GlyphModeAdvanced, "⌥", "❯"}} {
+	}{{presentation.GlyphModeBasic, "── Review repo ", ">"}, {presentation.GlyphModeAdvanced, "── ⌥ Review repo ", "❯"}} {
 		m.prefs.glyphMode = tc.mode
 		m.openReviewPicker([]uireview.PickerRow{{Label: name, Root: "/repo"}}, "Review repo", uireview.PickRepo, "", uireview.PickerSource{}, "")
 		got := ansi.Strip(m.viewPicker(t))
 		m.Pop()
-		if !strings.Contains(got, tc.title+" Review repo") || !strings.Contains(got, tc.cursor+" "+name) {
+		if !strings.Contains(got, tc.title) || !strings.Contains(got, tc.cursor+" "+name) {
 			t.Fatalf("%s picker=%q", tc.mode, got)
 		}
 	}

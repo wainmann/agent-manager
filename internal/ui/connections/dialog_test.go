@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	remote "github.com/YoanWai/agent-manager/internal/remote/value"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -152,5 +153,34 @@ func TestDialogClickFocusesTheFieldOnItsLine(t *testing.T) {
 	d.Click(fieldCount)
 	if d.Focus() != NameField {
 		t.Fatal("a click on the note moved the focus")
+	}
+}
+
+func TestDialogTitlesFollowGlyphMode(t *testing.T) {
+	for _, tc := range []struct {
+		mode presentation.GlyphMode
+		mark string
+	}{
+		{presentation.GlyphModeBasic, ""}, {presentation.GlyphModeAdvanced, "⇄ "}, {"", "⇄ "},
+	} {
+		for _, editing := range []bool{false, true} {
+			var d Dialog
+			conn := remote.Connection{}
+			action := "New"
+			if editing {
+				conn = remote.Connection{Name: "literal-⇄", Destination: "me@box"}
+				action = "Edit"
+			}
+			d.Open(conn)
+			view := plainView
+			view.GlyphMode = tc.mode
+			card := d.View(view)
+			if want := tc.mark + action + " SSH Connection"; card.Title != want {
+				t.Fatalf("%s: title %q, want %q", tc.mode, card.Title, want)
+			}
+			if editing && !strings.Contains(card.Body, conn.Name) {
+				t.Fatal("literal connection name changed")
+			}
+		}
 	}
 }

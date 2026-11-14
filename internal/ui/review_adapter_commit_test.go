@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
@@ -591,29 +592,84 @@ func (m *Model) pressGlyph(t *testing.T, text string) {
 // marks every file in it, after opening it when it is not the one in view.
 func TestReviewGlyphClicksMarkReviewed(t *testing.T) {
 	m := buildModel(t)
-	dir := gitRepoWithCommitStack(t)
-	openCommitScope(t, m, dir)
-	m.pressDiffKey(t, '[')
-	if m.review.Snapshot().Set.Files[1].IsLoaded {
-		t.Fatal("test setup: b.go should not be loaded yet")
-	}
+	for _, tc := range []struct {
+		mode          presentation.GlyphMode
+		pending, done string
+	}{
+		{presentation.GlyphModeBasic, ".", "+"}, {presentation.GlyphModeAdvanced, "○", "✔"},
+	} {
+		dir := gitRepoWithCommitStack(t)
+		t.Run(string(tc.mode), func(t *testing.T) {
+			m.prefs.glyphMode = tc.mode
+			openReviewOn(t, m, "stack-"+string(tc.mode), dir)
+			m.enterCommitScope(t)
+			m.pressDiffKey(t, '}')
+			m.pressDiffKey(t, '[')
+			if m.review.Snapshot().Set.Files[1].IsLoaded {
+				t.Fatal("test setup: b.go should not be loaded yet")
+			}
 
-	m.pressGlyph(t, "○ b.go")
-	if !m.fileReviewed("b.go") || m.fileReviewed("a.go") || m.currentFileDiff().File.Path != "a.go" {
-		t.Fatalf("b.go glyph should mark b.go alone and keep a.go in view, files = %v index = %d", m.diffPaths(), m.review.Snapshot().FileIndex)
-	}
-	m.pressGlyph(t, "✔ b.go")
-	if m.fileReviewed("b.go") {
-		t.Fatal("a second click on the glyph should clear the mark")
-	}
+			m.pressGlyph(t, tc.pending+" b.go")
+			if !m.fileReviewed("b.go") || m.fileReviewed("a.go") || m.currentFileDiff().File.Path != "a.go" {
+				t.Fatalf("b.go glyph should mark b.go alone and keep a.go in view, files = %v index = %d", m.diffPaths(), m.review.Snapshot().FileIndex)
+			}
+			m.pressGlyph(t, tc.done+" b.go")
+			if m.fileReviewed("b.go") {
+				t.Fatal("a second click on the glyph should clear the mark")
+			}
 
-	commits := m.review.Snapshot().Commits
-	m.pressGlyph(t, "○ "+commits[1].Short+" two")
-	if !m.review.CommitReviewed(commits[1]) {
-		t.Fatal("the glyph of the commit in view should mark it")
+			commits := m.review.Snapshot().Commits
+			m.pressGlyph(t, tc.pending+" "+commits[1].Short+" two")
+			if !m.review.CommitReviewed(commits[1]) {
+				t.Fatal("the glyph of the commit in view should mark it")
+			}
+			m.pressGlyph(t, tc.pending+" "+commits[2].Short+" one")
+			if state := m.review.Snapshot(); state.Set.Commit != commits[2].SHA || !m.review.CommitReviewed(commits[2]) {
+				t.Fatalf("another commit's glyph should open and mark it, in view %s", state.Set.Commit)
+			}
+			m.drainCmds(t, m.closeDiff())
+		})
 	}
-	m.pressGlyph(t, "○ "+commits[2].Short+" one")
-	if state := m.review.Snapshot(); state.Set.Commit != commits[2].SHA || !m.review.CommitReviewed(commits[2]) {
-		t.Fatalf("another commit's glyph should open and mark it, in view %s", state.Set.Commit)
+}
+
+func TestCommitPickerUsesActiveGlyphPreference(t *testing.T) {
+	for _, tc := range []struct {
+		mode  presentation.GlyphMode
+		mark  string
+		title string
+	}{
+		{presentation.GlyphModeBasic, ".", "── Review commit "},
+		{presentation.GlyphModeAdvanced, "○", "── ⌥ Review commit "},
+		{"", "○", "── ⌥ Review commit "},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			m := shotModel()
+			m.prefs.glyphMode = tc.mode
+			m.base = baseReview
+			target := uireview.Target{ID: "picker"}
+			request := seedReviewForTest(m, target, git.ScopeCommit, "/repo", diff.Set{}, false)
+			m.review.ApplyLoad(uireview.LoadResult{
+				TargetID: target.ID, Scope: request.Scope, Generation: request.Generation,
+				RepoRoot: "/repo", RepoRoots: []string{"/repo"},
+				Commits: []git.Commit{
+					{SHA: "aaaa", Short: "aaaa", Subject: "three", Files: []string{"three.go"}},
+					{SHA: "bbbb", Short: "bbbb", Subject: "two", Files: []string{"two.go"}},
+					{SHA: "cccc", Short: "cccc", Subject: "one", Files: []string{"one.go"}},
+				},
+			})
+			m.openCommitPick()
+			if frame := ansi.Strip(m.viewPicker(t)); !strings.Contains(frame, tc.title) {
+				t.Fatalf("%s: picker title %q missing:\n%s", tc.mode, tc.title, frame)
+			}
+			rows := m.pickerOf(t).Rows()
+			if len(rows) != 3 {
+				t.Fatalf("picker rows: %+v", rows)
+			}
+			for _, row := range rows {
+				if !strings.HasPrefix(row.Label, tc.mark+" ") {
+					t.Fatalf("%s: %+v", tc.mode, row)
+				}
+			}
+		})
 	}
 }
