@@ -538,10 +538,10 @@ func extractChanges(body string) ([]Change, int) {
 
 func cleanChange(bullet string) (Change, bool) {
 	change := Change{Kind: KindOther}
-	// Credit outside contributors on their digest lines; the maintainer's
-	// own handle and bot handles would be noise on every row.
+	// Credit every contributor on their digest lines; bot handles would be
+	// noise.
 	if match := pullSuffix.FindStringSubmatch(bullet); match != nil {
-		if handle := match[1]; handle != "@YoanWai" && !strings.HasSuffix(handle, "[bot]") {
+		if handle := match[1]; !strings.HasSuffix(handle, "[bot]") {
 			change.Author = handle
 		}
 	}
