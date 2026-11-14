@@ -141,6 +141,7 @@ func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 	}
 	m.syncFormFieldWidths()
+	m.syncForkFieldWidth()
 	return routed(m, nil)
 }
 

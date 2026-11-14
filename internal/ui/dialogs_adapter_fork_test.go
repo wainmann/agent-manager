@@ -1570,4 +1570,8 @@ func TestForkCardScrollsALongNameToItsCursor(t *testing.T) {
 	if view := preparedView(m); !strings.Contains(view, "-fork") {
 		t.Fatalf("the name's tail under the cursor is cut from the card:\n%s", view)
 	}
+	m.Update(tea.WindowSizeMsg{Width: 44, Height: m.layout.height})
+	if view := preparedView(m); !strings.Contains(view, "-fork") {
+		t.Fatalf("after a resize the name's tail is cut from the card:\n%s", view)
+	}
 }
