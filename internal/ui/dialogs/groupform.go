@@ -78,6 +78,9 @@ func NewGroupEdit(group, dir string, worktree, gen int) GroupForm {
 // Edit is the group the form edits, empty for a new group.
 func (d GroupForm) Edit() string { return d.edit }
 
+// Retarget points a kept card at the group its last save renamed.
+func (d *GroupForm) Retarget(group string) { d.edit = group }
+
 // AimRemote points the form at a connection: the parent is fixed, the
 // directory is the host's to resolve, and the worktree rows are left out.
 func (d *GroupForm) AimRemote(host string) {

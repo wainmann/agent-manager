@@ -1817,6 +1817,7 @@ func TestGroupEditCompletionKeepsACardChangedWhileSaving(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openRename()
+	m.groupSurface().SetName("renamed")
 	for range 3 {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
@@ -1825,5 +1826,14 @@ func TestGroupEditCompletionKeepsACardChangedWhileSaving(t *testing.T) {
 	m.applyCmd(t, save)
 	if !m.groupFormOpen() {
 		t.Fatal("the first save's completion closed the card holding a later worktree change")
+	}
+	m.applyCmd(t, m.saveGroupEdit())
+	m.drainEffects(t)
+	groups, err := m.services.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if m.groupFormOpen() || len(groups) != 1 || groups[0].Name != "renamed" || groups[0].Worktree != "on" {
+		t.Fatalf("second save: open=%v err=%q groups=%+v", m.groupFormOpen(), m.errBar.text, groups)
 	}
 }
