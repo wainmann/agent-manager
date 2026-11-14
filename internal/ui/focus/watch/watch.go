@@ -95,6 +95,9 @@ type Watcher struct {
 	// queued and landed count the writes to a polled pane in and out, so a
 	// frame can tell whether it shows them all.
 	queued, landed uint64
+	// fast streams a changing pane at the frame budget, for a focused
+	// session; a pane only previewed beside the list keeps the live tick.
+	fast bool
 }
 
 // retryBackoff is how long a failed session sits before the watcher
@@ -150,6 +153,23 @@ func (w *Watcher) SetFocus(id string) {
 		defer cancel()
 		w.watch(ctx, id, stop, input)
 	}()
+}
+
+// Pace sets how soon a pane that just changed is captured again: within the
+// frame budget while fast, on the live tick otherwise.
+func (w *Watcher) Pace(fast bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.fast = fast
+}
+
+func (w *Watcher) changedGap() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.fast {
+		return frameBudget
+	}
+	return w.liveTick
 }
 
 // InputSent tells the watcher a write just reached the pane, so it looks
@@ -487,7 +507,7 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		// TUIs send ahead of an echo, must not hold back that echo.
 		gap := captureGap
 		if pane != previous {
-			gap = frameBudget
+			gap = w.changedGap()
 		}
 		previous = pane
 		lastCapture = time.Now()

@@ -20,6 +20,7 @@ type fakeRoot struct {
 	feeds    bool
 	serving  bool
 	watched  bool
+	kept     bool
 	errs     []error
 	applied  []applied
 }
@@ -35,6 +36,7 @@ func (r *fakeRoot) Accepts(gen uint64) bool          { return gen == r.gen || ge
 func (r *fakeRoot) CaptureWanted(store.Session) bool { return r.feeds && !r.serving }
 func (r *fakeRoot) ArmTick(bool) tea.Cmd             { return nil }
 func (r *fakeRoot) WatchSelection()                  { r.watched = true }
+func (r *fakeRoot) KeepFrame()                       { r.kept = true }
 
 func (r *fakeRoot) ApplyCapture(sessID, preview string, _ sysstat.ProcStat) {
 	r.applied = append(r.applied, applied{sessID: sessID, preview: preview})
@@ -98,6 +100,20 @@ func TestTickSkipsACaptureTheWatcherAlreadyFeeds(t *testing.T) {
 	s := New(nil, nil)
 	if cmd, ok := s.Route(root, TickMsg{}); !ok || cmd != nil {
 		t.Fatalf("served tick = %v, %v; want handled with no capture", cmd, ok)
+	}
+	if !root.kept {
+		t.Fatal("a tick that captured nothing redrew the frame")
+	}
+}
+
+func TestTickThatCapturesRedrawsTheFrame(t *testing.T) {
+	root := &fakeRoot{hasSel: true, selected: store.Session{ID: "a"}, gen: 1, feeds: true}
+	s := New(nil, nil)
+	if cmd, ok := s.Route(root, TickMsg{}); !ok || cmd == nil {
+		t.Fatalf("tick = %v, %v; want a capture", cmd, ok)
+	}
+	if root.kept {
+		t.Fatal("a tick that captures kept the old frame")
 	}
 }
 

@@ -53,6 +53,8 @@ func (r previewCaptures) CaptureWanted(sess store.Session) bool {
 
 func (r previewCaptures) WatchSelection() { r.watchSelection() }
 
+func (r previewCaptures) KeepFrame() { r.layout.keepFrame = true }
+
 func (r previewCaptures) ArmTick(withRemote bool) tea.Cmd {
 	if !withRemote {
 		return r.workspace.capture.Tick(r)

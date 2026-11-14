@@ -30,6 +30,14 @@ func (s *State) SetFocus(id string) {
 	}
 }
 
+// Pace streams the watched pane at the frame budget while fast, and on the
+// live tick while it is only previewed.
+func (s *State) Pace(fast bool) {
+	if s.Watch != nil {
+		s.Watch.Pace(fast)
+	}
+}
+
 func (s *State) ClearFocus() {
 	if s.Watch != nil {
 		s.Watch.SetFocus("")

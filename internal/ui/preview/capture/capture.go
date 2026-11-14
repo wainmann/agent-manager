@@ -74,6 +74,9 @@ type Root interface {
 	// when withRemote asks: that one keeps running where the pane is hidden.
 	ArmTick(withRemote bool) tea.Cmd
 	WatchSelection()
+	// KeepFrame tells the root the message changed nothing on screen, so
+	// the frame already drawn stands.
+	KeepFrame()
 	ApplyCapture(sessID, preview string, proc sysstat.ProcStat)
 	ReportErr(err error)
 }
@@ -188,6 +191,7 @@ func (s *State) Route(root Root, msg tea.Msg) (tea.Cmd, bool) {
 			return root.ArmTick(true), true
 		}
 		if !root.CaptureWanted(sess) {
+			root.KeepFrame()
 			return root.ArmTick(false), true
 		}
 		return tea.Batch(s.Capture(sess, root.Generation()), root.ArmTick(false)), true
