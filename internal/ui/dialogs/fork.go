@@ -22,7 +22,7 @@ type Fork struct {
 }
 
 func (d *Fork) Open(sourceName, sourceGroup string) {
-	name := newField("fork name", 60)
+	name := newField("fork name", 0)
 	name.SetValue(sourceName + "-fork")
 	name.CursorEnd()
 	name.Focus()
