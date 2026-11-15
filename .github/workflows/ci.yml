@@ -37,7 +37,8 @@ jobs:
       # A pull request scans base..head and a merge group scans its base..head,
       # every commit in the range, merged side branches included. A new ref
       # has an all-zero before, so its tip commit is scanned. Every other push
-      # scans before..after.
+      # scans before..after. Merge commits are diffed against their first
+      # parent, so lines added while resolving a conflict are scanned too.
       - name: Scan new commits for secrets
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -59,6 +60,7 @@ jobs:
               fi
               ;;
           esac
+          log_opts="--diff-merges=first-parent ${log_opts}"
           "$RUNNER_TEMP/gitleaks" git --redact -v --exit-code 1 --log-opts="$log_opts" .
 
   dependency-review:
