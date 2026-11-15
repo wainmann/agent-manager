@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 )
@@ -192,5 +193,42 @@ func TestReleaseWorkflowMatchesTheSigningIdentity(t *testing.T) {
 	}
 	if strings.Contains(string(workflow), "workflow_call") {
 		t.Fatalf("%s is a reusable workflow; the signing identity would be the caller, not %s", rel, rel)
+	}
+}
+
+func TestVerifyProvenanceRefusesARedirectToAnotherHost(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("followed the redirect to %s", r.Host)
+	}))
+	t.Cleanup(elsewhere.Close)
+	redirect := strings.Replace(elsewhere.URL, "127.0.0.1", "localhost", 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirect+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	origBase := attestationsBase
+	attestationsBase = server.URL
+	t.Cleanup(func() { attestationsBase = origBase })
+
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	assertUnavailable(t, err, "refusing redirect")
+}
+
+func TestContextClientStopsWhenTheUpdateIsCancelled(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	t.Cleanup(func() { close(release); server.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = contextClient{ctx: ctx, next: &http.Client{}}.Do(req)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want the deadline to stop the request, got %v", err)
 	}
 }

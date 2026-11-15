@@ -14,7 +14,10 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
+	"github.com/sigstore/sigstore-go/pkg/util"
 	"github.com/sigstore/sigstore-go/pkg/verify"
+	"github.com/sigstore/sigstore/pkg/httpretry"
+	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
 )
 
 const (
@@ -122,7 +125,17 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]json.RawMessage
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		// The attestations API answers directly. A redirect to another host
+		// is refused rather than followed.
+		CheckRedirect: func(next *http.Request, _ []*http.Request) error {
+			if next.URL.Host != req.URL.Host {
+				return fmt.Errorf("refusing redirect to %s", next.URL.Host)
+			}
+			return nil
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +171,24 @@ func publicGoodTrustedRoot(ctx context.Context) (root.TrustedMaterial, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The TUF fetcher builds its requests without a context, so each one is
+	// bound to ctx here and the update deadline also bounds a stalled CDN.
+	tufFetcher := fetcher.NewDefaultFetcher()
+	tufFetcher.SetHTTPUserAgent(util.ConstructUserAgent())
+	tufFetcher.SetHTTPClient(contextClient{ctx: ctx, next: httpretry.NewClient()})
 	options := tuf.DefaultOptions().
 		WithContext(ctx).
+		WithFetcher(tufFetcher).
 		WithCachePath(filepath.Join(cacheDir, "agent-manager", "sigstore-tuf"))
 	return root.FetchTrustedRootWithOptions(options)
+}
+
+// contextClient sends every request with ctx, so cancelling ctx stops it.
+type contextClient struct {
+	ctx  context.Context
+	next *http.Client
+}
+
+func (c contextClient) Do(req *http.Request) (*http.Response, error) {
+	return c.next.Do(req.WithContext(c.ctx))
 }
