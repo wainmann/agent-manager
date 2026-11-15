@@ -282,6 +282,10 @@ func serveCurrentShape(t *testing.T, bundleStatus int) {
 		if r.Header.Get("Authorization") != "" {
 			t.Errorf("bundle download sent an Authorization header")
 		}
+		if bundleStatus == http.StatusFound {
+			http.Redirect(w, r, strings.Replace(server.URL, "127.0.0.1", "localhost", 1)+r.URL.Path, http.StatusFound)
+			return
+		}
 		if bundleStatus != http.StatusOK {
 			http.Error(w, "gone", bundleStatus)
 			return
@@ -324,6 +328,12 @@ func TestVerifyProvenanceReportsAFailedBundleDownloadAsUnavailable(t *testing.T)
 	serveCurrentShape(t, http.StatusForbidden)
 	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	assertUnavailable(t, err, "attestation bundle")
+}
+
+func TestVerifyProvenanceRefusesABundleRedirectToAnotherHost(t *testing.T) {
+	serveCurrentShape(t, http.StatusFound)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+	assertUnavailable(t, err, "refusing redirect")
 }
 
 func TestVerifyProvenanceTreatsANullBundleWithNoURLAsMissing(t *testing.T) {

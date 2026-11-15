@@ -230,17 +230,7 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, er
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", attestationsAPIVersion)
-	client := &http.Client{
-		// The attestations API answers directly. A redirect to another host
-		// is refused rather than followed.
-		CheckRedirect: func(next *http.Request, _ []*http.Request) error {
-			if next.URL.Host != req.URL.Host {
-				return fmt.Errorf("refusing redirect to %s", next.URL.Host)
-			}
-			return nil
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := sameHostClient(req).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +254,20 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, er
 		return nil, fmt.Errorf("read attestations: %w", err)
 	}
 	return list.Attestations, nil
+}
+
+// sameHostClient sends no credentials and refuses a redirect to a host
+// other than req's. Neither the attestations API nor the bundle store
+// redirects across hosts.
+func sameHostClient(req *http.Request) *http.Client {
+	return &http.Client{
+		CheckRedirect: func(next *http.Request, _ []*http.Request) error {
+			if next.URL.Host != req.URL.Host {
+				return fmt.Errorf("refusing redirect to %s", next.URL.Host)
+			}
+			return nil
+		},
+	}
 }
 
 func rateLimitReset(header http.Header) time.Time {
@@ -297,7 +301,7 @@ func downloadBundle(ctx context.Context, url string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := sameHostClient(req).Do(req)
 	if err != nil {
 		return nil, err
 	}
