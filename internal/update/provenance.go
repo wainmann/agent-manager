@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -19,9 +20,28 @@ import (
 const (
 	provenanceIssuer    = "https://token.actions.githubusercontent.com"
 	provenancePredicate = "https://slsa.dev/provenance/v1"
-	releaseWorkflow     = "https://github.com/wainmann/agent-manager/.github/workflows/release.yml"
-	attestationLimit    = 8 << 20
+	// releaseWorkflow must name the workflow file that runs
+	// actions/attest-build-provenance for releases. Renaming or moving
+	// .github/workflows/release.yml, calling it as a reusable workflow, or
+	// renaming the repository changes the signing identity, and every update
+	// to a release built that way is refused. Change this constant in the
+	// same PR. TestReleaseWorkflowMatchesTheSigningIdentity fails when the
+	// file and this constant drift apart.
+	releaseWorkflow  = "https://github.com/wainmann/agent-manager/.github/workflows/release.yml"
+	attestationLimit = 8 << 20
+	releasesPage     = "https://github.com/wainmann/agent-manager/releases"
 )
+
+// errProvenanceUnavailable marks a provenance check that could not run
+// because GitHub or Sigstore did not answer. The update stops either way,
+// so a network failure never installs an unverified binary.
+var errProvenanceUnavailable = errors.New("could not reach GitHub or Sigstore to verify the build provenance")
+
+func provenanceUnavailable(tag string, cause error) error {
+	return fmt.Errorf("update: %w of %s, so the installed binary was left unchanged. "+
+		"Check the network and try again later, or reinstall from %s (%w)",
+		errProvenanceUnavailable, tag, releasesPage, cause)
+}
 
 // attestationsBase is a var so tests can serve the attestations API locally.
 var attestationsBase = "https://api.github.com/repos/wainmann/agent-manager/attestations"
@@ -49,11 +69,14 @@ func verifyProvenance(ctx context.Context, tag, sha256Hex string) error {
 	}
 	bundles, err := fetchAttestations(ctx, sha256Hex)
 	if err != nil {
-		return err
+		return provenanceUnavailable(tag, err)
+	}
+	if len(bundles) == 0 {
+		return fmt.Errorf("update: no build provenance published for %s, so the installed binary was left unchanged", tag)
 	}
 	trusted, err := trustedMaterial(ctx)
 	if err != nil {
-		return fmt.Errorf("update: load the Sigstore trusted root: %w", err)
+		return provenanceUnavailable(tag, fmt.Errorf("load the Sigstore trusted root: %w", err))
 	}
 	verifier, err := verify.NewVerifier(trusted,
 		verify.WithSignedCertificateTimestamps(1),
@@ -86,25 +109,38 @@ func verifyProvenance(ctx context.Context, tag, sha256Hex string) error {
 		}
 		return nil
 	}
-	if len(failures) == 0 {
-		return fmt.Errorf("update: no build provenance published for %s", tag)
-	}
-	return fmt.Errorf("update: build provenance for %s does not verify: %w", tag, errors.Join(failures...))
+	return fmt.Errorf("update: build provenance for %s does not verify, so the installed binary was left unchanged: %w", tag, errors.Join(failures...))
 }
 
+// fetchAttestations returns the inline bundles GitHub publishes for the
+// digest. A 404 means GitHub has no attestation for it and comes back as an
+// empty list. Any other failure is returned for the caller to report as
+// unavailable.
 func fetchAttestations(ctx context.Context, sha256Hex string) ([]json.RawMessage, error) {
-	body, err := fetch(ctx, attestationsBase+"/sha256:"+sha256Hex)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, attestationsBase+"/sha256:"+sha256Hex, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer body.Close()
-	raw, err := io.ReadAll(io.LimitReader(body, attestationLimit))
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("GitHub attestations API returned %s", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, attestationLimit))
 	if err != nil {
 		return nil, err
 	}
 	var list attestationList
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, fmt.Errorf("update: read attestations: %w", err)
+		return nil, fmt.Errorf("read attestations: %w", err)
 	}
 	bundles := make([]json.RawMessage, 0, len(list.Attestations))
 	for _, attestation := range list.Attestations {

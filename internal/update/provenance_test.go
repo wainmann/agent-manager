@@ -3,9 +3,11 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -111,7 +113,84 @@ func TestVerifyProvenanceRejectsAnEmptyList(t *testing.T) {
 func TestVerifyProvenanceRejectsAMissingAttestation(t *testing.T) {
 	serveAttestations(t, fixtureDigest, nil)
 	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
-	if err == nil || !strings.Contains(err.Error(), "404") {
-		t.Fatalf("want the 404, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no build provenance published") {
+		t.Fatalf("want a missing-provenance error for the 404, got %v", err)
+	}
+	if errors.Is(err, errProvenanceUnavailable) {
+		t.Fatalf("a 404 is an answer, not an outage: %v", err)
+	}
+}
+
+func TestVerifyProvenanceFailsClosedWhenGitHubErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	t.Cleanup(server.Close)
+	origBase := attestationsBase
+	attestationsBase = server.URL
+	t.Cleanup(func() { attestationsBase = origBase })
+
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	assertUnavailable(t, err, "403")
+}
+
+func TestVerifyProvenanceFailsClosedWhenGitHubIsUnreachable(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	url := server.URL
+	server.Close()
+	origBase := attestationsBase
+	attestationsBase = url
+	t.Cleanup(func() { attestationsBase = origBase })
+
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	assertUnavailable(t, err, "")
+}
+
+func TestVerifyProvenanceFailsClosedWhenSigstoreIsUnreachable(t *testing.T) {
+	serveAttestations(t, fixtureDigest, fixtureAttestations(t))
+	trustedMaterial = func(context.Context) (root.TrustedMaterial, error) {
+		return nil, errors.New("tuf-repo-cdn.sigstore.dev: connection refused")
+	}
+
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	assertUnavailable(t, err, "Sigstore trusted root")
+}
+
+func assertUnavailable(t *testing.T, err error, cause string) {
+	t.Helper()
+	if !errors.Is(err, errProvenanceUnavailable) {
+		t.Fatalf("want errProvenanceUnavailable, got %v", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{fixtureTag, "left unchanged", "try again", releasesPage, cause} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q does not mention %q", msg, want)
+		}
+	}
+}
+
+// The signing identity is the workflow file path. If release.yml is renamed
+// or stops attesting, every in-place update to the next release is refused,
+// so the constant and the file must change together.
+func TestReleaseWorkflowMatchesTheSigningIdentity(t *testing.T) {
+	const repoURL = "https://github.com/wainmann/agent-manager/"
+	if !strings.HasPrefix(releaseWorkflow, repoURL) {
+		t.Fatalf("releaseWorkflow %q is not in %s", releaseWorkflow, repoURL)
+	}
+	rel := strings.TrimPrefix(releaseWorkflow, repoURL)
+	if rel != ".github/workflows/release.yml" {
+		t.Fatalf("releaseWorkflow points at %s; update this test only together with the workflow file", rel)
+	}
+	workflow, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("the workflow that signs releases is missing: %v", err)
+	}
+	for _, want := range []string{"actions/attest-build-provenance@", `tags: ["v*"]`} {
+		if !strings.Contains(string(workflow), want) {
+			t.Fatalf("%s no longer contains %s, so releases would not carry the provenance the updater requires", rel, want)
+		}
+	}
+	if strings.Contains(string(workflow), "workflow_call") {
+		t.Fatalf("%s is a reusable workflow; the signing identity would be the caller, not %s", rel, rel)
 	}
 }
