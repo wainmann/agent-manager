@@ -425,3 +425,29 @@ func TestTUFCacheFallsBackToATempDirectory(t *testing.T) {
 		t.Fatalf("temp cache %s was not removed", dir)
 	}
 }
+
+func TestBundleDownloadErrorsHideTheSignedQuery(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	base := server.URL
+	server.Close()
+	_, err := downloadBundle(context.Background(), base+"/bundle.json.sn?sig=secret-signature&se=2026")
+	if err == nil {
+		t.Fatal("want a download error")
+	}
+	if strings.Contains(err.Error(), "secret-signature") || strings.Contains(err.Error(), "?") {
+		t.Fatalf("error leaks the signed query: %q", err)
+	}
+}
+
+func TestBundleDownloadStopsARedirectLoop(t *testing.T) {
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Redirect(w, r, r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	_, err := downloadBundle(context.Background(), server.URL+"/loop")
+	if err == nil || !strings.Contains(err.Error(), "10 redirects") || hits > 10 {
+		t.Fatalf("want the loop stopped after 10 redirects, got %v after %d requests", err, hits)
+	}
+}

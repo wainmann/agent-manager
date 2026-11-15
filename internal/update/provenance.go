@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -256,12 +257,32 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, er
 	return list.Attestations, nil
 }
 
-// sameHostClient sends no credentials and refuses a redirect to a host
-// other than req's. Neither the attestations API nor the bundle store
+// redactURL drops the query from the URL in a transport error. bundle_url
+// carries a signed access token in its query, which must not reach the
+// status bar or a log.
+func redactURL(err error) error {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return err
+	}
+	if parsed, parseErr := url.Parse(urlErr.URL); parseErr == nil {
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		parsed.User = nil
+		return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
+	}
+	return &url.Error{Op: urlErr.Op, URL: "attestation bundle URL", Err: urlErr.Err}
+}
+
+// sameHostClient sends no credentials, keeps Go's limit of 10 redirects
+// and refuses a redirect to a host other than req's. Neither the attestations API nor the bundle store
 // redirects across hosts.
 func sameHostClient(req *http.Request) *http.Client {
 	return &http.Client{
-		CheckRedirect: func(next *http.Request, _ []*http.Request) error {
+		CheckRedirect: func(next *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
 			if next.URL.Host != req.URL.Host {
 				return fmt.Errorf("refusing redirect to %s", next.URL.Host)
 			}
@@ -303,7 +324,7 @@ func downloadBundle(ctx context.Context, url string) (json.RawMessage, error) {
 	}
 	resp, err := sameHostClient(req).Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactURL(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
