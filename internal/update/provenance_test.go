@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -464,5 +465,64 @@ func TestBundleDownloadHidesTheQueryOfABadRedirect(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret-signature") || strings.Contains(err.Error(), "first-signature") {
 		t.Fatalf("error leaks a signed query: %q", err)
+	}
+}
+
+func TestBundleDownloadRejectsADecodedBundleLargerThan8MiB(t *testing.T) {
+	payload := snappy.Encode(nil, bytes.Repeat([]byte{'a'}, 64<<20))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(payload)
+	}))
+	t.Cleanup(server.Close)
+	_, err := downloadBundle(context.Background(), server.URL)
+	if err == nil || !strings.Contains(err.Error(), "larger than 8 MiB") {
+		t.Fatalf("want a size cap error, got %v", err)
+	}
+}
+
+func TestBundleDownloadRejectsABundleLargerThan8MiB(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(bytes.Repeat([]byte{'x'}, attestationLimit+1))
+	}))
+	t.Cleanup(server.Close)
+	_, err := downloadBundle(context.Background(), server.URL)
+	if err == nil || !strings.Contains(err.Error(), "larger than 8 MiB") {
+		t.Fatalf("want a size cap error, got %v", err)
+	}
+}
+
+func TestSameHostClientRefusesACleartextRedirect(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/bundle.json.sn?sig=secret-signature", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := http.NewRequest(http.MethodGet, "http://example.com/bundle.json.sn?sig=secret-signature", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sameHostClient(req).CheckRedirect(next, []*http.Request{req})
+	if err == nil || !strings.Contains(err.Error(), "refusing redirect to http") {
+		t.Fatalf("want a cleartext redirect refusal, got %v", err)
+	}
+}
+
+func TestVerifyProvenanceTreatsASecondaryRateLimitAsARateLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "12")
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "You have exceeded a secondary rate limit", http.StatusForbidden)
+	}))
+	useLocalAPI(t, server.URL)
+	before := time.Now().Add(60 * time.Second)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+	after := time.Now().Add(60 * time.Second)
+	server.Close()
+	if !errors.Is(err, errRateLimited) || errors.Is(err, errProvenanceUnavailable) {
+		t.Fatalf("want a rate limit error, got %v", err)
+	}
+	wantA := "Try again after " + before.Local().Format("15:04 MST")
+	wantB := "Try again after " + after.Local().Format("15:04 MST")
+	if (!strings.Contains(err.Error(), wantA) && !strings.Contains(err.Error(), wantB)) || !strings.Contains(err.Error(), "left unchanged") {
+		t.Fatalf("error %q does not name the rate limit retry time", err)
 	}
 }

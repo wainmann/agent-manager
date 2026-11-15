@@ -242,7 +242,7 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, er
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, nil
 	case resp.StatusCode == http.StatusTooManyRequests,
-		resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0":
+		resp.StatusCode == http.StatusForbidden && (resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""):
 		return nil, rateLimitError{reset: rateLimitReset(resp.Header)}
 	default:
 		return nil, fmt.Errorf("GitHub attestations API returned %s", resp.Status)
@@ -283,8 +283,10 @@ func stripQueries(text string) string {
 }
 
 // sameHostClient sends no credentials, keeps Go's limit of 10 redirects
-// and refuses a redirect to a host other than req's. Neither the
-// attestations API nor the bundle store redirects across hosts.
+// and refuses a redirect to a host other than req's. An https request
+// also refuses a redirect that is not https, so a signed URL is never
+// sent in the clear. Neither the attestations API nor the bundle store
+// redirects across hosts.
 func sameHostClient(req *http.Request) *http.Client {
 	return &http.Client{
 		CheckRedirect: func(next *http.Request, via []*http.Request) error {
@@ -293,6 +295,9 @@ func sameHostClient(req *http.Request) *http.Client {
 			}
 			if next.URL.Host != req.URL.Host {
 				return fmt.Errorf("refusing redirect to %s", next.URL.Host)
+			}
+			if next.URL.Scheme != "https" && req.URL.Scheme != "http" {
+				return fmt.Errorf("refusing redirect to %s", next.URL.Scheme)
 			}
 			return nil
 		},
