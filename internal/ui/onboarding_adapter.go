@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
 	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -71,7 +72,8 @@ func (m *Model) applySetupProbe(request onboardingruntime.ProbeRequest, probe on
 		m.reportErr(err.Error())
 		return nil
 	}
-	setup.SetProbe(probe.Installed, func(name string) string { return uitheme.Auto(name, probe.Scheme) })
+	detected := func() systheme.Scheme { return probe.Scheme }
+	setup.SetProbe(probe.Installed, func(name string) string { return uitheme.Auto(name, m.liveScheme(detected)) })
 	return tea.Batch(m.syncSetupPalette(), setup.KeepAnimating())
 }
 
@@ -126,7 +128,7 @@ func (m *Model) applySetupOutcome(out uionboarding.Outcome) (tea.Model, tea.Cmd)
 		m.Pop()
 		cmd = m.startSetupImport(out.Import)
 	}
-	palette := m.showSetupPalette(setup.Palette(setup.Shown(), uitheme.Current().Name))
+	palette := m.showPalette(setup.Palette(setup.Shown(), uitheme.Current().Name))
 	if !m.setupOpen() {
 		return m, tea.Batch(cmd, palette)
 	}
@@ -156,15 +158,7 @@ func (m *Model) syncSetupPalette() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return m.showSetupPalette(setup.Palette(setup.Shown(), uitheme.Current().Name))
-}
-func (m *Model) showSetupPalette(name string) tea.Cmd {
-	if name == uitheme.Current().Name {
-		return nil
-	}
-	applyTheme(uitheme.Palettes[uitheme.Index(name)])
-	SyncTerminalColors()
-	return m.syncPaneTheme()
+	return m.showPalette(setup.Palette(setup.Shown(), uitheme.Current().Name))
 }
 
 // setupKeys are the first key of each action the guide names, as bound now.

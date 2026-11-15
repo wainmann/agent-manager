@@ -11,7 +11,8 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     # Release secrets live in the release environment, which only v* tags can
-    # deploy to. Only admins can create v* tags (Release tags ruleset), so a
+    # deploy to and which waits for a maintainer's approval. Only the
+    # release-admins team can create v* tags (Release tags ruleset), so a
     # workflow pushed on a branch cannot read them.
     environment: release
     permissions:
@@ -25,12 +26,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+      # A cache written by another run must not feed the binaries this job ships.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          version: "~> v2"
+          version: v2.20.2
           args: release --clean
         # GITHUB_TOKEN creates the release on this repository. RELEASE_TOKEN
         # pushes only the Homebrew cask to the tap repository.

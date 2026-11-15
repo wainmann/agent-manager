@@ -265,16 +265,24 @@ func (s *State) attachReady(root Root, msg AttachReadyMsg) tea.Cmd {
 }
 
 // attachDone reports how the attach ended and picks the host and its screen
-// back up.
+// back up. A key the host asked for and a failure on the way back share the
+// one status line.
 func (s *State) attachDone(root Root, msg AttachDoneMsg) tea.Cmd {
 	key, err := remote.AttachKey(msg.Err)
+	note := ""
+	switch key {
+	case "review":
+		note = "review opens only for sessions on this machine, not yet for one on " + msg.Host
+	case "editor":
+		note = "the editor opens only for sessions on this machine, not yet for one on " + msg.Host
+	}
 	switch {
+	case err != nil && note != "":
+		root.ReportErr(note + "; " + err.Error())
 	case err != nil:
 		root.ReportErr(msg.Host + ": attach ended: " + err.Error())
-	case key == "review":
-		root.ReportErr("review opens only for sessions on this machine, not yet for one on " + msg.Host)
-	case key == "editor":
-		root.ReportErr("the editor opens only for sessions on this machine, not yet for one on " + msg.Host)
+	case note != "":
+		root.ReportErr(note)
 	}
 	return tea.Batch(s.PollHost(msg.Host), s.Read())
 }

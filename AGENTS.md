@@ -162,8 +162,8 @@ release or a user's sessions before.
   bindings, so a table read from anywhere else gives a session the wrong
   keys. A `config.toml` from an earlier release is read once, by the import
   in `internal/store`.
-- **`internal/update` verifies the checksum before anything is renamed over
-  the running binary.** No redirect to another host, no wider permissions on
+- **`internal/update` verifies the checksum and the build provenance before
+  anything is renamed over the running binary.** No redirect to another host, no wider permissions on
   the staged file, no write outside the staging directory.
 - **Workflow actions are pinned to a release tag** and bumped by dependabot.
   A branch ref or a missing ref is a defect.

@@ -76,6 +76,14 @@ func serveRelease(t *testing.T, tag string, archive []byte, sum string) {
 	orig := downloadBase
 	downloadBase = server.URL
 	t.Cleanup(func() { downloadBase = orig })
+	stubProvenance(t, nil)
+}
+
+func stubProvenance(t *testing.T, result error) {
+	t.Helper()
+	orig := checkProvenance
+	checkProvenance = func(context.Context, string, string, string) error { return result }
+	t.Cleanup(func() { checkProvenance = orig })
 }
 
 func TestHomebrewManaged(t *testing.T) {
@@ -267,5 +275,25 @@ func TestApplyRejectsArchiveWithoutBinary(t *testing.T) {
 	err := Apply(context.Background(), "v9.9.9", target)
 	if err == nil || !strings.Contains(err.Error(), "no agent-manager binary") {
 		t.Fatalf("want missing-binary error, got %v", err)
+	}
+}
+
+func TestApplyRejectsMissingProvenance(t *testing.T) {
+	archive := releaseArchive(t, []byte("new build bytes"))
+	digest := sha256.Sum256(archive)
+	serveRelease(t, "v9.9.9", archive, hex.EncodeToString(digest[:]))
+	stubProvenance(t, errors.New("update: no build provenance published for v9.9.9"))
+
+	target := filepath.Join(t.TempDir(), "agent-manager")
+	if err := os.WriteFile(target, []byte("old build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := Apply(context.Background(), "v9.9.9", target)
+	if err == nil || !strings.Contains(err.Error(), "no build provenance") {
+		t.Fatalf("want the provenance error, got %v", err)
+	}
+	untouched, readErr := os.ReadFile(target)
+	if readErr != nil || string(untouched) != "old build" {
+		t.Fatalf("binary must stay untouched without provenance, got %q err %v", untouched, readErr)
 	}
 }

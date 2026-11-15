@@ -262,3 +262,14 @@ func DisableAlternateScroll() error { return uiterminal.DisableAlternateScroll()
 
 // ResetPointer gives the terminal its own pointer back when the manager exits.
 func ResetPointer() { uiterminal.ShowHand(false) }
+
+// EnableColorSchemeReports turns mode 2031 on for the manager's run, so
+// theme follows OS holds past startup.
+func EnableColorSchemeReports() error { return uiterminal.EnableSchemeReports() }
+
+// DisableColorSchemeReports turns mode 2031 off when the manager exits.
+func DisableColorSchemeReports() error { return uiterminal.DisableSchemeReports() }
+
+// ReadColorScheme turns a raw mode 2031 report into the message the theme
+// follows.
+func ReadColorScheme(msg tea.Msg) tea.Msg { return uiterminal.ReadScheme(msg) }
