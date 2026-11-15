@@ -451,3 +451,18 @@ func TestBundleDownloadStopsARedirectLoop(t *testing.T) {
 		t.Fatalf("want the loop stopped after 10 redirects, got %v after %d requests", err, hits)
 	}
 }
+
+func TestBundleDownloadHidesTheQueryOfABadRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/bad%zz?sig=secret-signature")
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	_, err := downloadBundle(context.Background(), server.URL+"/bundle.json.sn?sig=first-signature")
+	if err == nil {
+		t.Fatal("want a redirect error")
+	}
+	if strings.Contains(err.Error(), "secret-signature") || strings.Contains(err.Error(), "first-signature") {
+		t.Fatalf("error leaks a signed query: %q", err)
+	}
+}

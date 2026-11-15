@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -257,26 +258,33 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, er
 	return list.Attestations, nil
 }
 
-// redactURL drops the query from the URL in a transport error. bundle_url
+// redactURL rewrites a transport error without any URL query. bundle_url
 // carries a signed access token in its query, which must not reach the
-// status bar or a log.
+// status bar or a log, and a bad redirect can echo it in the cause too.
 func redactURL(err error) error {
 	var urlErr *url.Error
 	if !errors.As(err, &urlErr) {
-		return err
+		return errors.New(stripQueries(err.Error()))
 	}
+	where := "attestation bundle URL"
 	if parsed, parseErr := url.Parse(urlErr.URL); parseErr == nil {
-		parsed.RawQuery = ""
-		parsed.Fragment = ""
-		parsed.User = nil
-		return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
+		where = parsed.Scheme + "://" + parsed.Host + parsed.Path
 	}
-	return &url.Error{Op: urlErr.Op, URL: "attestation bundle URL", Err: urlErr.Err}
+	if urlErr.Timeout() {
+		return fmt.Errorf("%s %s: timed out", urlErr.Op, where)
+	}
+	return fmt.Errorf("%s %s: %s", urlErr.Op, where, stripQueries(urlErr.Err.Error()))
+}
+
+var urlQuery = regexp.MustCompile(`\?[^\s"']*`)
+
+func stripQueries(text string) string {
+	return urlQuery.ReplaceAllString(text, "?<redacted>")
 }
 
 // sameHostClient sends no credentials, keeps Go's limit of 10 redirects
-// and refuses a redirect to a host other than req's. Neither the attestations API nor the bundle store
-// redirects across hosts.
+// and refuses a redirect to a host other than req's. Neither the
+// attestations API nor the bundle store redirects across hosts.
 func sameHostClient(req *http.Request) *http.Client {
 	return &http.Client{
 		CheckRedirect: func(next *http.Request, via []*http.Request) error {
