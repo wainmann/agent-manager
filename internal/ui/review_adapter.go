@@ -486,7 +486,7 @@ func (m *Model) openRepoPick() {
 // openCommitPick lists the commit scope's commits, newest first, cursor on
 // the one in view.
 func (m *Model) openCommitPick() {
-	rows, current, err := m.review.CommitPickerRows()
+	rows, current, err := m.review.CommitPickerRows(m.prefs.glyphMode)
 	if err != "" {
 		m.reportErr(err)
 		return

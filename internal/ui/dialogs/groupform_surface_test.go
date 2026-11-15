@@ -181,3 +181,18 @@ func focusField(t *testing.T, s *GroupFormSurface, field int) {
 	}
 	t.Fatalf("focus = %d, want %d", s.Focus(), field)
 }
+
+// An edit card opens on the group's saved base and environment and hands
+// them to the root with the group it replaces.
+func TestGroupFormSurfaceEditSubmitsTheSavedChoices(t *testing.T) {
+	root := &fakeRoot{width: 64}
+	opts := testOptions(root)
+	opts.Edit, opts.Worktree, opts.Base, opts.Env = "parent/old", 2, "develop", "prod"
+	opts.Parents, opts.Parent = []spawn.GroupOption{{Path: "parent"}}, 0
+	s := NewGroupFormSurface(root, opts)
+	_, cmd := s.Key(&fakeHost{}, tea.KeyMsg{Type: tea.KeyEnter})
+	submit, ok := cmd().(GroupFormSubmitMsg)
+	if !ok || submit.Request.Edit != "parent/old" || submit.Request.Path != "parent/old" || submit.Request.Worktree != 2 || submit.Base != "develop" || submit.Env != "prod" {
+		t.Fatalf("submit = %+v", submit)
+	}
+}

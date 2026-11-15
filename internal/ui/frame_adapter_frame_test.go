@@ -663,7 +663,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 	}{
 		{"resize", func() { m.enterResizeMode() }},
 		{"rename", func() {
-			m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession("s", "alpha", "claude", nil), "", ""))
+			m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession("s", "alpha", "claude", nil)))
 		}},
 		{"focus", func() { m.push(newFocusSurface(m)) }},
 	} {

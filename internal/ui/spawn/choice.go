@@ -74,11 +74,12 @@ func (ch *Choice) query() string {
 
 func (ch *Choice) openModelList(h ChoiceHost, toolName string) {
 	ch.filtering = false
-	ch.sugg = modelSuggest{open: true}
+	list := ch.suggestions(h, toolName, "")
+	ch.sugg = modelSuggest{open: true, index: firstModel(list)}
 	if ch.model == "" {
 		return
 	}
-	for i, entry := range ch.suggestions(h, toolName, "") {
+	for i, entry := range list {
 		if entry.model.Key() == ch.model {
 			ch.sugg.index = i
 		}
@@ -99,7 +100,7 @@ type modelSuggest struct {
 func NewChoice(h ChoiceHost, toolName string) Choice {
 	filter := textinput.New()
 	filter.CharLimit = 200
-	filter.Placeholder = toolName + "'s default"
+	filter.Placeholder = "cli default"
 	typed := textinput.New()
 	typed.CharLimit = 40
 	typed.Placeholder = "default"
@@ -270,8 +271,8 @@ func (ch *Choice) fit(h ChoiceHost, toolName string) {
 	if ch.effort > len(ch.efforts(h, toolName)) {
 		ch.effort = 0
 	}
-	if ch.sugg.index >= len(ch.suggestions(h, toolName, ch.query())) {
-		ch.sugg.index, ch.sugg.chosen, ch.sugg.offset = 0, false, 0
+	if list := ch.suggestions(h, toolName, ch.query()); ch.sugg.index >= len(list) {
+		ch.sugg.index, ch.sugg.chosen, ch.sugg.offset = firstModel(list), false, 0
 	}
 }
 
@@ -356,15 +357,29 @@ func (ch *Choice) SetFilter(value string) { ch.filter.SetValue(value) }
 
 func (ch *Choice) ListOpen() bool { return ch.sugg.open }
 
+// suggestion is a row of the model list. The zero model is the row that
+// goes back to the CLI's default.
 type suggestion struct {
 	model  catalog.Model
 	recent bool
 }
 
+func (s suggestion) isDefault() bool { return s.model.Key() == "" }
+
+// firstModel is where the highlight starts: on the first model, so the
+// default row above it is one arrow away and enter still picks a model.
+func firstModel(list []suggestion) int {
+	if len(list) > 0 && list[0].isDefault() {
+		return 1
+	}
+	return 0
+}
+
 // ModelListRows is the most model rows a list shows before it scrolls.
 const ModelListRows = 9
 
-// suggestions lists the recent picks first, then the rest.
+// suggestions lists the CLI's default, the recent picks, then the rest. A
+// filter leaves the default out, so enter on typed text picks a model.
 func (ch *Choice) suggestions(h ChoiceHost, toolName string, query string) []suggestion {
 	query = strings.ToLower(strings.TrimSpace(query))
 	matches := func(model catalog.Model) bool {
@@ -372,6 +387,9 @@ func (ch *Choice) suggestions(h ChoiceHost, toolName string, query string) []sug
 	}
 	models := ch.models(h, toolName)
 	var list []suggestion
+	if query == "" && len(models) > 0 {
+		list = append(list, suggestion{})
+	}
 	listed := map[string]bool{}
 	add := func(model catalog.Model, recent bool) {
 		if matches(model) && !listed[model.Key()] {
@@ -390,7 +408,8 @@ func (ch *Choice) suggestions(h ChoiceHost, toolName string, query string) []sug
 	return list
 }
 
-// Suggestions are the keys of the models the list shows, recent first.
+// Suggestions are the keys of the rows the list shows, recent first; the
+// default row's key is empty.
 func (ch *Choice) Suggestions(h ChoiceHost, toolName string) []string {
 	var keys []string
 	for _, entry := range ch.suggestions(h, toolName, ch.query()) {

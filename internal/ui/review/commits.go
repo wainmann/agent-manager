@@ -496,18 +496,19 @@ func fileNoun(count int) string {
 
 // CommitPickerRows lists the commit scope's commits, newest first, for the
 // commit picker, with the SHA of the one in view.
-func (m Model) CommitPickerRows() (rows []PickerRow, current string, err string) {
+func (m Model) CommitPickerRows(mode presentation.GlyphMode) (rows []PickerRow, current string, err string) {
 	if m.scope != git.ScopeCommit {
 		return nil, "", "s to the commit scope first"
 	}
 	if len(m.commits) == 0 {
 		return nil, "", "no commits to review"
 	}
+	g := presentation.GlyphsFor(mode)
 	rows = make([]PickerRow, len(m.commits))
 	for i, c := range m.commits {
-		glyph := "○ "
+		glyph := g.DiffPendingGlyph + " "
 		if m.commitIsReviewed(c) {
-			glyph = "✔ "
+			glyph = g.DiffDoneGlyph + " "
 		}
 		label := glyph + c.Short + " " + c.Subject
 		if i == 0 {
@@ -523,7 +524,8 @@ func (m Model) CommitPickerRows() (rows []PickerRow, current string, err string)
 // of at most maxRailCommits rows around the commit in view, and "" outside
 // the commit scope.
 func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
-	s := ctx.Styles
+	r := m.renderer(ctx)
+	s := r.s
 	commits := m.commits
 	m.commitRows.Reset()
 	m.commitMarks.Reset()
@@ -547,13 +549,13 @@ func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
 		m.commitRows.Show(i, 1)
 		m.commitMarks.Show(i, 1)
 		c := commits[i]
-		glyph := s.Subtle.Render("○")
+		glyph := s.Subtle.Render(r.g.DiffPendingGlyph)
 		if m.commitIsReviewed(c) {
-			glyph = lipgloss.NewStyle().Foreground(s.Finished).Render("✔")
+			glyph = lipgloss.NewStyle().Foreground(s.Finished).Render(r.g.DiffDoneGlyph)
 		}
 		bar, subject := " ", s.Value
 		if i == current {
-			bar = lipgloss.NewStyle().Foreground(s.Accent).Render("▎")
+			bar = lipgloss.NewStyle().Foreground(s.Accent).Render(r.c.ReviewSelectionGlyph)
 			subject = lipgloss.NewStyle().Foreground(s.Accent).Bold(true)
 		}
 		tag := ""

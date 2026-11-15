@@ -96,10 +96,10 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 
 	changes, total := extractChanges(body)
 	want := []Change{
-		{Kind: KindFix, Scope: "Groups", Text: "Make group creation immediate and reliable"},
+		{Kind: KindFix, Scope: "Groups", Text: "Make group creation immediate and reliable", Author: "@YoanWai"},
 		{Kind: KindFeature, Scope: "Config", Text: "Add Pi as a built-in tool", Author: "@steveprentice"},
 		{Kind: KindOther, Scope: "Deps", Text: "Bump gopsutil"},
-		{Kind: KindOther, Scope: "Readme", Text: "Add a badge"},
+		{Kind: KindOther, Scope: "Readme", Text: "Add a badge", Author: "@YoanWai"},
 		{Kind: KindFeature, Scope: "UI", Text: "Add a message browser with scrolling"},
 		{Kind: KindFeature, Scope: "MCP editor", Text: "Expose tool capabilities"},
 	}
@@ -172,10 +172,10 @@ func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 
 func TestCleanChangeKeepsEveryTypeAndSplitsTheScope(t *testing.T) {
 	cases := map[string]Change{
-		"feat(ui): first-run setup by @YoanWai in https://github.com/wainmann/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup"},
+		"feat(ui): first-run setup by @YoanWai in https://github.com/wainmann/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup", Author: "@YoanWai"},
 		"perf(tmux): one spawn per poll by @a in https://github.com/wainmann/agent-manager/pull/1":               {Kind: KindFix, Scope: "Tmux", Text: "One spawn per poll", Author: "@a"},
 		"test(e2e): await preview redraws by @ribeirojose in https://github.com/wainmann/agent-manager/pull/862": {Kind: KindOther, Scope: "E2E", Text: "Await preview redraws", Author: "@ribeirojose"},
-		"ci: run staticcheck by @YoanWai in https://github.com/wainmann/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck"},
+		"ci: run staticcheck by @YoanWai in https://github.com/wainmann/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck", Author: "@YoanWai"},
 		"Untyped line by @b in https://github.com/wainmann/agent-manager/pull/2":                                 {Kind: KindOther, Text: "Untyped line", Author: "@b"},
 	}
 	for bullet, want := range cases {

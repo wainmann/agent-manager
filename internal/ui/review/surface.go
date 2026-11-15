@@ -1,6 +1,7 @@
 package review
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -58,7 +59,11 @@ func (s *Surface) View(h surface.Host, _ string) string {
 	cols, rows := h.Size()
 	width := s.root.CardWidth(cols)
 	body := s.picker.Body(s.render, s.root.InnerWidth(width), rows)
-	return h.CardSized(width, s.glyph+" "+s.picker.Title(), body, s.picker.Hints(s.render.GlyphMode))
+	title := s.picker.Title()
+	if s.render.GlyphMode.Effective() == presentation.GlyphModeAdvanced {
+		title = s.glyph + " " + title
+	}
+	return h.CardSized(width, title, body, s.picker.Hints(s.render.GlyphMode))
 }
 
 func (s *Surface) Footer() [][2]string { return s.picker.Hints(s.render.GlyphMode) }

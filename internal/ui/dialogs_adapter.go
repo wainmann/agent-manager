@@ -290,8 +290,8 @@ func (m *Model) applyFork(request uiapply.ForkEffect, result uiapply.ForkOutcome
 	return nil
 }
 
-// openRename reads the selected row, the workspace's group choices and the
-// configured tools to seed the dialog.
+// openRename types a session's new name into its row, or opens the Edit
+// Group card on a group.
 func (m *Model) openRename() {
 	m.gens.dialog++
 	entry, ok := m.selectedRow()
@@ -302,29 +302,44 @@ func (m *Model) openRename() {
 		m.reportErr("root is the top level, not a group to rename")
 		return
 	}
-	var surface *uidialogs.RenameSurface
 	if entry.isGroup {
-		dir := m.workspace.groupPaths[entry.group]
-		if dir == "" {
-			dir = m.capturedGroupDefaultDir(entry.group)
-		}
-		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group], m.workspace.groupEnvs[entry.group])
-	} else {
-		tools := m.services.cfg.AgentToolNames()
-		shells := []string{}
-		for _, name := range m.services.cfg.ToolNames() {
-			if m.services.cfg.Tools[name].Shell {
-				shells = append(shells, name)
-			}
-		}
-		sort.Strings(shells)
-		tools = append(tools, shells...)
-		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "", "")
+		m.openGroupEdit(entry.group)
+		return
 	}
-	// Each opening's reads outrank the last one's, so a scan a cancelled
-	// rename asked for cannot replace this one's pick.
-	surface.Paths().Generation = m.gens.dialog << 32
-	m.push(surface)
+	tools := m.services.cfg.AgentToolNames()
+	shells := []string{}
+	for _, name := range m.services.cfg.ToolNames() {
+		if m.services.cfg.Tools[name].Shell {
+			shells = append(shells, name)
+		}
+	}
+	sort.Strings(shells)
+	tools = append(tools, shells...)
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools)))
+	m.clearErr()
+}
+
+// openGroupEdit opens the group card on group, seeded with its saved
+// directory, worktree choice, base and environment. Its parent stays put.
+func (m *Model) openGroupEdit(group string) {
+	dir := m.workspace.groupPaths[group]
+	if dir == "" {
+		dir = m.capturedGroupDefaultDir(group)
+	}
+	parent := uirail.ParentGroup(group)
+	m.push(uidialogs.NewGroupFormSurface(groupRoot{m}, uidialogs.FormOptions{
+		Gen:       m.nextComposerGen(),
+		Dir:       dir,
+		Edit:      group,
+		Worktree:  uidialogs.WorktreeIndex(m.workspace.groupWorktrees[group]),
+		Base:      m.workspace.groupBases[group],
+		Env:       m.workspace.groupEnvs[group],
+		Cols:      m.layout.width,
+		Parents:   []spawn.GroupOption{{Path: parent}},
+		Lends:     map[string]uidialogs.Lend{parent: {Dir: m.capturedAncestorGroupDir(parent), Base: m.groupBase(parent), Env: m.groupEnv(parent)}},
+		Worktrees: uidialogs.WorktreeOptions,
+		Styles:    m.spawnStyles(),
+	}))
 	m.clearErr()
 }
 
@@ -394,11 +409,28 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 	}
 	if err != nil {
 		m.reportErr(err.Error())
-	} else if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
-		(request.Kind != uiapply.Group || s.Dir() == request.DraftDir) {
+	} else if m.renameDialogSubmitted(request) {
 		m.Pop()
 	}
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && stages.GroupRenamed && s.Edit() == request.OldGroup {
+		s.Retarget(request.NewGroup)
+	}
 	m.rebuildRows()
+}
+
+// renameDialogSubmitted is whether the dialog on top is the one that
+// submitted request, unchanged since.
+func (m *Model) renameDialogSubmitted(request uiapply.RenameEffect) bool {
+	if m.gens.dialog != request.Gen {
+		return false
+	}
+	if request.Kind == uiapply.Group {
+		s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
+		return ok && s.Edit() == request.OldGroup && s.Name() == request.Name && s.Dir() == request.DraftDir &&
+			uidialogs.WorktreeValue(s.Worktree()) == request.Worktree && s.Base() == request.Base && s.Env() == request.Env
+	}
+	s, ok := surfaceOf[*uidialogs.RenameSurface](m)
+	return ok && s.Name() == request.Name
 }
 
 // renameGroupLocally rewrites the in-memory tree right away, so the frames
@@ -418,27 +450,6 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base, env string
 	m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
 	m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
 	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
-}
-
-// viewRenameGroupFields draws the group edit's path, worktree and base rows
-// under the group's head in the detail column.
-func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, width int) string {
-	view := uidialogs.GroupFieldsView{
-		GlyphMode: m.prefs.glyphMode,
-		Width:     width,
-		Label:     uitheme.LabelStyle(),
-		Focused:   lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
-		Subtle:    uitheme.SubtleStyle(),
-		Value:     uitheme.ValueStyle(),
-		Input:     uiframe.TextInputView,
-		Worktrees: uidialogs.WorktreeOptions,
-		Base:      uidialogs.BaseChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group)), m.prefs.glyphMode),
-		Env:       uidialogs.EnvChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Env, m.groupEnv(uirail.ParentGroup(group)), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
-	}
-	if s.Paths().Active() {
-		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }
-	}
-	return s.GroupFields(view)
 }
 
 // openGroupForm opens the New Group card, seeded with the parent picker and
@@ -472,6 +483,19 @@ func (m *Model) openGroupForm() {
 func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader directoryPreflight) tea.Cmd {
 	request := msg.Request
 	m.clearErr()
+	if request.Edit != "" {
+		return m.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
+			Kind:     uiapply.Group,
+			OldGroup: request.Edit,
+			NewGroup: request.Path,
+			RawDir:   request.Dir,
+			DraftDir: request.Dir,
+			Worktree: uidialogs.WorktreeValue(request.Worktree),
+			Base:     msg.Base,
+			Env:      msg.Env,
+			Name:     request.Name,
+		}})
+	}
 	if target := msg.Remote; target.Host != "" {
 		return m.queueRemote(uilink.Call{Op: uilink.CreateGroup, Host: target.Host, Name: request.Path,
 			GroupDir: strings.TrimSpace(request.Dir), ComposerGen: request.Gen})
