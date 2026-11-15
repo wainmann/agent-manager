@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/golang/snappy"
+	in_toto "github.com/in-toto/attestation/go/v1"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -35,6 +42,11 @@ const (
 	releasesPage     = "https://github.com/wainmann/agent-manager/releases"
 )
 
+// attestationsAPIVersion selects the response shape that omits inline
+// bundles and links each one through bundle_url. The older shape still
+// parses, so both are handled.
+const attestationsAPIVersion = "2026-03-10"
+
 // errProvenanceUnavailable marks a provenance check that could not run
 // because GitHub or Sigstore did not answer. The update stops either way,
 // so a network failure never installs an unverified binary.
@@ -44,6 +56,32 @@ func provenanceUnavailable(tag string, cause error) error {
 	return fmt.Errorf("update: %w of %s, so the installed binary was left unchanged. "+
 		"Check the network and try again later, or reinstall from %s (%w)",
 		errProvenanceUnavailable, tag, releasesPage, cause)
+}
+
+// errRateLimited marks an attestations request GitHub refused because the
+// anonymous API limit for this address is used up.
+var errRateLimited = errors.New("GitHub's API rate limit for unauthenticated requests is used up")
+
+type rateLimitError struct {
+	reset time.Time
+}
+
+func (e rateLimitError) Error() string { return errRateLimited.Error() }
+
+func (e rateLimitError) Unwrap() error { return errRateLimited }
+
+func provenanceRateLimited(tag string, limit rateLimitError) error {
+	when := "in an hour"
+	if !limit.reset.IsZero() {
+		when = "after " + limit.reset.Local().Format("15:04 MST")
+	}
+	return fmt.Errorf("update: %w, so the build provenance of %s could not be checked and the installed binary was left unchanged. Try again %s",
+		limit, tag, when)
+}
+
+func provenanceFailed(tag, what string, causes []string) error {
+	return fmt.Errorf("update: %s for %s, so the installed binary was left unchanged (%s)",
+		what, tag, strings.Join(causes, "; "))
 }
 
 // attestationsBase is a var so tests can serve the attestations API locally.
@@ -56,26 +94,42 @@ var trustedMaterial = publicGoodTrustedRoot
 // in the test, can stand in for the attestation check.
 var checkProvenance = verifyProvenance
 
+type attestation struct {
+	Bundle    json.RawMessage `json:"bundle"`
+	BundleURL string          `json:"bundle_url"`
+	Initiator string          `json:"initiator"`
+}
+
 type attestationList struct {
-	Attestations []struct {
-		Bundle json.RawMessage `json:"bundle"`
-	} `json:"attestations"`
+	Attestations []attestation `json:"attestations"`
 }
 
 // verifyProvenance accepts the archive only when a Sigstore-signed SLSA
-// provenance attestation names its digest and was signed by release.yml
-// running on tag.
-func verifyProvenance(ctx context.Context, tag, sha256Hex string) error {
+// provenance attestation names asset with its digest and was signed by
+// release.yml running on tag.
+func verifyProvenance(ctx context.Context, tag, asset, sha256Hex string) error {
 	digest, err := hex.DecodeString(sha256Hex)
 	if err != nil {
 		return fmt.Errorf("update: bad checksum %q: %w", sha256Hex, err)
 	}
-	bundles, err := fetchAttestations(ctx, sha256Hex)
+	listed, err := fetchAttestations(ctx, sha256Hex)
+	var limit rateLimitError
+	if errors.As(err, &limit) {
+		return provenanceRateLimited(tag, limit)
+	}
 	if err != nil {
 		return provenanceUnavailable(tag, err)
 	}
-	if len(bundles) == 0 {
-		return fmt.Errorf("update: no build provenance published for %s, so the installed binary was left unchanged", tag)
+	// GitHub also attests its own release record (initiator github). It is
+	// never signed by release.yml, so it is not worth a download or a check.
+	var candidates []attestation
+	for _, entry := range listed {
+		if entry.Initiator != "github" {
+			candidates = append(candidates, entry)
+		}
+	}
+	if len(candidates) == 0 {
+		return noProvenance(tag)
 	}
 	trusted, err := trustedMaterial(ctx)
 	if err != nil {
@@ -86,45 +140,96 @@ func verifyProvenance(ctx context.Context, tag, sha256Hex string) error {
 		verify.WithTransparencyLog(1),
 		verify.WithObserverTimestamps(1))
 	if err != nil {
-		return err
+		return provenanceFailed(tag, "could not set up the build provenance check", []string{err.Error()})
 	}
 	identity, err := verify.NewShortCertificateIdentity(provenanceIssuer, "", releaseWorkflow+"@refs/tags/"+tag, "")
 	if err != nil {
-		return err
+		return provenanceFailed(tag, "could not set up the build provenance check", []string{err.Error()})
 	}
 	policy := verify.NewPolicy(verify.WithArtifactDigest("sha256", digest), verify.WithCertificateIdentity(identity))
 
-	var failures []error
-	for _, raw := range bundles {
+	var failures []string
+	var downloadErr error
+	for _, entry := range candidates {
+		raw, err := entry.load(ctx)
+		if err != nil {
+			downloadErr = err
+			continue
+		}
+		if raw == nil {
+			continue
+		}
 		var entity bundle.Bundle
 		if err := entity.UnmarshalJSON(raw); err != nil {
-			failures = append(failures, err)
+			failures = append(failures, err.Error())
+			continue
+		}
+		if !isProvenance(&entity) {
 			continue
 		}
 		result, err := verifier.Verify(&entity, policy)
 		if err != nil {
-			failures = append(failures, err)
+			failures = append(failures, err.Error())
 			continue
 		}
 		if got := result.Statement.GetPredicateType(); got != provenancePredicate {
-			failures = append(failures, fmt.Errorf("predicate type %s", got))
+			failures = append(failures, "predicate type "+got)
+			continue
+		}
+		if !namesAsset(result.Statement.GetSubject(), asset, sha256Hex) {
+			failures = append(failures, "the attestation does not name "+asset)
 			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("update: build provenance for %s does not verify, so the installed binary was left unchanged: %w", tag, errors.Join(failures...))
+	if len(failures) > 0 {
+		return provenanceFailed(tag, "build provenance does not verify", failures)
+	}
+	if downloadErr != nil {
+		return provenanceUnavailable(tag, fmt.Errorf("download the attestation bundle: %w", downloadErr))
+	}
+	return noProvenance(tag)
 }
 
-// fetchAttestations returns the inline bundles GitHub publishes for the
-// digest. A 404 means GitHub has no attestation for it and comes back as an
-// empty list. Any other failure is returned for the caller to report as
-// unavailable.
-func fetchAttestations(ctx context.Context, sha256Hex string) ([]json.RawMessage, error) {
+func noProvenance(tag string) error {
+	return fmt.Errorf("update: no build provenance published for %s, so the installed binary was left unchanged", tag)
+}
+
+// isProvenance reports whether the bundle claims an SLSA provenance
+// predicate, so other attestations on the same digest are skipped rather
+// than reported as failures. The claim is checked again after verification.
+func isProvenance(entity *bundle.Bundle) bool {
+	envelope, err := entity.Envelope()
+	if err != nil {
+		return true
+	}
+	statement, err := envelope.Statement()
+	if err != nil {
+		return true
+	}
+	return statement.GetPredicateType() == provenancePredicate
+}
+
+func namesAsset(subjects []*in_toto.ResourceDescriptor, asset, sha256Hex string) bool {
+	for _, subject := range subjects {
+		if subject.GetName() == asset && strings.EqualFold(subject.GetDigest()["sha256"], sha256Hex) {
+			return true
+		}
+	}
+	return false
+}
+
+// fetchAttestations lists the attestations GitHub publishes for the
+// digest. A 404 means GitHub has none and comes back as an empty list. A
+// spent rate limit comes back as rateLimitError. Any other failure is
+// returned for the caller to report as unavailable.
+func fetchAttestations(ctx context.Context, sha256Hex string) ([]attestation, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, attestationsBase+"/sha256:"+sha256Hex, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", attestationsAPIVersion)
 	client := &http.Client{
 		// The attestations API answers directly. A redirect to another host
 		// is refused rather than followed.
@@ -140,10 +245,13 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]json.RawMessage
 		return nil, err
 	}
 	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
+	switch {
+	case resp.StatusCode == http.StatusOK:
+	case resp.StatusCode == http.StatusNotFound:
 		return nil, nil
+	case resp.StatusCode == http.StatusTooManyRequests,
+		resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0":
+		return nil, rateLimitError{reset: rateLimitReset(resp.Header)}
 	default:
 		return nil, fmt.Errorf("GitHub attestations API returned %s", resp.Status)
 	}
@@ -155,22 +263,80 @@ func fetchAttestations(ctx context.Context, sha256Hex string) ([]json.RawMessage
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("read attestations: %w", err)
 	}
-	bundles := make([]json.RawMessage, 0, len(list.Attestations))
-	for _, attestation := range list.Attestations {
-		if len(attestation.Bundle) > 0 {
-			bundles = append(bundles, attestation.Bundle)
-		}
+	return list.Attestations, nil
+}
+
+func rateLimitReset(header http.Header) time.Time {
+	if epoch, err := strconv.ParseInt(header.Get("X-RateLimit-Reset"), 10, 64); err == nil && epoch > 0 {
+		return time.Unix(epoch, 0)
 	}
-	return bundles, nil
+	if seconds, err := strconv.Atoi(header.Get("Retry-After")); err == nil && seconds > 0 {
+		return time.Now().Add(time.Duration(seconds) * time.Second)
+	}
+	return time.Time{}
+}
+
+// load returns the bundle JSON, inline when GitHub still sends it and
+// otherwise from bundle_url. It returns nil when the entry has neither.
+func (a attestation) load(ctx context.Context) (json.RawMessage, error) {
+	inline := bytes.TrimSpace(a.Bundle)
+	if len(inline) > 0 && !bytes.Equal(inline, []byte("null")) {
+		return inline, nil
+	}
+	if a.BundleURL == "" {
+		return nil, nil
+	}
+	return downloadBundle(ctx, a.BundleURL)
+}
+
+// downloadBundle reads a bundle from its short-lived signed URL. The URL
+// carries its own access, so the request has no auth header. GitHub serves
+// the bundle snappy-compressed. A body that is already JSON is used as is.
+func downloadBundle(ctx context.Context, url string) (json.RawMessage, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("attestation bundle download returned %s", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, attestationLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > attestationLimit {
+		return nil, errors.New("attestation bundle is larger than 8 MiB")
+	}
+	if json.Valid(raw) {
+		return raw, nil
+	}
+	size, err := snappy.DecodedLen(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decompress the attestation bundle: %w", err)
+	}
+	if size > attestationLimit {
+		return nil, errors.New("attestation bundle is larger than 8 MiB")
+	}
+	decoded, err := snappy.Decode(nil, raw)
+	if err != nil {
+		return nil, fmt.Errorf("decompress the attestation bundle: %w", err)
+	}
+	return decoded, nil
 }
 
 // publicGoodTrustedRoot reads the Sigstore public-good trusted root through
 // its TUF repository, so key rotations reach installed binaries.
 func publicGoodTrustedRoot(ctx context.Context) (root.TrustedMaterial, error) {
-	cacheDir, err := os.UserCacheDir()
+	cachePath, cleanup, err := tufCachePath()
 	if err != nil {
 		return nil, err
 	}
+	defer cleanup()
 	// The TUF fetcher builds its requests without a context, so each one is
 	// bound to ctx here and the update deadline also bounds a stalled CDN.
 	tufFetcher := fetcher.NewDefaultFetcher()
@@ -179,8 +345,22 @@ func publicGoodTrustedRoot(ctx context.Context) (root.TrustedMaterial, error) {
 	options := tuf.DefaultOptions().
 		WithContext(ctx).
 		WithFetcher(tufFetcher).
-		WithCachePath(filepath.Join(cacheDir, "agent-manager", "sigstore-tuf"))
+		WithCachePath(cachePath)
 	return root.FetchTrustedRootWithOptions(options)
+}
+
+// tufCachePath keeps the TUF metadata under the user cache directory. When
+// there is none (HOME unset, as in some service or cron runs), it uses a
+// private temp directory for this one check and removes it afterwards.
+func tufCachePath() (string, func(), error) {
+	if cacheDir, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(cacheDir, "agent-manager", "sigstore-tuf"), func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "agent-manager-sigstore-tuf-")
+	if err != nil {
+		return "", nil, fmt.Errorf("no user cache directory and no temp directory for the Sigstore trusted root: %w", err)
+	}
+	return dir, func() { os.RemoveAll(dir) }, nil
 }
 
 // contextClient sends every request with ctx, so cancelling ctx stops it.

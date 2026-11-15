@@ -83,7 +83,7 @@ func Apply(ctx context.Context, tag, execPath string) error {
 	if err := verifyChecksum(archive, wantSum); err != nil {
 		return err
 	}
-	if err := checkProvenance(ctx, tag, wantSum); err != nil {
+	if err := checkProvenance(ctx, tag, asset, wantSum); err != nil {
 		return err
 	}
 

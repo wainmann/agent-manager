@@ -82,7 +82,7 @@ func serveRelease(t *testing.T, tag string, archive []byte, sum string) {
 func stubProvenance(t *testing.T, result error) {
 	t.Helper()
 	orig := checkProvenance
-	checkProvenance = func(context.Context, string, string) error { return result }
+	checkProvenance = func(context.Context, string, string, string) error { return result }
 	t.Cleanup(func() { checkProvenance = orig })
 }
 

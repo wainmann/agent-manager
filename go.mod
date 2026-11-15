@@ -14,7 +14,9 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/distatus/battery v0.11.0
 	github.com/ebitengine/purego v0.11.2
+	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
+	github.com/in-toto/attestation v1.2.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/muesli/termenv v0.16.0
 	github.com/sergi/go-diff v1.4.0
@@ -72,7 +74,6 @@ require (
 	github.com/google/go-containerregistry v0.22.1 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
-	github.com/in-toto/attestation v1.2.0 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect

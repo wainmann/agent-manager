@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/sigstore/sigstore-go/pkg/root"
 )
 
@@ -20,6 +22,7 @@ import (
 const (
 	fixtureTag    = "v0.49.0"
 	fixtureDigest = "1bf8ea905742d0e49692990d4ab9d81c9c773fb0df1bd293949e6ea436cc2064"
+	fixtureAsset  = "agent-manager_0.49.0_linux_amd64.tar.gz"
 )
 
 func serveAttestations(t *testing.T, digest string, body []byte) {
@@ -54,14 +57,14 @@ func fixtureAttestations(t *testing.T) []byte {
 
 func TestVerifyProvenanceAcceptsTheReleaseWorkflow(t *testing.T) {
 	serveAttestations(t, fixtureDigest, fixtureAttestations(t))
-	if err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest); err != nil {
+	if err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest); err != nil {
 		t.Fatalf("verify: %v", err)
 	}
 }
 
 func TestVerifyProvenanceRejectsAnotherTag(t *testing.T) {
 	serveAttestations(t, fixtureDigest, fixtureAttestations(t))
-	err := verifyProvenance(context.Background(), "v0.48.0", fixtureDigest)
+	err := verifyProvenance(context.Background(), "v0.48.0", fixtureAsset, fixtureDigest)
 	if err == nil || !strings.Contains(err.Error(), "does not verify") {
 		t.Fatalf("want an identity failure, got %v", err)
 	}
@@ -70,7 +73,7 @@ func TestVerifyProvenanceRejectsAnotherTag(t *testing.T) {
 func TestVerifyProvenanceRejectsAnotherDigest(t *testing.T) {
 	other := strings.Repeat("ab", 32)
 	serveAttestations(t, other, fixtureAttestations(t))
-	err := verifyProvenance(context.Background(), fixtureTag, other)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, other)
 	if err == nil || !strings.Contains(err.Error(), "does not verify") {
 		t.Fatalf("want a digest failure, got %v", err)
 	}
@@ -97,7 +100,7 @@ func TestVerifyProvenanceRejectsATamperedSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 	serveAttestations(t, fixtureDigest, tampered)
-	err = verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err = verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	if err == nil || !strings.Contains(err.Error(), "does not verify") {
 		t.Fatalf("want a signature failure, got %v", err)
 	}
@@ -105,7 +108,7 @@ func TestVerifyProvenanceRejectsATamperedSignature(t *testing.T) {
 
 func TestVerifyProvenanceRejectsAnEmptyList(t *testing.T) {
 	serveAttestations(t, fixtureDigest, []byte(`{"attestations":[]}`))
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	if err == nil || !strings.Contains(err.Error(), "no build provenance published") {
 		t.Fatalf("want a missing-provenance error, got %v", err)
 	}
@@ -113,7 +116,7 @@ func TestVerifyProvenanceRejectsAnEmptyList(t *testing.T) {
 
 func TestVerifyProvenanceRejectsAMissingAttestation(t *testing.T) {
 	serveAttestations(t, fixtureDigest, nil)
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	if err == nil || !strings.Contains(err.Error(), "no build provenance published") {
 		t.Fatalf("want a missing-provenance error for the 404, got %v", err)
 	}
@@ -131,7 +134,7 @@ func TestVerifyProvenanceFailsClosedWhenGitHubErrors(t *testing.T) {
 	attestationsBase = server.URL
 	t.Cleanup(func() { attestationsBase = origBase })
 
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	assertUnavailable(t, err, "403")
 }
 
@@ -143,7 +146,7 @@ func TestVerifyProvenanceFailsClosedWhenGitHubIsUnreachable(t *testing.T) {
 	attestationsBase = url
 	t.Cleanup(func() { attestationsBase = origBase })
 
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	assertUnavailable(t, err, "")
 }
 
@@ -153,7 +156,7 @@ func TestVerifyProvenanceFailsClosedWhenSigstoreIsUnreachable(t *testing.T) {
 		return nil, errors.New("tuf-repo-cdn.sigstore.dev: connection refused")
 	}
 
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	assertUnavailable(t, err, "Sigstore trusted root")
 }
 
@@ -210,7 +213,7 @@ func TestVerifyProvenanceRefusesARedirectToAnotherHost(t *testing.T) {
 	attestationsBase = server.URL
 	t.Cleanup(func() { attestationsBase = origBase })
 
-	err := verifyProvenance(context.Background(), fixtureTag, fixtureDigest)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
 	assertUnavailable(t, err, "refusing redirect")
 }
 
@@ -230,5 +233,185 @@ func TestContextClientStopsWhenTheUpdateIsCancelled(t *testing.T) {
 	_, err = contextClient{ctx: ctx, next: &http.Client{}}.Do(req)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want the deadline to stop the request, got %v", err)
+	}
+}
+
+// fixtureEntries returns the two fixture attestations: release.yml's SLSA
+// provenance (initiator user) and GitHub's own release attestation.
+func fixtureEntries(t *testing.T) []map[string]any {
+	t.Helper()
+	var list struct {
+		Attestations []map[string]any `json:"attestations"`
+	}
+	if err := json.Unmarshal(fixtureAttestations(t), &list); err != nil {
+		t.Fatal(err)
+	}
+	return list.Attestations
+}
+
+func listBody(t *testing.T, entries []map[string]any) []byte {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"attestations": entries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// serveCurrentShape serves the 2026-03-10 response, which has no inline
+// bundle, and the snappy-compressed bundles at their bundle_url.
+func serveCurrentShape(t *testing.T, bundleStatus int) {
+	t.Helper()
+	entries := fixtureEntries(t)
+	bundles := map[string][]byte{}
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	for i, entry := range entries {
+		raw, err := json.Marshal(entry["bundle"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := "/bundles/" + strconv.Itoa(i) + ".json.sn"
+		bundles[path] = snappy.Encode(nil, raw)
+		delete(entry, "bundle")
+		entry["bundle_url"] = server.URL + path
+	}
+	var gotVersion string
+	mux.HandleFunc("/bundles/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			t.Errorf("bundle download sent an Authorization header")
+		}
+		if bundleStatus != http.StatusOK {
+			http.Error(w, "gone", bundleStatus)
+			return
+		}
+		w.Write(bundles[r.URL.Path])
+	})
+	list := listBody(t, entries)
+	mux.HandleFunc("/sha256:"+fixtureDigest, func(w http.ResponseWriter, r *http.Request) {
+		gotVersion = r.Header.Get("X-GitHub-Api-Version")
+		w.Write(list)
+	})
+	t.Cleanup(func() {
+		if gotVersion != attestationsAPIVersion {
+			t.Errorf("X-GitHub-Api-Version = %q, want %q", gotVersion, attestationsAPIVersion)
+		}
+	})
+	useLocalAPI(t, server.URL)
+}
+
+func useLocalAPI(t *testing.T, base string) {
+	t.Helper()
+	origBase := attestationsBase
+	attestationsBase = base
+	t.Cleanup(func() { attestationsBase = origBase })
+	origTrusted := trustedMaterial
+	trustedMaterial = func(context.Context) (root.TrustedMaterial, error) {
+		return root.NewTrustedRootFromPath("testdata/sigstore-trusted-root.json")
+	}
+	t.Cleanup(func() { trustedMaterial = origTrusted })
+}
+
+func TestVerifyProvenanceDownloadsTheBundleFromItsURL(t *testing.T) {
+	serveCurrentShape(t, http.StatusOK)
+	if err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+}
+
+func TestVerifyProvenanceReportsAFailedBundleDownloadAsUnavailable(t *testing.T) {
+	serveCurrentShape(t, http.StatusForbidden)
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+	assertUnavailable(t, err, "attestation bundle")
+}
+
+func TestVerifyProvenanceTreatsANullBundleWithNoURLAsMissing(t *testing.T) {
+	entries := fixtureEntries(t)
+	for _, entry := range entries {
+		entry["bundle"] = nil
+		delete(entry, "bundle_url")
+	}
+	serveAttestations(t, fixtureDigest, listBody(t, entries))
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+	if err == nil || !strings.Contains(err.Error(), "no build provenance published") {
+		t.Fatalf("want a missing-provenance error, got %v", err)
+	}
+}
+
+func TestVerifyProvenanceIgnoresGitHubsOwnAttestation(t *testing.T) {
+	github := fixtureEntries(t)[1]
+	if github["initiator"] != "github" {
+		t.Fatalf("fixture order changed, entry 1 is %v", github["initiator"])
+	}
+	serveAttestations(t, fixtureDigest, listBody(t, []map[string]any{github}))
+	err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+	if err == nil || !strings.Contains(err.Error(), "no build provenance published") {
+		t.Fatalf("want a missing-provenance error, got %v", err)
+	}
+
+	// The same correctly signed bundle relabelled as user-initiated is
+	// still refused, because it is not SLSA provenance from release.yml.
+	github["initiator"] = "user"
+	serveAttestations(t, fixtureDigest, listBody(t, []map[string]any{github}))
+	if err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest); err == nil {
+		t.Fatal("accepted GitHub's release attestation as build provenance")
+	}
+}
+
+func TestVerifyProvenanceRequiresTheAssetName(t *testing.T) {
+	serveAttestations(t, fixtureDigest, fixtureAttestations(t))
+	err := verifyProvenance(context.Background(), fixtureTag, "agent-manager_0.49.0_linux_arm64.tar.gz", fixtureDigest)
+	if err == nil || !strings.Contains(err.Error(), "does not name agent-manager_0.49.0_linux_arm64.tar.gz") {
+		t.Fatalf("want an asset mismatch, got %v", err)
+	}
+}
+
+func TestVerifyProvenanceKeepsAFailureOnOneLine(t *testing.T) {
+	serveAttestations(t, fixtureDigest, fixtureAttestations(t))
+	err := verifyProvenance(context.Background(), "v0.48.0", fixtureAsset, fixtureDigest)
+	if err == nil || strings.Contains(err.Error(), "\n") || !strings.Contains(err.Error(), "left unchanged") {
+		t.Fatalf("want a one-line failure that says the binary was kept, got %q", err)
+	}
+}
+
+func TestVerifyProvenanceNamesTheRateLimit(t *testing.T) {
+	reset := time.Date(2026, 11, 15, 17, 30, 0, 0, time.UTC)
+	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+			http.Error(w, "API rate limit exceeded", status)
+		}))
+		useLocalAPI(t, server.URL)
+		err := verifyProvenance(context.Background(), fixtureTag, fixtureAsset, fixtureDigest)
+		server.Close()
+		if !errors.Is(err, errRateLimited) || errors.Is(err, errProvenanceUnavailable) {
+			t.Fatalf("%d: want a rate limit error, got %v", status, err)
+		}
+		want := "Try again after " + reset.Local().Format("15:04 MST")
+		if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "left unchanged") {
+			t.Fatalf("%d: error %q does not say %q", status, err, want)
+		}
+	}
+}
+
+func TestTUFCacheFallsBackToATempDirectory(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("LocalAppData", "")
+	if _, err := os.UserCacheDir(); err == nil {
+		t.Skip("this platform still has a user cache directory")
+	}
+	dir, cleanup, err := tufCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("temp cache %s: %v", dir, err)
+	}
+	cleanup()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("temp cache %s was not removed", dir)
 	}
 }
