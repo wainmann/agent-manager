@@ -158,6 +158,34 @@ func TestFocusWatchSpacesAStreamByItsPace(t *testing.T) {
 	}
 }
 
+// Focusing a previewed pane takes the frame budget at once instead of
+// waiting out the live tick the last capture set.
+func TestFocusWatchPaceChangeWakesAPendingCapture(t *testing.T) {
+	driver, id, arrivals, watch := startFocusArrivalWatch(t)
+	if err := driver.SendText(id, "for i in $(seq 1 3000); do echo line$i; sleep 0.005; done"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	waitFocusArrival(t, arrivals, "line1")
+	liveTick := 300 * time.Millisecond
+	fastest := time.Hour
+	for range 3 {
+		watch.Pace(false)
+		time.Sleep(liveTick + frameBudget)
+		for len(arrivals) > 0 {
+			<-arrivals
+		}
+		previewed := waitFocusArrival(t, arrivals, "line")
+		// Let the stream's next event start the wait on the live tick.
+		time.Sleep(frameBudget / 2)
+		watch.Pace(true)
+		focused := waitFocusArrival(t, arrivals, "line")
+		fastest = min(fastest, focused.at.Sub(previewed.at))
+	}
+	if bound := (frameBudget + liveTick) / 2; fastest >= bound {
+		t.Fatalf("first focused frame came %v after the last previewed one, want under %v", fastest, bound)
+	}
+}
+
 func TestFocusWatchSpacesUnchangedWritesByADisplayFrame(t *testing.T) {
 	driver, id, sends, _ := startFocusArrivalWatch(t)
 

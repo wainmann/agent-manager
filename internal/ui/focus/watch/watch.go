@@ -98,6 +98,8 @@ type Watcher struct {
 	// fast streams a changing pane at the frame budget, for a focused
 	// session; a pane only previewed beside the list keeps the live tick.
 	fast bool
+	// paced wakes a capture waiting out the old pace when fast flips.
+	paced chan struct{}
 }
 
 // retryBackoff is how long a failed session sits before the watcher
@@ -112,7 +114,7 @@ const (
 // New returns a watcher on driver's server that pushes to sink. Its owner
 // points it with SetFocus and closes it on quit.
 func New(driver *tmux.Driver, liveTick time.Duration, sink Sink) *Watcher {
-	return &Watcher{driver: driver, sink: sink, liveTick: liveTick}
+	return &Watcher{driver: driver, sink: sink, liveTick: liveTick, paced: make(chan struct{}, 1)}
 }
 
 // SetFocus points the watcher at a session, replacing any previous one.
@@ -160,7 +162,14 @@ func (w *Watcher) SetFocus(id string) {
 func (w *Watcher) Pace(fast bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.fast == fast {
+		return
+	}
 	w.fast = fast
+	select {
+	case w.paced <- struct{}{}:
+	default:
+	}
 }
 
 func (w *Watcher) changedGap() time.Duration {
@@ -452,8 +461,16 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		return
 	}
 	lastCapture := time.Now()
-	nextCapture := lastCapture.Add(captureGap)
+	changed := false
 	var inputUntil time.Time
+	// A write that leaves the text unchanged, like the cursor move some TUIs
+	// send ahead of an echo, must not hold back that echo.
+	due := func() time.Time {
+		if changed && !time.Now().Before(inputUntil) {
+			return lastCapture.Add(w.changedGap())
+		}
+		return lastCapture.Add(captureGap)
+	}
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -473,11 +490,8 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			inputUntil = time.Now().Add(frameBudget)
 			continue
 		}
-		captureAt := nextCapture
 		// Echo may arrive after a streaming paint or a cursor-only update.
-		if time.Now().Before(inputUntil) {
-			captureAt = lastCapture.Add(captureGap)
-		}
+		captureAt := due()
 		for wait := time.Until(captureAt); wait > 0; wait = time.Until(captureAt) {
 			timer.Reset(wait)
 			select {
@@ -485,7 +499,9 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 				return
 			case <-input:
 				inputUntil = time.Now().Add(frameBudget)
-				captureAt = lastCapture.Add(captureGap)
+				captureAt = due()
+			case <-w.paced:
+				captureAt = due()
 			case <-timer.C:
 			}
 			timer.Stop()
@@ -503,15 +519,9 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			w.clearIfCurrent(id, stop)
 			return
 		}
-		// A write that leaves the text unchanged, like the cursor move some
-		// TUIs send ahead of an echo, must not hold back that echo.
-		gap := captureGap
-		if pane != previous {
-			gap = w.changedGap()
-		}
+		changed = pane != previous
 		previous = pane
 		lastCapture = time.Now()
-		nextCapture = lastCapture.Add(gap)
 	}
 }
 
