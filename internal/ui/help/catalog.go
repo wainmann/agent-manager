@@ -135,7 +135,7 @@ func connectionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2
 	h.action("edit its name and SSH destination", keybind.Rename)
 	h.action("remove it; its sessions keep running on that host", keybind.Delete)
 	h.action("new session or terminal on that host", keybind.NewSession, keybind.Terminal)
-	h.fixed("", "its sessions: attach, quick prompt, kill, revive, archive, restore")
+	h.fixed("", "its agents: attach, prompt, kill, revive, archive, restore, delete")
 	h.fixed("", "attach opens an SSH attach in this terminal")
 	return h.rows
 }

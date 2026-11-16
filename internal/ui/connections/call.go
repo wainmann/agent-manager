@@ -18,6 +18,7 @@ const (
 	OpRevive
 	OpArchive
 	OpRestore
+	OpDelete
 )
 
 // Call is the lifecycle call a rail action makes on a remote session or
@@ -42,7 +43,7 @@ type Call struct {
 var Refusals = map[uirail.ActionKind]string{
 	uirail.RenameAction: "rename",
 	uirail.MoveToGroup:  "move",
-	uirail.Delete:       "delete",
+	uirail.Delete:       "deleting a group",
 	uirail.Restart:      "restart",
 	uirail.Fork:         "fork",
 	uirail.OpenReview:   "review",
@@ -67,6 +68,7 @@ var confirm = map[Op]struct {
 	OpRevive:        {uidialogs.ConfirmRevive, "revive", ""},
 	OpArchive:       {uidialogs.ConfirmArchive, "archive", ""},
 	OpRestore:       {uidialogs.ConfirmRestore, "restore", ""},
+	OpDelete:        {uidialogs.ConfirmDelete, "delete", ""},
 }
 
 // KeyHint fills format with the list key bound to action, and is empty while
@@ -88,8 +90,10 @@ func SessionCall(row Row, kind uirail.ActionKind, hint KeyHint) Call {
 		return Call{Op: OpAttach, Answered: true}
 	case row.Terminal && (kind == uirail.Revive || kind == uirail.Archive || kind == uirail.Restore):
 		return Call{Refusal: "a terminal on " + row.Host + " is not archived or revived" + hint(keybind.Kill, " - %s closes it"), Answered: true}
-	case kind == uirail.Kill && row.Terminal:
+	case (kind == uirail.Kill || kind == uirail.Delete) && row.Terminal:
 		return asking(OpCloseTerminal, false, hint)
+	case kind == uirail.Delete:
+		return asking(OpDelete, false, hint)
 	case kind == uirail.Kill:
 		return asking(OpKill, row.Status == "dead", hint)
 	case kind == uirail.Revive:

@@ -225,8 +225,8 @@ func (c *Client) Kill(ctx context.Context, ref Ref) (sessioncmd.Session, error) 
 	return c.lifecycle(ctx, ref, []string{"kill", "--json"})
 }
 
-// Delete removes the session on its host, which refuses while its worktree
-// holds unsaved work.
+// Delete removes the session and the terminals under it on its host. A
+// worktree with unsaved work stays there, and the notice says so.
 func (c *Client) Delete(ctx context.Context, ref Ref) (sessioncmd.Deletion, error) {
 	var deleted sessioncmd.Deletion
 	if err := validRef(ref); err != nil {

@@ -65,6 +65,9 @@ func TestRemoteActionsBuildTheirRemoteCall(t *testing.T) {
 	}{
 		{"kill an agent", boxSession("s1"), uirail.Kill, []string{"kill", "--json", "--", "s1"}, "killed api on box"},
 		{"kill a terminal closes it", boxSession("t1"), uirail.Kill, []string{"terminal", "close", "--", "t1"}, "killed sh on box"},
+		{"delete an agent", boxSession("s1"), uirail.Delete, []string{"delete", "--json", "--", "s1"}, "deleted api on box"},
+		{"delete an archived agent", boxSession("s3"), uirail.Delete, []string{"delete", "--json", "--", "s3"}, "deleted shelved on box"},
+		{"delete a terminal closes it", boxSession("t1"), uirail.Delete, []string{"terminal", "close", "--", "t1"}, "killed sh on box"},
 		{"revive", boxSession("s2"), uirail.Revive, []string{"revive", "--json", "--", "s2"}, "revived old on box"},
 		{"archive", boxSession("s1"), uirail.Archive, []string{"archive", "--json", "--", "s1"}, "archived api on box"},
 		{"restore", boxSession("s3"), uirail.Restore, []string{"archive", "--restore", "--json", "--", "s3"}, "restored shelved on box"},
@@ -116,7 +119,7 @@ func TestRemoteActionsAlreadyInPlaceDoNothing(t *testing.T) {
 
 func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 	refused := map[uirail.ActionKind]string{
-		uirail.RenameAction: "rename", uirail.MoveToGroup: "move", uirail.Delete: "delete",
+		uirail.RenameAction: "rename", uirail.MoveToGroup: "move",
 		uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
 		uirail.OpenEditor: "the editor", uirail.CopyReply: "copy reply", uirail.MarkIdle: "mark idle",
 		uirail.CancelEnd: "cancel end", uirail.KillAll: "kill all",
@@ -139,6 +142,10 @@ func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 		if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: target}); cmd != nil || m.errBar.text != "kill isn't available on SSH connections yet" {
 			t.Fatalf("kill on %+v: status %q", target, m.errBar.text)
 		}
+	}
+	m.clearErr()
+	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "deleting a group isn't available on SSH connections yet" {
+		t.Fatalf("delete on a remote group: status %q", m.errBar.text)
 	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls = %q, want none", calls)
@@ -343,6 +350,32 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s2")})
 	if pendingConfirm(m).prompt.Label != "kill old on box?" {
 		t.Fatalf("dead kill label %q", pendingConfirm(m).prompt.Label)
+	}
+}
+
+// The host's delete takes the terminals nested under the agent, archived
+// ones too, so its confirm counts them the way a local delete does.
+func TestRemoteDeleteConfirmCountsTheTerminalsItTakes(t *testing.T) {
+	fake := &fakeSSH{}
+	m := listedModel(t, fake)
+	fake.snapshot.Terminals = append(fake.snapshot.Terminals,
+		sessioncmd.Terminal{ID: "t2", Name: "api-sh", Group: "web", Status: "idle", Running: true, ParentID: "s1"},
+		sessioncmd.Terminal{ID: "t3", Name: "api-log", Group: "web", Status: "dead", ParentID: "s1", Archived: true},
+		sessioncmd.Terminal{ID: "t4", Name: "shelved-sh", Group: "web", Status: "dead", ParentID: "s3", Archived: true})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	for id, want := range map[string]string{
+		"s1": "delete api on box and 2 terminals? kills their tmux sessions there.",
+		"s2": "delete old on box? kills its tmux session there.",
+		"s3": "delete shelved on box and 1 terminal? kills their tmux sessions there.",
+	} {
+		m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxSession(id)})
+		if !confirmOpen(m) || pendingConfirm(m).prompt.Label != want {
+			t.Fatalf("delete %s: label %q, want %q", id, pendingConfirm(m).prompt.Label, want)
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	}
+	if calls := fake.taken(); len(calls) != 0 {
+		t.Fatalf("calls before an answer = %q", calls)
 	}
 }
 

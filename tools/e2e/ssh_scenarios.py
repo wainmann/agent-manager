@@ -6,7 +6,7 @@ runs it with /bin/sh under a second disposable profile, so the manager talks
 to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
 remote row offers: preview, quick send, kill, revive, archive, restore,
-attach, quick spawn and a new terminal. A second connection whose host
+delete, attach, quick spawn and a new terminal. A second connection whose host
 refuses shows as unreachable and is removed. Every process it started is ended by PID.
 """
 import argparse
@@ -254,6 +254,13 @@ def lifecycle(sandbox, remote, agent_id):
                  lambda value: value == '[(0,)]')
     key(sandbox, 't')
     frame(sandbox, 'active-view', f'{CONNECTION}  ssh', 'ARCHIVED')
+
+    select(sandbox, 'grouped-agent', f'{GROUPED_AGENT}  on {CONNECTION}')
+    key(sandbox, 'd')
+    confirm(sandbox, 'remote-delete', f'delete {GROUPED_AGENT} on {CONNECTION}?',
+            f'deleted {GROUPED_AGENT} on {CONNECTION}')
+    sandbox.wait('remote-deleted', lambda: str(remote.query(f"SELECT id FROM sessions WHERE name = '{GROUPED_AGENT}'")),
+                 lambda value: value == '[]')
 
 
 def attach(sandbox, remote, agent_id):

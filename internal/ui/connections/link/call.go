@@ -20,6 +20,7 @@ const (
 	Archive
 	Restore
 	CreateGroup
+	Delete
 )
 
 type Call struct {
@@ -43,9 +44,10 @@ type Call struct {
 }
 
 // Result is what a call returned: the session or terminal it made or
-// changed.
+// changed, and why a deleted session's worktree stayed on the host.
 type Result struct {
 	Session sessioncmd.Session
+	Notice  string
 }
 
 func Run(ctx context.Context, client *remote.Client, openers remote.Openers, call Call) (Result, error) {
@@ -64,6 +66,10 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 		result.Session, err = client.Kill(ctx, call.Ref)
 	case CloseTerminal:
 		err = client.Terminals(openers).CloseForUser(ctx, call.Ref)
+	case Delete:
+		var deleted sessioncmd.Deletion
+		deleted, err = client.Delete(ctx, call.Ref)
+		result.Session, result.Notice = deleted.Session, deleted.Notice
 	case Revive:
 		result.Session, err = client.Revive(ctx, call.Ref)
 	case Archive, Restore:
@@ -100,6 +106,12 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 		root.ReportDone("opened terminal " + result.Session.Name + on)
 	case Kill, CloseTerminal:
 		root.ReportDone("killed " + call.Name + on)
+	case Delete:
+		if result.Notice != "" {
+			root.ReportErr("deleted " + call.Name + on + "; " + result.Notice)
+		} else {
+			root.ReportDone("deleted " + call.Name + on)
+		}
 	case Revive:
 		root.ReportDone("revived " + call.Name + on)
 	case Archive:

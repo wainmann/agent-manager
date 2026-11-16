@@ -12,10 +12,10 @@ func TestRowFindsAgentsAndTerminals(t *testing.T) {
 	c.Refreshed("box", c.Gen(), Host{
 		OK:        true,
 		Sessions:  []Session{{ID: "s1", Name: "api", Group: "web", Status: "idle"}},
-		Terminals: []Session{{ID: "t1", Name: "sh", Group: "web", Archived: true}},
+		Terminals: []Session{{ID: "t1", Name: "sh", Group: "web", Archived: true}, {ID: "t2", Name: "api-sh", Group: "web", ParentID: "s1"}, {ID: "t3", Name: "api-log", Group: "web", ParentID: "s1", Archived: true}},
 	})
 	agent, ok := c.Row(Target{Kind: SessionRow, Host: "box", ID: "s1"})
-	if !ok || agent.Terminal || agent.Ref != (remote.Ref{Host: "box", ID: "s1"}) || agent.Name != "api" || agent.Group != "web" {
+	if !ok || agent.Terminal || agent.Ref != (remote.Ref{Host: "box", ID: "s1"}) || agent.Name != "api" || agent.Group != "web" || agent.Terminals != 2 {
 		t.Fatalf("agent row = %+v, %v", agent, ok)
 	}
 	term, ok := c.Row(Target{Kind: SessionRow, Host: "box", ID: "t1"})

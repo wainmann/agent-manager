@@ -290,6 +290,9 @@ func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Le
 		title, kill, leads = "Shell", "close", nil
 	}
 	pairs := [][2]string{{k(keybind.Open, keybind.Attach), "attach over SSH"}, {k(keybind.Kill), kill}}
+	if !row.Terminal {
+		pairs = append(pairs, [2]string{k(keybind.Delete), "delete"})
+	}
 	if row.Dead {
 		pairs = append(pairs, [2]string{k(keybind.Revive), "revive"})
 	}

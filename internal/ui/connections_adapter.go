@@ -93,7 +93,7 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
-	return m.confirmRemote(request, call), true
+	return m.confirmRemote(request, call, row.Terminals), true
 }
 
 // remoteOp is the call a remote row's lifecycle op makes.
@@ -103,17 +103,24 @@ var remoteOp = map[uiconnections.Op]uilink.Op{
 	uiconnections.OpRevive:        uilink.Revive,
 	uiconnections.OpArchive:       uilink.Archive,
 	uiconnections.OpRestore:       uilink.Restore,
+	uiconnections.OpDelete:        uilink.Delete,
 }
 
 // confirmRemote asks before a lifecycle call goes to the host; an offline
-// host refuses before the question.
-func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call) tea.Cmd {
+// host refuses before the question. A delete there takes the terminals under
+// the agent, and names them as a local delete does.
+func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call, terminals int) tea.Cmd {
 	if refusal, offline := m.ssh.Offline(request.Host); offline {
 		m.reportErr(refusal)
 		return nil
 	}
+	subject := presentation.EscapeControlsInline(request.Name + " on " + request.Host)
+	label := call.Verb + " " + subject + "?" + call.Consequence
+	if call.Op == uiconnections.OpDelete {
+		label = uisession.FollowConfirmLabel(call.Verb, subject, terminals, "kills its tmux session there.", "kills their tmux sessions there.")
+	}
 	m.openConfirm(confirmTarget{
-		prompt: uidialogs.Confirm{Action: call.Action, Label: call.Verb + " " + presentation.EscapeControlsInline(request.Name+" on "+request.Host+"?") + call.Consequence},
+		prompt: uidialogs.Confirm{Action: call.Action, Label: label},
 		remote: &request,
 	})
 	return nil

@@ -15,6 +15,7 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 	}{
 		{Type, []string{"type", "--json", "--", "s1", "hello"}},
 		{Kill, []string{"kill", "--json", "--", "s1"}},
+		{Delete, []string{"delete", "--json", "--", "s1"}},
 		{Revive, []string{"revive", "--json", "--", "s1"}},
 		{Archive, []string{"archive", "--json", "--", "s1"}},
 		{Restore, []string{"archive", "--restore", "--json", "--", "s1"}},
@@ -83,6 +84,18 @@ func TestASpawnFromTheFormClosesItAndAQuickSpawnClearsTheBar(t *testing.T) {
 	}
 	if want := "started fresh on box"; len(root.done) != 1 || root.done[0] != want {
 		t.Fatalf("status = %q, want %q", root.done, want)
+	}
+}
+
+// A delete whose worktree stayed on the host says so with the delete, on
+// the host it happened, since the row stays until the next refresh.
+func TestADeleteReportsTheHostsNotice(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: Delete, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api"}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{Notice: "worktree kept (has work): /srv/wt/api"}, nil)
+	if want := []string{"deleted api on box; worktree kept (has work): /srv/wt/api"}; !equal(root.errs, want) || len(root.done) != 0 {
+		t.Fatalf("done %q errors %q, want errors %q", root.done, root.errs, want)
 	}
 }
 

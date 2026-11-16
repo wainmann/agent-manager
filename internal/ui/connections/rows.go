@@ -29,6 +29,9 @@ type Row struct {
 	Status   string
 	Terminal bool
 	Archived bool
+	// Terminals counts the host's terminals nested under an agent, which
+	// its delete takes with it.
+	Terminals int
 }
 
 // Row finds the target's row; an agent or terminal the last snapshot does
@@ -41,7 +44,13 @@ func (c *Connections) Row(target Target) (Row, bool) {
 	host := c.hosts[target.Host]
 	for _, sess := range host.Sessions {
 		if sess.ID == target.ID {
-			return row.of(sess, false), true
+			row = row.of(sess, false)
+			for _, term := range host.Terminals {
+				if term.ParentID == sess.ID {
+					row.Terminals++
+				}
+			}
+			return row, true
 		}
 	}
 	for _, term := range host.Terminals {

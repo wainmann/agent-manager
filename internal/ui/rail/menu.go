@@ -114,8 +114,9 @@ func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menu
 	case GroupRow:
 		return append(create, group)
 	}
+	remove := menuItem{label: "Delete", action: Delete, danger: true}
 	if row.sess.Archived {
-		return []menuItem{{label: "Restore", action: Restore}}
+		return []menuItem{{label: "Restore", action: Restore}, remove}
 	}
 	kill := menuItem{label: "Kill", action: Kill, danger: true}
 	if row.sess.IsShell {
@@ -127,16 +128,12 @@ func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menu
 	}
 	archive := menuItem{label: "Archive", action: Archive}
 	if row.sess.Status == "dead" {
-		return menuSections([]menuItem{{label: "Revive", action: Revive}}, []menuItem{archive})
-	}
-	var agent []menuItem
-	if !row.sess.IsShell {
-		agent = []menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}}
+		return menuSections([]menuItem{{label: "Revive", action: Revive}}, []menuItem{archive, remove})
 	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: Attach}},
-		agent,
-		[]menuItem{archive, kill},
+		[]menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}},
+		[]menuItem{archive, kill, remove},
 	)
 }
 
