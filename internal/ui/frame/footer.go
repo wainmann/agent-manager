@@ -108,7 +108,7 @@ func (f Footer) Focused(focus Focus) Section {
 	}
 	savedAt := len(pairs)
 	if focus.PagesScrollback {
-		pairs = append(pairs, [2]string{"pgup/pgdn", "scroll"})
+		pairs = append(pairs, [2]string{presentation.NavigationLabel(f.Mode, "pgup/pgdn/shift+↑↓"), "scroll"})
 	}
 	if focus.Mouse {
 		pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})

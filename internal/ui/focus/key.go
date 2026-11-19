@@ -52,6 +52,10 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 			return KeyResult{Action: ScrollPane, Region: m.ScrollLines(-ctx.Rows, ctx.SessionID, ctx.Rows)}
 		case tea.KeyPgDown:
 			return KeyResult{Action: ScrollPane, Region: m.ScrollLines(ctx.Rows, ctx.SessionID, ctx.Rows)}
+		case tea.KeyShiftUp:
+			return KeyResult{Action: ScrollPane, Region: m.ScrollLines(-m.scrollStep(), ctx.SessionID, ctx.Rows)}
+		case tea.KeyShiftDown:
+			return KeyResult{Action: ScrollPane, Region: m.ScrollLines(m.scrollStep(), ctx.SessionID, ctx.Rows)}
 		}
 	}
 	if ctx.Editor {

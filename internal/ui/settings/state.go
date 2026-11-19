@@ -33,6 +33,9 @@ const (
 	// ArrowStepSetting is the ←→ step in/out pair: "off" turns it off,
 	// anything else leaves it on.
 	ArrowStepSetting = "arrow_step_keys"
+	// ScrollStepSetting is the lines a wheel notch or shift+↑↓ moves a
+	// focused pane's history.
+	ScrollStepSetting = "scroll_step"
 	// MouseSetting is app-wide mouse reporting: "off" gives the rail and
 	// content column back to the terminal's own click-drag text selection,
 	// anything else leaves it on (the default).
@@ -71,6 +74,7 @@ const (
 	FieldQuickClose
 	FieldFocusKey
 	FieldArrowStep
+	FieldScrollStep
 	FieldMouse
 	FieldWorktree
 	FieldBaseFetch
@@ -100,6 +104,7 @@ type State struct {
 	Field           int
 	LayoutSplit     bool
 	ReviewScope     string
+	ScrollStep      string
 	QuickCloseSend  bool
 	EnterFocuses    bool
 	ArrowStep       bool
@@ -210,6 +215,7 @@ func FromSnapshot(s Snapshot) State {
 	state := State{
 		GlyphMode:   presentation.GlyphMode(value(GlyphModeSetting)),
 		ReviewScope: reviewScope(value(ReviewScopeSetting)),
+		ScrollStep:  scrollStep(value(ScrollStepSetting)),
 		ToolNames:   names,
 		ToolIndex:   ToolIndex(names, value(DefaultToolSetting)),
 		ThemeIndex:  uitheme.Index(s.Theme),

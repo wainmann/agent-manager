@@ -10,7 +10,7 @@ import (
 var listOrder = []string{
 	DefaultToolSetting, ThemeSetting, ThemeAutoSetting, GlyphModeSetting, BackgroundSetting,
 	ListDensitySetting, SessionLayoutSetting, HideHeaderSetting, HideStatsSetting, DiffLayoutSetting, ReviewScopeSetting,
-	QuickCloseSetting, FocusKeySetting, ArrowStepSetting, MouseSetting, WorktreeSetting, BaseFetchSetting,
+	QuickCloseSetting, FocusKeySetting, ArrowStepSetting, ScrollStepSetting, MouseSetting, WorktreeSetting, BaseFetchSetting,
 	CoordinationSetting, NotificationsSetting, NotifyFinishedSetting, NotifyCommandSetting,
 	EditorSetting, HiddenToolsSetting,
 }
@@ -77,5 +77,13 @@ func TestTableCoversEveryRow(t *testing.T) {
 	}
 	if FlagOn(HideStatsSetting, "on") != true || FlagOn(ThemeSetting, "nord") != false {
 		t.Fatal("FlagOn does not read the table")
+	}
+}
+
+func TestScrollStepMirrorsItsLines(t *testing.T) {
+	for stored, want := range map[string]int{"10": 10, "1": 1, "": 3, "7": 3} {
+		if got := Mirror(ScrollStepSetting, stored).ScrollStep; got != want {
+			t.Errorf("Mirror(%q).ScrollStep = %d, want %d", stored, got, want)
+		}
 	}
 }

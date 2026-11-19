@@ -23,6 +23,7 @@ type Model struct {
 
 	cursorOn bool
 	scroll   int
+	step     int
 
 	fetchInFlight bool
 

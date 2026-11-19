@@ -273,6 +273,7 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, 
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
 	}
 	rows = append(rows, [2]string{"pgup/pgdn", "focused: scroll the pane's history on its normal screen"})
+	rows = append(rows, [2]string{presentation.NavigationLabel(mode, "shift+↑↓"), "focused: scroll that history by the Settings scroll step"})
 	return append(rows, mouseRows...)
 }
 

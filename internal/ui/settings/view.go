@@ -149,6 +149,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, symbolsRow)
 		case FieldReviewScope:
 			lines = append(lines, row(FieldReviewScope, label(FieldReviewScope), reviewScopeLabel(s.ReviewScope)))
+		case FieldScrollStep:
+			lines = append(lines, row(FieldScrollStep, label(FieldScrollStep), s.ScrollStep+" lines"))
 		case FieldEditor:
 			lines = append(lines, editorLine)
 		case FieldKeybindings:

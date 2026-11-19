@@ -662,7 +662,7 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 					}
 				}
 				m.focus.pane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
-				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
+				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn/shift+↑↓ scroll")
 				if hint != tc.wantHint {
 					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
 				}

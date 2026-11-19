@@ -251,6 +251,7 @@ func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
 func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	m.prefs.glyphMode = d.GlyphMode
 	m.services.editor = d.Editor.Line()
+	m.focus.pane.SetScrollStep(uisettings.ScrollStepLines(d.ScrollStep))
 	for _, key := range uisettings.FlagKeys() {
 		m.mirrorFlag(key, d.Flag(key))
 	}
@@ -349,6 +350,8 @@ func (m *Model) mirrorPreference(key, value string) {
 		m.services.editor = mirrored.Editor
 	case key == uisettings.GlyphModeSetting:
 		m.prefs.glyphMode = mirrored.GlyphMode
+	case key == uisettings.ScrollStepSetting:
+		m.focus.pane.SetScrollStep(mirrored.ScrollStep)
 	}
 }
 

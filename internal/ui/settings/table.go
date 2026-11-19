@@ -2,6 +2,7 @@ package settings
 
 import (
 	"slices"
+	"strconv"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -44,6 +45,23 @@ func reviewScopeLabel(name string) string {
 	return name
 }
 
+// ScrollSteps are the line counts the scroll step row cycles.
+var ScrollSteps = []string{"1", "3", "5", "10"}
+
+// scrollStep reads a stored step, falling back to 3.
+func scrollStep(stored string) string {
+	if slices.Contains(ScrollSteps, stored) {
+		return stored
+	}
+	return "3"
+}
+
+// ScrollStepLines is a stored step as a line count.
+func ScrollStepLines(stored string) int {
+	n, _ := strconv.Atoi(scrollStep(stored))
+	return n
+}
+
 // table is every key Settings keeps, in the order settings list prints them.
 var table = []Setting{
 	{Spec: Spec{Key: DefaultToolSetting, Row: "default tool"}, Field: FieldTool},
@@ -70,6 +88,7 @@ var table = []Setting{
 		Flag: func(s *State) *bool { return &s.EnterFocuses }, True: "focus", False: "attach", TrueLabel: "↵ focus · A attach", FalseLabel: "↵ attach · A focus"},
 	{Spec: Spec{Key: ArrowStepSetting, Values: onOff, Default: "on", Row: "←→ step in/out"}, Field: FieldArrowStep,
 		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off"},
+	{Spec: Spec{Key: ScrollStepSetting, Values: ScrollSteps, Default: "3", Row: "scroll step"}, Field: FieldScrollStep},
 	{Spec: Spec{Key: MouseSetting, Values: onOff, Default: "on", Row: "mouse"}, Field: FieldMouse,
 		Flag: func(s *State) *bool { return &s.MouseDisabled }, True: "off", False: "on"},
 	{Spec: Spec{Key: WorktreeSetting, Values: onOff, Default: "off", Row: "spawn in worktree"}, Field: FieldWorktree,

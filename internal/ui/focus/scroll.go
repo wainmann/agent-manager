@@ -2,7 +2,17 @@ package focus
 
 import "strings"
 
-const scrollStep = 3
+const defaultScrollStep = 3
+
+// SetScrollStep sets the lines a wheel notch or shift+↑↓ moves.
+func (m *Model) SetScrollStep(lines int) { m.step = lines }
+
+func (m *Model) scrollStep() int {
+	if m.step <= 0 {
+		return defaultScrollStep
+	}
+	return m.step
+}
 
 type RegionRequest struct {
 	SessionID string
@@ -27,7 +37,7 @@ type RegionOutcome struct {
 // Scroll moves the target by wheel delta. Negative delta moves into history,
 // matching the existing focused-pane wheel convention.
 func (m *Model) Scroll(delta int, sessionID string, rows int) *RegionRequest {
-	return m.ScrollLines(delta*scrollStep, sessionID, rows)
+	return m.ScrollLines(delta*m.scrollStep(), sessionID, rows)
 }
 
 func (m *Model) ScrollLines(lines int, sessionID string, rows int) *RegionRequest {

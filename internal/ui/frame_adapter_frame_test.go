@@ -592,7 +592,7 @@ func TestPagingHintFitsFullFocusFooter(t *testing.T) {
 	m.prefs.fullLayout = true
 	m.layout.width = 110
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "pgup/pgdn scroll") {
+	if !strings.Contains(footer, "pgup/pgdn/shift+↑↓ scroll") {
 		t.Fatalf("full focus footer omits paging: %q", footer)
 	}
 	if got := lipgloss.Height(m.viewFooter()); got != 1 {
