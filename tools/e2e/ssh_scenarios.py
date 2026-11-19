@@ -352,7 +352,7 @@ def left_at_prompt_head(sandbox, remote, agent_id):
     sandbox.wait('left-composer-empty', lambda: remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane).stdout,
                  lambda text: text.rstrip().endswith(COMPOSER.strip()))
     key(sandbox, 'Left')
-    frame(sandbox, 'left-at-head', f'{REMOTE_AGENT}  on {CONNECTION}', LEFT_ECHO)
+    frame(sandbox, 'left-at-head', f'{REMOTE_AGENT}  on {CONNECTION}')
     after = remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane)
     if after.returncode != 0 or LEFT_ECHO + ' 2' in after.stdout:
         raise AssertionError(f'← at the head of the prompt reached the agent, or its pane is gone: {after.stdout}{after.stderr}')
