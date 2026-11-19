@@ -171,7 +171,7 @@ func helpSections(ctx Context) []helpSection {
 			{presentation.NavigationLabel(mode, "←→"), "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, ctx.ArrowAttach, [][2]string{
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, ctx.AttachedBack, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"click the list", "focused: back to the manager (mouse back too)"},
@@ -245,7 +245,7 @@ func formatSections(sections []helpSection, mode presentation.GlyphMode) []helpS
 	return sections
 }
 
-func sessionHelpRows(keys keybind.Table, arrowStep, arrowAttach bool, mouseRows [][2]string, mode presentation.GlyphMode) [][2]string {
+func sessionHelpRows(keys keybind.Table, arrowStep, attachedBack bool, mouseRows [][2]string, mode presentation.GlyphMode) [][2]string {
 	rows := [][2]string{
 		{"typing", "goes straight to the agent, q included"},
 		{"ctrl+c", "goes to the agent"},
@@ -258,7 +258,7 @@ func sessionHelpRows(keys keybind.Table, arrowStep, arrowAttach bool, mouseRows 
 	rows = append(rows, [2]string{detach[0].Tea(), back})
 	if arrowStep {
 		where := "focused"
-		if arrowAttach {
+		if attachedBack {
 			where = "focused or attached"
 		}
 		rows = append(rows, [2]string{presentation.NavigationLabel(mode, "←"), where + ": back to the manager, at the prompt's start"})

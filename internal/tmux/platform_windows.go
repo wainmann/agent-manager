@@ -204,6 +204,9 @@ func splitCommandList(args []string) [][]string {
 
 const promptHeadHint = ""
 
+// AttachedPromptHead is false: psmux leaves an attached ← to the agent.
+const AttachedPromptHead = false
+
 // promptHeadBinding is nil: a psmux binding cannot hand the key on to the
 // pane (see rootBinding), so binding ← would take it from the agent
 // everywhere in the prompt.

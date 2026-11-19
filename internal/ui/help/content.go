@@ -61,6 +61,7 @@ type Context struct {
 	ListKeys     keybind.Table
 	ArrowStep    bool
 	ArrowAttach  bool
+	AttachedBack bool
 	Width        int
 	Glyphs       Glyphs
 	QuickKeys    QuickKeys

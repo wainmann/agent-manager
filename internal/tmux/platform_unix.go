@@ -57,6 +57,9 @@ func rootBinding(key keybind.Key, action ...string) []string {
 // splits its window keeps the agent in pane 0 of the first window.
 const agentPaneBindingTest = "#{&&:" + ownedBindingTest + ",#{&&:#{window_start_flag},#{==:#{pane_index},0}}}"
 
+// AttachedPromptHead: ← at the prompt's start comes back from an attach.
+const AttachedPromptHead = true
+
 // promptHeadHint names ← in a session's footer while the server binds it,
 // so a footer never outlives the binding another process took off.
 const promptHeadHint = "#{?" + promptHeadOption + ",· ← prompt start = back ,}"
