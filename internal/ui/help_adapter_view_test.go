@@ -9,9 +9,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
@@ -65,6 +67,30 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 				t.Errorf("arrow step enabled = %v: %q in %q = %v", enabled, row.key, row.title, got)
 			}
 		}
+	}
+}
+
+// The attached ← row follows the host the selected row attaches on, so a
+// Windows manager names it for a session on a Linux or macOS host.
+func TestHelpAttachedBackFollowsTheSelectedRowsHost(t *testing.T) {
+	m := connectedModel(t, &fakeSSH{})
+	m.prefs.arrowStep, m.prefs.arrowAttach = true, true
+	host := helpHost{m}
+	m.rail.Focus(boxSession("s1"))
+	if !host.KeyTables().AttachedBack {
+		t.Error("a remote row should name the attached ←")
+	}
+	m.rail.Focus(uirail.Selection{Kind: uirail.GroupRow})
+	if selection, _ := m.rail.Selected(); selection.Remote() {
+		t.Fatalf("selection %+v, want a local row", selection)
+	}
+	if got := host.KeyTables().AttachedBack; got != tmux.AttachedPromptHead {
+		t.Errorf("local row AttachedBack = %v, want this platform's %v", got, tmux.AttachedPromptHead)
+	}
+	m.prefs.arrowAttach = false
+	m.rail.Focus(boxSession("s1"))
+	if host.KeyTables().AttachedBack {
+		t.Error("→ focus should keep ← to focus on a remote row too")
 	}
 }
 
