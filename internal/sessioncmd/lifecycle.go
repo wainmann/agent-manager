@@ -127,6 +127,15 @@ func (l *Lifecycle) paneSize(requested PaneSize) (PaneSize, error) {
 	return PaneSize{Width: width, Height: height}, err
 }
 
+// createPane installs the server-wide bindings from the stored settings,
+// which another process may have changed since this one read them.
+func (l *Lifecycle) createPane(sess store.Session, command string, env map[string]string, size PaneSize) error {
+	if err := ApplyBindingSettings(l.runtime.Store, l.runtime.Driver); err != nil {
+		return err
+	}
+	return l.runtime.Driver.Create(sess.ID, sess.Cwd, command, env, size.Width, size.Height)
+}
+
 func (l *Lifecycle) discardWorktree(sess store.Session) {
 	if sess.WorktreeRepo == "" || l.runtime.Git == nil {
 		return
@@ -234,7 +243,7 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 		discard()
 		return LaunchResult{}, err
 	}
-	if err := l.runtime.Driver.Create(sess.ID, sess.Cwd, command, env, size.Width, size.Height); err != nil {
+	if err := l.createPane(sess, command, env, size); err != nil {
 		discard()
 		return LaunchResult{}, err
 	}
@@ -409,7 +418,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 	if err != nil {
 		return RelaunchResult{}, err
 	}
-	if err := l.runtime.Driver.Create(sess.ID, sess.Cwd, command, env, size.Width, size.Height); err != nil {
+	if err := l.createPane(sess, command, env, size); err != nil {
 		return RelaunchResult{}, err
 	}
 	defer func() {
