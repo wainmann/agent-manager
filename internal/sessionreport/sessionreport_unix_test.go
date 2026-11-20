@@ -291,6 +291,16 @@ func TestCopilotLoadsAPluginForTheLaunch(t *testing.T) {
 	}
 }
 
+func TestCopilotFailsWhenThePluginCannotBeWritten(t *testing.T) {
+	target := testTarget(t)
+	blocker := filepath.Join(target.HooksDir, "file")
+	writeFile(t, blocker, "", 0o644)
+	target.HooksDir = filepath.Join(blocker, "hooks")
+	if command, err := Apply("copilot", target, "copilot", map[string]string{}); err == nil || strings.Contains(command, "--plugin-dir") {
+		t.Fatalf("Apply = %q, %v; want an error and no flag", command, err)
+	}
+}
+
 func TestGeminiLogsTelemetryToAFileOfTheManagers(t *testing.T) {
 	isolateGemini(t)
 	target := testTarget(t)

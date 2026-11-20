@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -38,5 +39,16 @@ func TestApplyCopilotWritesConfigAndFlag(t *testing.T) {
 	}
 	if len(env) != 0 {
 		t.Fatalf("env = %v, want untouched", env)
+	}
+}
+
+func TestApplyCopilotFailsWhenTheConfigCannotBeWritten(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command, err := Apply("copilot", "/opt/bin/agent-manager", filepath.Join(blocker, "hooks"), "copilot", map[string]string{})
+	if err == nil || strings.Contains(command, "--additional-mcp-config") {
+		t.Fatalf("Apply = %q, %v; want an error and no flag", command, err)
 	}
 }
