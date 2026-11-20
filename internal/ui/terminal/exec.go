@@ -7,17 +7,33 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/term"
 )
 
 // ExecProcess hands the terminal to cmd for the length of its run.
 //
-// Bubble Tea's program output is wrapped for IME cursor placement, but
-// os/exec only gives a child a TTY when Stdout is the actual *os.File.
+// Bubble Tea's program input and output are wrapped (input by the guard that
+// keeps escape sequences whole, output for IME cursor placement), but os/exec
+// only gives a child a TTY when both ends are the actual *os.File.
 func ExecProcess(cmd *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
+	pinStdin(cmd, os.Stdin, term.IsTerminal(os.Stdin.Fd()))
 	if cmd.Stdout == nil {
 		cmd.Stdout = os.Stdout
 	}
 	return Exec(processCommand{cmd}, fn)
+}
+
+// ResetInput drops input the program read but has not parsed, so a child that
+// takes over the terminal starts from a message boundary. The manager sets it
+// to the active guard; it is a hook so this package stays free of the guard.
+var ResetInput = func() {}
+
+// pinStdin hands the child the terminal only when that is where the manager
+// reads input; a redirected stdin stays unset, so Bubble Tea's /dev/tty wins.
+func pinStdin(cmd *exec.Cmd, stdin *os.File, terminal bool) {
+	if cmd.Stdin == nil && terminal {
+		cmd.Stdin = stdin
+	}
 }
 
 // Exec hands the terminal to c with scheme reports off: Bubble Tea releases
@@ -37,6 +53,11 @@ func Exec(c tea.ExecCommand, fn tea.ExecCallback) tea.Cmd {
 type schemeReportsPaused struct{ tea.ExecCommand }
 
 func (c schemeReportsPaused) Run() error {
+	// Bubble Tea has stopped its reader and released the terminal by the time
+	// Run is called. Drop anything read before that boundary, and again after
+	// the child, which may leave an EOF from its own reads.
+	ResetInput()
+	defer ResetInput()
 	if err := DisableSchemeReports(); err != nil {
 		return err
 	}

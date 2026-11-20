@@ -372,6 +372,7 @@ func run() (resultErr error) {
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
 		tea.WithFilter(programFilter),
+		inputOption(),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err

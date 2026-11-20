@@ -20,11 +20,19 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func TestExecProcessKeepsChildStdoutOnTheTerminal(t *testing.T) {
+func TestExecProcessKeepsChildOnTheTerminal(t *testing.T) {
 	cmd := exec.CommandContext(context.Background(), "sh", "-c", "true")
-	ExecProcess(cmd, nil)
-	if cmd.Stdout != os.Stdout {
-		t.Fatal("interactive child stdout was not pinned to the terminal")
+	pinStdin(cmd, os.Stdin, true)
+	if cmd.Stdin != os.Stdin {
+		t.Fatal("interactive child stdin was not pinned to the terminal")
+	}
+}
+
+func TestPinStdinLeavesARedirectedStreamAlone(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", "true")
+	pinStdin(cmd, os.Stdin, false)
+	if cmd.Stdin != nil {
+		t.Fatal("redirected stdin was replaced with the process stdin")
 	}
 }
 
@@ -234,5 +242,55 @@ func TestExecPausesSchemeReportsAroundChild(t *testing.T) {
 				t.Fatalf("terminal read %q, want %q", read, want)
 			}
 		})
+	}
+}
+
+// quietCommand takes the terminal and does nothing, so the reset boundaries
+// around it can be observed without a real child.
+type quietCommand struct{ run func() }
+
+func (c quietCommand) Run() error {
+	if c.run != nil {
+		c.run()
+	}
+	return nil
+}
+func (quietCommand) SetStdin(io.Reader)  {}
+func (quietCommand) SetStdout(io.Writer) {}
+func (quietCommand) SetStderr(io.Writer) {}
+
+func TestExecResetsInputAroundChild(t *testing.T) {
+	original := ResetInput
+	t.Cleanup(func() { ResetInput = original })
+	calls := 0
+	ResetInput = func() { calls++ }
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open dev null: %v", err)
+	}
+	saved := os.Stdout
+	os.Stdout = devNull
+	t.Cleanup(func() {
+		os.Stdout = saved
+		_ = devNull.Close()
+	})
+	beforeChild := -1
+	err = (schemeReportsPaused{quietCommand{run: func() { beforeChild = calls }}}).Run()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if beforeChild != 1 {
+		t.Fatalf("reset ran %d times before the child, want once", beforeChild)
+	}
+	if calls != 2 {
+		t.Fatalf("reset ran %d times, want before and after the child", calls)
+	}
+}
+
+func TestExecProcessPinsStdout(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", "true")
+	ExecProcess(cmd, nil)
+	if cmd.Stdout != os.Stdout {
+		t.Fatal("ExecProcess did not pin stdout to the terminal")
 	}
 }
