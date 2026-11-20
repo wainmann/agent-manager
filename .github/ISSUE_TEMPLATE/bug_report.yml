@@ -64,6 +64,7 @@ body:
         - Oh My Pi
         - Cursor CLI
         - Kiro CLI
+        - GitHub Copilot CLI
         - Not tool specific
 
   - type: input

@@ -244,19 +244,27 @@ func (tr toolRules) dialogQuestion(lines []string, inBlock []bool) string {
 // the shape a blinking marker's off frame takes under capture-pane -e.
 var blankedMarker = regexp.MustCompile(`^((?:\x1b\[[0-9;:]*m)+) (\x1b\[39m )`)
 
-// Plain is a captured pane without its escape sequences. A tool whose
-// message marker blinks gets the marker written back into the cell its off
-// frame left blank, so a running step reads the same in both frames.
+// Plain is a captured pane without its escape sequences or its scrollbar.
+// A tool whose message marker blinks gets the marker written back into the
+// cell its off frame left blank, so a running step reads the same in both
+// frames.
 func (e *Engine) Plain(tool, pane string) string {
 	tr, ok := e.tools[tool]
-	if !ok || tr.blinkingMarker == "" {
+	if !ok {
 		return ansi.Strip(pane)
 	}
-	lines := strings.Split(pane, "\n")
-	for i, line := range lines {
-		lines[i] = blankedMarker.ReplaceAllString(line, "${1}"+tr.blinkingMarker+"${2}")
+	if tr.blinkingMarker != "" {
+		lines := strings.Split(pane, "\n")
+		for i, line := range lines {
+			lines[i] = blankedMarker.ReplaceAllString(line, "${1}"+tr.blinkingMarker+"${2}")
+		}
+		pane = strings.Join(lines, "\n")
 	}
-	return ansi.Strip(strings.Join(lines, "\n"))
+	plain := ansi.Strip(pane)
+	if tr.scrollbar != nil {
+		plain = tr.scrollbar.ReplaceAllString(plain, "")
+	}
+	return plain
 }
 
 // chromeBlockRows marks each chrome block up to its next blank row. Prompt

@@ -18,7 +18,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-const trackConversationUsage = "usage: agent-manager track-conversation --tool <tool> (--id <id> | --key <json-field>)"
+const trackConversationUsage = "usage: agent-manager track-conversation --tool <tool> (--id <id> | --key <json-field> [--unless <json-field>])"
 
 // A report can arrive before the row it names exists, since a spawn creates
 // the row once the pane is up. The wait stays short because the agent that
@@ -42,8 +42,9 @@ func TrackConversation(configDir string, args []string, stdin io.Reader) error {
 	tool := set.String("tool", "", "the tool the reporting agent runs")
 	id := set.String("id", "", "the conversation id")
 	key := set.String("key", "", "the field of the JSON input that holds the conversation id")
+	unless := set.String("unless", "", "a field of the JSON input that marks a report from a subagent, which is not the conversation the pane shows")
 	spawned := set.Bool("spawned", false, "the CLI may run its agent below the process its launch started, in its process group")
-	if err := set.Parse(args); err != nil || set.NArg() > 0 || *tool == "" || (*id == "") == (*key == "") {
+	if err := set.Parse(args); err != nil || set.NArg() > 0 || *tool == "" || (*id == "") == (*key == "") || (*unless != "" && *key == "") {
 		return errors.New(trackConversationUsage)
 	}
 	var input []byte
@@ -53,6 +54,15 @@ func TrackConversation(configDir string, args []string, stdin io.Reader) error {
 		var err error
 		if input, err = io.ReadAll(stdin); err != nil {
 			return err
+		}
+		if *unless != "" {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(input, &fields); err != nil {
+				return fmt.Errorf("hook input: %w", err)
+			}
+			if _, fromSubagent := fields[*unless]; fromSubagent {
+				return nil
+			}
 		}
 	}
 	row, launchEnv := os.Getenv(hooks.EnvSessionID), os.Getenv(hooks.EnvLaunch)

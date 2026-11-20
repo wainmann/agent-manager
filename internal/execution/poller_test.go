@@ -593,7 +593,7 @@ func TestStaleHookFileFallsBackToPaneRules(t *testing.T) {
 
 func seedRegionHash(t *testing.T, m *harness, sess store.Session, pane string) {
 	t.Helper()
-	region, ok := m.poller.engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+	region, ok := m.poller.engine.ActivityRegion(sess.Tool, m.poller.engine.Plain(sess.Tool, pane))
 	if !ok {
 		t.Fatal("pane should have an activity region")
 	}
@@ -800,11 +800,29 @@ func expireQuietTimer(t *testing.T, m *harness, sess store.Session) {
 
 func turnEndedState(t *testing.T, m *harness, tool, pane string) string {
 	t.Helper()
-	region, ok := m.poller.engine.ActivityRegion(tool, ansi.Strip(pane))
+	region, ok := m.poller.engine.ActivityRegion(tool, m.poller.engine.Plain(tool, pane))
 	if !ok {
 		t.Fatalf("%s pane should have an activity region", tool)
 	}
 	return m.poller.engine.TurnEndedState(tool, region)
+}
+
+// Copilot's scrollbar runs down the last column of every transcript row, so
+// a question it ends a turn on only reads as one once the column is gone.
+func TestCopilotQuestionUnderScrollbarEndsWaiting(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	disableQuietEndGrace(t)
+	data, err := os.ReadFile(filepath.Join("..", "status", "testdata", "copilot", "1.0.114", "question.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pane := string(data)
+	sess := store.Session{ID: "copilot1", Tool: "copilot", Status: status.Working}
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Waiting {
+		t.Fatalf("a settled turn ending on a question = %q, want waiting", got)
+	}
 }
 
 // A cut codex status row hides its timer, so only the shimmer's colours move.
@@ -879,6 +897,7 @@ func TestStuckGraceAcrossBuiltinTools(t *testing.T) {
 		"command-code": " ✧ Thinking… esc to interrupt • 3s\n❯ \n",
 		"cursor":       "  Reply with the single word pong.\n\n ⠘⠆ Working\n\n  → Plan, search, build anything\n\n  Auto\n  ~/project\n",
 		"kiro":         "  › Run the shell command: ls\n◦ Thinking... (esc to cancel)\n────────────────\nDefault · auto · ◔ 1%    ~/project\n›  Kiro is working · 1s · Type to steer · Ctrl+S to queue\n",
+		"copilot":      " ❯ Run the shell command `date`.                    14:20\n\n ~/project [⎇ main]                    Session: 0 AIC used\n────────────────\n❯\n────────────────\n ◉ Working ctrl+c interrupt                    Copilot Fusion → mai-code-2-flash\n",
 	}
 	shimmer := func(pane string, frame int) string {
 		return fmt.Sprintf("\x1b[38;5;%dm", 245+frame) + pane + "\x1b[39m"

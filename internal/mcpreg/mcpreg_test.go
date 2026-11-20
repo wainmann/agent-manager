@@ -31,6 +31,7 @@ func TestStyleResolution(t *testing.T) {
 		{"antigravity", "", "antigravity"},
 		{"cursor", "", "cursor"},
 		{"kiro", "", "kiro"},
+		{"copilot", "", "copilot"},
 		{"pi", "", "none"},
 		{"omp", "", "none"},
 		{"aider", "", "none"},

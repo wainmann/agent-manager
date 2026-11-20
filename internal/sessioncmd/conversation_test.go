@@ -82,6 +82,26 @@ func TestTrackConversationTakesTheIDOrAHookInputField(t *testing.T) {
 	}
 }
 
+// Copilot fires the same hooks for a subagent, whose input names its parent.
+func TestTrackConversationSkipsAReportCarryingTheUnlessField(t *testing.T) {
+	configDir, st := conversationStore(t)
+	createConversationRow(t, st, "abcd1234")
+	runningAs(t, "abcd1234", 0)
+	args := []string{"--tool", "pi", "--key", "sessionId", "--unless", "parentAgentId"}
+	if err := TrackConversation(configDir, args, strings.NewReader(`{"sessionId":"main-conv"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := TrackConversation(configDir, args, strings.NewReader(`{"sessionId":"sub-conv","agentId":"sub-conv","parentAgentId":"main-conv"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedConversation(t, st, "abcd1234"); got != "main-conv" {
+		t.Fatalf("a subagent's report moved the row onto %q", got)
+	}
+	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "x", "--unless", "parentAgentId"}, strings.NewReader("")); err == nil {
+		t.Fatal("--unless without --key was accepted")
+	}
+}
+
 // Every conversation a launched agent reported names its session, also the
 // ones it has since left: an MCP server keeps the id it started with across
 // /clear and /resume. A conversation started by hand has no owner.

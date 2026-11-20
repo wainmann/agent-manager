@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 
-	"github.com/charmbracelet/x/ansi"
 	"hash/fnv"
 )
 
@@ -62,7 +61,7 @@ func (p *Runner) waitingScreen(tool, pane string) string {
 }
 
 func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
-	text := ansi.Strip(pane)
+	text := p.engine.Plain(sess.Tool, pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {

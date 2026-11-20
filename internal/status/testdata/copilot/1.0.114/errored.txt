@@ -1,0 +1,40 @@
+ [Current]  Sessions   Issues   Pull requests   Gists
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                    │
+│  ╭─╮╭─╮                             │  Getting started                                                             │
+│  ╰─╯╰─╯  Copilot v1.0.114 uses AI.  │  Use the tabs above to explore your sessions and pull requests               │
+│  █ ▘▝ █  Check for mistakes.        │  /init — Initialize Copilot instructions for this repository                 │
+│   ▔▔▔▔                              │  /model — Switch models across providers, or use Copilot Fusion              │
+│                                                                                                                    │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Discover Copilot Fusion                                                                                            │
+│ Let Copilot choose the best available model for each task.                                                         │
+│ Click here or enter /model fusion to switch                                                                        │
+│ ctrl+x → m switch for this session                                                                                 │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ● No Copilot instructions found for this repository. Run /init to generate them.
+
+ ❯ hi                                                                                                            14:25
+
+ ✗ Execution failed: Model "nonexistent-model" is not available.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ /private/tmp/cpl/work [⎇ main%]                                        Run on: This computer ctrl+e change environment
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab                  nonexistent-model
