@@ -100,6 +100,12 @@ func TestTrackConversationSkipsAReportCarryingTheUnlessField(t *testing.T) {
 	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "x", "--unless", "parentAgentId"}, strings.NewReader("")); err == nil {
 		t.Fatal("--unless without --key was accepted")
 	}
+	if err := TrackConversation(configDir, args, strings.NewReader("not json")); err == nil || !strings.HasPrefix(err.Error(), "hook input") {
+		t.Fatalf("non-JSON input = %v, want a hook input error", err)
+	}
+	if got := storedConversation(t, st, "abcd1234"); got != "main-conv" {
+		t.Fatalf("non-JSON input moved the row onto %q", got)
+	}
 }
 
 // Every conversation a launched agent reported names its session, also the
