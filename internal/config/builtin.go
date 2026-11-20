@@ -676,7 +676,7 @@ default_status = "idle"
 # thought summary and a dialog's selected option are all indented.
 activity_cutoff = "(?m)^❯"
 # the transcript's scrollbar, in the pane's last column
-scrollbar = "(?m)[ \\t]+┃$"
+scrollbar = "[ \\t]+┃$"
 # The workspace row above the composer counts the session's AI credits,
 # which tick after every turn. The header box, its blinking mascot and the
 # tab bar are frame too.

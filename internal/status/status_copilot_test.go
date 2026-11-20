@@ -111,3 +111,14 @@ func TestCopilotQuotedFooterStaysIdle(t *testing.T) {
 		}
 	}
 }
+
+// Only rows that reach the scrollbar column lose the glyph; a short reply
+// line ending in it keeps it.
+func TestCopilotScrollbarStripsOnlyTheRightEdge(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := " ● Keep this glyph: ┃\n" + strings.Repeat(" ", 30) + "┃\n ● a reply" + strings.Repeat(" ", 20) + "┃"
+	want := " ● Keep this glyph: ┃\n\n ● a reply"
+	if got := engine.Plain("copilot", pane); got != want {
+		t.Fatalf("Plain = %q want %q", got, want)
+	}
+}

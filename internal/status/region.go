@@ -262,9 +262,25 @@ func (e *Engine) Plain(tool, pane string) string {
 	}
 	plain := ansi.Strip(pane)
 	if tr.scrollbar != nil {
-		plain = tr.scrollbar.ReplaceAllString(plain, "")
+		plain = withoutScrollbar(plain, tr.scrollbar)
 	}
 	return plain
+}
+
+// withoutScrollbar strips the scrollbar from the rows that reach the pane's
+// right edge, the widest rows: a shorter row ending in the same glyph is text.
+func withoutScrollbar(plain string, scrollbar *regexp.Regexp) string {
+	lines := strings.Split(plain, "\n")
+	width := 0
+	for _, line := range lines {
+		width = max(width, ansi.StringWidth(line))
+	}
+	for i, line := range lines {
+		if ansi.StringWidth(line) == width {
+			lines[i] = scrollbar.ReplaceAllString(line, "")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // chromeBlockRows marks each chrome block up to its next blank row. Prompt

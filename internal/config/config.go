@@ -110,8 +110,8 @@ type Tool struct {
 	// which a read of the pane fills back in with this glyph.
 	BlinkingMarker string `toml:"blinking_marker"`
 	// Scrollbar matches the scrollbar a full-screen tool draws in the
-	// pane's last column, which a read of the pane removes so it never
-	// joins a reply or a question.
+	// pane's last column, at the end of a row. A read of the pane removes it
+	// from the rows that reach that column, so it never joins a reply.
 	Scrollbar string `toml:"scrollbar"`
 	// ToolResult marks the row a tool call's result is drawn under, which
 	// a copied reply leaves out. Narrower than chrome_line, which every
