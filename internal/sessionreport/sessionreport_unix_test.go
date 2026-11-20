@@ -285,7 +285,7 @@ func TestCopilotLoadsAPluginForTheLaunch(t *testing.T) {
 	}
 	for _, event := range []string{"sessionStart", "userPromptSubmitted"} {
 		handlers := parsed.Hooks[event]
-		if len(handlers) != 1 || handlers[0].Type != "command" || handlers[0].Bash != HookCommand(oddExe, "copilot", "sessionId")+" --unless parentAgentId" {
+		if len(handlers) != 1 || handlers[0].Type != "command" || handlers[0].Bash != HookCommand(oddExe, "copilot", "sessionId")+" --unless agentId" {
 			t.Fatalf("%s = %+v, want our one handler", event, handlers)
 		}
 	}

@@ -82,22 +82,22 @@ func TestTrackConversationTakesTheIDOrAHookInputField(t *testing.T) {
 	}
 }
 
-// Copilot fires the same hooks for a subagent, whose input names its parent.
+// Copilot fires the same hooks for a subagent, whose input carries an agentId.
 func TestTrackConversationSkipsAReportCarryingTheUnlessField(t *testing.T) {
 	configDir, st := conversationStore(t)
 	createConversationRow(t, st, "abcd1234")
 	runningAs(t, "abcd1234", 0)
-	args := []string{"--tool", "pi", "--key", "sessionId", "--unless", "parentAgentId"}
+	args := []string{"--tool", "pi", "--key", "sessionId", "--unless", "agentId"}
 	if err := TrackConversation(configDir, args, strings.NewReader(`{"sessionId":"main-conv"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := TrackConversation(configDir, args, strings.NewReader(`{"sessionId":"sub-conv","agentId":"sub-conv","parentAgentId":"main-conv"}`)); err != nil {
+	if err := TrackConversation(configDir, args, strings.NewReader(`{"sessionId":"sub-conv","agentId":"sub-conv"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := storedConversation(t, st, "abcd1234"); got != "main-conv" {
 		t.Fatalf("a subagent's report moved the row onto %q", got)
 	}
-	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "x", "--unless", "parentAgentId"}, strings.NewReader("")); err == nil {
+	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "x", "--unless", "agentId"}, strings.NewReader("")); err == nil {
 		t.Fatal("--unless without --key was accepted")
 	}
 	if err := TrackConversation(configDir, args, strings.NewReader("not json")); err == nil || !strings.HasPrefix(err.Error(), "hook input") {

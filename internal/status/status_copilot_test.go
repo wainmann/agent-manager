@@ -122,3 +122,16 @@ func TestCopilotScrollbarStripsOnlyTheRightEdge(t *testing.T) {
 		t.Fatalf("Plain = %q want %q", got, want)
 	}
 }
+
+// A prompt the manager sends wraps, and Copilot then leaves one space
+// between its first row and the clock.
+func TestCopilotWrappedEchoReadsItsFirstRow(t *testing.T) {
+	engine := defaultEngine(t)
+	echo, ok := engine.LastUserEcho("copilot", copilotFrame(t, engine, "wrapped-echo"))
+	if !ok || echo != `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user` {
+		t.Fatalf("LastUserEcho = %q %v", echo, ok)
+	}
+	if got, _ := engine.Match("copilot", copilotFrame(t, engine, "wrapped-echo")); got != Idle {
+		t.Fatalf("Match = %q want idle", got)
+	}
+}

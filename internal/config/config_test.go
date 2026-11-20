@@ -604,7 +604,7 @@ func TestCopilotDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool, ok := cfg.Tools["copilot"]
-	if !ok || tool.Command != "copilot" || tool.SessionIDFlag != "--session-id" || tool.PromptFlag != "-i" || tool.SessionReport != "copilot" || tool.MCP != "" {
+	if !ok || tool.Command != "copilot" || tool.SessionIDFlag != "--session-id" || tool.PromptFlag != "-i" || tool.SessionReport != "copilot" || tool.MCP != "" || tool.MinimumVersion != "1.0.51" {
 		t.Fatalf("copilot defaults = %+v", tool)
 	}
 	if tool.ResumeByIDCommand != "copilot --resume {id}" || tool.ResumePickerCommand != "copilot --resume" || tool.ReviveCommand != "copilot --continue" {

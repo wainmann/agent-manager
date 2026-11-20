@@ -171,8 +171,9 @@ func withCopilotPlugin(exe, hooksDir, command string) (string, error) {
 	if err := atomicfile.WriteIfChanged(filepath.Join(dir, "plugin.json"), manifest, 0o644); err != nil {
 		return "", err
 	}
-	// A subagent fires the same hooks under its own id, naming its parent.
-	handler := []map[string]any{{"type": "command", "bash": HookCommand(exe, "copilot", "sessionId") + " --unless parentAgentId", "timeoutSec": 10}}
+	// A subagent fires the same hooks under its own id, with an agentId the
+	// main agent's input never carries.
+	handler := []map[string]any{{"type": "command", "bash": HookCommand(exe, "copilot", "sessionId") + " --unless agentId", "timeoutSec": 10}}
 	config, _ := json.MarshalIndent(map[string]any{"version": 1, "hooks": map[string]any{"sessionStart": handler, "userPromptSubmitted": handler}}, "", "  ")
 	if err := atomicfile.WriteIfChanged(filepath.Join(dir, "hooks", "hooks.json"), config, 0o644); err != nil {
 		return "", err
