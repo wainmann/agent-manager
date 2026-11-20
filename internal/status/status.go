@@ -46,6 +46,7 @@ type toolRules struct {
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
+	busyDone       *regexp.Regexp
 	limitLine      *regexp.Regexp
 	messageStart   *regexp.Regexp
 	toolResult     *regexp.Regexp
@@ -90,6 +91,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
+			{tool.BusyDone, &tr.busyDone},
 			{tool.LimitLine, &tr.limitLine},
 			{tool.MessageStart, &tr.messageStart},
 			{tool.ToolResult, &tr.toolResult},
