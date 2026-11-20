@@ -135,3 +135,13 @@ func TestCopilotWrappedEchoReadsItsFirstRow(t *testing.T) {
 		t.Fatalf("Match = %q want idle", got)
 	}
 }
+
+// A table in a reply is indented under its bullet, so its rows stay part of
+// the quote while the header box at the left edge stays frame.
+func TestCopilotReplyTableStaysInTheQuote(t *testing.T) {
+	engine := defaultEngine(t)
+	got, anchored, ok := engine.LastMessage("copilot", copilotFrame(t, engine, "table"))
+	if !ok || !anchored || !strings.Contains(got, "│ Strawberry │ Red    │") || !strings.HasSuffix(got, "These are just a few common examples of colorful fruits.") {
+		t.Fatalf("LastMessage = %q anchored=%v ok=%v", got, anchored, ok)
+	}
+}

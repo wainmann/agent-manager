@@ -682,8 +682,9 @@ activity_cutoff = "(?m)^❯"
 scrollbar = "[ \\t]+┃$"
 # The workspace row above the composer counts the session's AI credits,
 # which tick after every turn. The header box, its blinking mascot and the
-# tab bar are frame too.
-chrome_line = "^\\s*[│─╭╮╰╯├┤]*\\s*$|^\\s*│.*│\\s*$|^ \\S.*\\s(?:Run on: .+|Session: [\\d.]+ AIC used)$|^\\s*\\[?Current\\]?\\s+\\[?Sessions\\]?\\s"
+# tab bar are frame too; the box starts at the left edge, where a table in a
+# reply is indented under its bullet.
+chrome_line = "^\\s*[│─╭╮╰╯├┤]*\\s*$|^│.*│\\s*$|^ \\S.*\\s(?:Run on: .+|Session: [\\d.]+ AIC used)$|^\\s*\\[?Current\\]?\\s+\\[?Sessions\\]?\\s"
 message_start = "^ [●✗$] "
 # a submitted prompt echoes indented, with the time it was sent at the
 # right edge of its first row, one space after the text when the prompt wraps
