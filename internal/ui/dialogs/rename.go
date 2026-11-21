@@ -17,7 +17,6 @@ type Rename struct {
 
 func nameField(name string) textinput.Model {
 	input := textinput.New()
-	input.CharLimit = 60
 	input.Prompt = ""
 	input.Focus()
 	input.SetValue(name)
