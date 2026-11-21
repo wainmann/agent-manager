@@ -324,3 +324,24 @@ func TestSessionKeyMapNamesTheDivider(t *testing.T) {
 		t.Fatal("the default resize key remains after the session binding moved")
 	}
 }
+
+// A connection's agents move among that host's groups, under whatever key
+// move is bound to.
+func TestCatalogNamesTheMoveKeyOnAConnection(t *testing.T) {
+	for key, keys := range map[string]keybind.Table{
+		"m": keybind.DefaultList(),
+		"M": keybind.DefaultList().With(keybind.Move, bindingOf(t, "M")),
+	} {
+		ctx := testContext(84)
+		ctx.ListKeys = keys
+		found := false
+		for _, section := range helpSections(ctx) {
+			for _, row := range section.rows {
+				found = found || section.title == "SSH connection under the cursor" && row == [2]string{key, "move one of its agents to another group there"}
+			}
+		}
+		if !found {
+			t.Errorf("no move row on %s for a connection", key)
+		}
+	}
+}

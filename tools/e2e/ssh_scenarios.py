@@ -5,9 +5,9 @@ A fixture `ssh` first on PATH drops every argument but the remote command and
 runs it with /bin/sh under a second disposable profile, so the manager talks
 to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
-remote row offers: preview, quick send, kill, revive, archive, restore,
-delete, attach, quick spawn and a new terminal. A second connection whose host
-refuses shows as unreachable and is removed. Every process it started is ended by PID.
+remote row offers: preview, quick send, move, kill, revive, archive,
+restore, delete, attach, quick spawn and a new terminal. A second connection
+whose host refuses shows as unreachable and is removed. Every process it started is ended by PID.
 """
 import argparse
 import hashlib
@@ -278,6 +278,18 @@ def confirm(sandbox, name, question, done):
     frame(sandbox, name + '-done', done)
 
 
+def move(sandbox, remote):
+    """m on a remote agent picks among the host's groups, and the host files it there."""
+    select(sandbox, 'grouped-agent', f'{GROUPED_AGENT}  on {CONNECTION}')
+    key(sandbox, 'm')
+    frame(sandbox, 'remote-move', 'Move')
+    key(sandbox, 'Up')
+    key(sandbox, 'Enter')
+    frame(sandbox, 'remote-moved', f'moved {GROUPED_AGENT} to root on {CONNECTION}')
+    sandbox.wait('remote-move-landed', lambda: str(remote.query(f"SELECT group_name FROM sessions WHERE name = '{GROUPED_AGENT}'")),
+                 lambda value: value == "[('',)]")
+
+
 def lifecycle(sandbox, remote, agent_id):
     """Kill, revive, archive and restore, each confirmed, each landing on the host."""
     key(sandbox, 'x')
@@ -442,6 +454,8 @@ def scenario(sandbox, remote, binary):
 
     key(sandbox, 'Escape')
     frame(sandbox, 'quick-closed', f'{REMOTE_AGENT}  on {CONNECTION}', 'Quick prompt mode')
+    move(sandbox, remote)
+    select_remote_agent(sandbox)
     lifecycle(sandbox, remote, agent_id)
     attach(sandbox, remote, agent_id)
     left_at_prompt_head(sandbox, remote, agent_id)

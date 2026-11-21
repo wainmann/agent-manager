@@ -326,6 +326,9 @@ func TestUnknownCommandIsTooOldNotUnreadable(t *testing.T) {
 	if _, err := c.Delete(context.Background(), Ref{Host: "gpu", ID: "a1"}); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
 		t.Fatalf("delete on a host that predates it = %v", err)
 	}
+	if _, err := c.Move(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ops"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("move on a host that predates it = %v", err)
+	}
 	c = newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
 		return []byte("closed terminal a1\n"), nil, nil
 	})

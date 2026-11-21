@@ -301,6 +301,9 @@ func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Le
 	if row.Dead {
 		pairs = append(pairs, [2]string{k(keybind.Revive), "revive"})
 	}
+	if !row.Terminal {
+		pairs = append(pairs, [2]string{k(keybind.Move), "move"})
+	}
 	pairs = append(pairs, m.archiveRestoreLegend(ctx))
 	return Legend{Title: title + " on " + row.Host, Leads: leads, Pairs: boundPairs(pairs)}
 }

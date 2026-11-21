@@ -19,6 +19,7 @@ const (
 	OpArchive
 	OpRestore
 	OpDelete
+	OpMove
 )
 
 // Call is the lifecycle call a rail action makes on a remote session or
@@ -42,7 +43,7 @@ type Call struct {
 // status line words them.
 var Refusals = map[uirail.ActionKind]string{
 	uirail.RenameAction: "rename",
-	uirail.MoveToGroup:  "move",
+	uirail.MoveToGroup:  "moving a group",
 	uirail.Delete:       "deleting a group",
 	uirail.Restart:      "restart",
 	uirail.Fork:         "fork",
@@ -90,6 +91,10 @@ func SessionCall(row Row, kind uirail.ActionKind, hint KeyHint) Call {
 		return Call{Op: OpAttach, Answered: true}
 	case row.Terminal && (kind == uirail.Revive || kind == uirail.Archive || kind == uirail.Restore):
 		return Call{Refusal: "a terminal on " + row.Host + " is not archived or revived" + hint(keybind.Kill, " - %s closes it"), Answered: true}
+	case kind == uirail.MoveToGroup && row.Terminal:
+		return Call{Refusal: uirail.RemoteRefusal("moving or nesting a terminal"), Answered: true}
+	case kind == uirail.MoveToGroup:
+		return Call{Op: OpMove, Answered: true}
 	case (kind == uirail.Kill || kind == uirail.Delete) && row.Terminal:
 		return asking(OpCloseTerminal, false, hint)
 	case kind == uirail.Delete:

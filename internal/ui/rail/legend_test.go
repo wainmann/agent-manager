@@ -84,3 +84,25 @@ func TestRemoteLegendOffersDeleteOnAnAgentOnly(t *testing.T) {
 		t.Fatalf("a remote shell should leave delete to close, got %+v", shell.Pairs)
 	}
 }
+
+func TestRemoteLegendOffersMoveOnAnAgentOnly(t *testing.T) {
+	model := rail.New(nil)
+	remapped, err := keybind.Parse("M")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, keys := range map[string]keybind.Table{
+		"m": keybind.DefaultList(),
+		"M": keybind.DefaultList().With(keybind.Move, keybind.Keys(remapped)),
+	} {
+		ctx := rail.LegendContext{ListKeys: keys}
+		agent := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box"}, false)
+		if !slices.Contains(agent.Pairs, [2]string{key, "move"}) {
+			t.Fatalf("a remote agent should offer move on %s, got %+v", key, agent.Pairs)
+		}
+		shell := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box", Terminal: true}, false)
+		if slices.ContainsFunc(shell.Pairs, func(pair [2]string) bool { return pair[1] == "move" }) {
+			t.Fatalf("a remote shell is neither moved nor nested there, got %+v", shell.Pairs)
+		}
+	}
+}

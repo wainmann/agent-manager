@@ -75,7 +75,7 @@ The local machine can be Linux, macOS or Windows. The remote host must be Linux 
 ## Not in scope
 
 These are refused on a remote row with a message naming the gap:
-- Rename, move, deleting a group, restart and fork.
+- Rename, moving or deleting a group, moving or nesting a terminal, restart and fork.
 - Diff review.
 - The editor.
 - Copying a reply, marking idle, cancelling an after-turn end, reordering.

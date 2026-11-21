@@ -440,9 +440,10 @@ On a connection's rows:
 - `enter` and `A` attach over SSH in this terminal; detaching returns to the manager. A remote pane is never embedded.
 - Quick prompt mode types into a remote agent's pane as you, the way it does on this machine, or starts a new agent on the CLI, model, effort and profile the bar shows when a connection or remote group is selected. `n` starts one there too; the directory and the worktree default are the other machine's unless you set them.
 - `T` opens a terminal there and `g` creates a group there, under the selected one; `x` kills an agent or closes a terminal, `v` revives, `a` and `u` archive and restore. `d` deletes an agent there the way it does here, its worktree included when clean, and asks first; on a terminal it closes it, like `x`.
+- `m` on an agent moves it to another group on the same host: the picker lists that host's groups and its root, never this machine's. It leaves out the archived groups the host refuses, apart from the agent's own and the groups above it, so enter leaves an archived agent where it is. Its terminals go with it.
 - On the connection row itself, `r` edits it and `d` removes it. Removing asks first; its sessions keep running on that host.
 
-Rename, move, deleting a group, restart, fork, review, the editor, copying a reply, reordering, marking idle, cancelling an after-turn end and kill all or revive all are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](ssh-connections.md) for the protocol.
+Rename, moving or deleting a group, moving or nesting a terminal, restart, fork, review, the editor, copying a reply, reordering, marking idle, cancelling an after-turn end and kill all or revive all are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](ssh-connections.md) for the protocol.
 
 ## Status
 

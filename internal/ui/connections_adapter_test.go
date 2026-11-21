@@ -119,8 +119,7 @@ func TestRemoteActionsAlreadyInPlaceDoNothing(t *testing.T) {
 
 func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 	refused := map[uirail.ActionKind]string{
-		uirail.RenameAction: "rename", uirail.MoveToGroup: "move",
-		uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
+		uirail.RenameAction: "rename", uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
 		uirail.OpenEditor: "the editor", uirail.CopyReply: "copy reply", uirail.MarkIdle: "mark idle",
 		uirail.CancelEnd: "cancel end", uirail.KillAll: "kill all",
 		uirail.ReviveAll: "revive all",
@@ -147,6 +146,16 @@ func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "deleting a group isn't available on SSH connections yet" {
 		t.Fatalf("delete on a remote group: status %q", m.errBar.text)
 	}
+	for target, want := range map[uirail.Selection]string{
+		boxRow:           "box is a connection, not a group to move",
+		boxGroup:         "moving a group isn't available on SSH connections yet",
+		boxSession("t1"): "moving or nesting a terminal isn't available on SSH connections yet",
+	} {
+		m.clearErr()
+		if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.MoveToGroup, Target: target}); cmd != nil || moveOpen(m) || m.errBar.text != want {
+			t.Fatalf("move on %+v: status %q, want %q", target, m.errBar.text, want)
+		}
+	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls = %q, want none", calls)
 	}
@@ -171,12 +180,15 @@ func TestOfflineHostRefusesCallsWithItsError(t *testing.T) {
 	state := hostState(m, "box")
 	state.OK, state.Failures, state.Attempted, state.Err = false, 1, time.Now(), "box: unreachable over SSH: connection refused"
 	setHost(m, "box", state)
-	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 {
-		t.Fatal("a call to an offline host went out")
-	}
-	if m.errBar.text != "box: unreachable over SSH: connection refused" {
-		t.Fatalf("status = %q", m.errBar.text)
+	for name, kind := range map[string]uirail.ActionKind{"kill": uirail.Kill, "move": uirail.MoveToGroup} {
+		m.clearErr()
+		_, cmd := m.runRailIntent(uirail.Intent{Kind: kind, Target: boxSession("s1")})
+		if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 || moveOpen(m) {
+			t.Fatalf("%s on an offline host went out or opened a card", name)
+		}
+		if m.errBar.text != "box: unreachable over SSH: connection refused" {
+			t.Fatalf("%s: status = %q", name, m.errBar.text)
+		}
 	}
 }
 

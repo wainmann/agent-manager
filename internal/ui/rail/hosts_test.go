@@ -1,6 +1,7 @@
 package rail
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -233,15 +234,31 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 		t.Errorf("connection menu = %v", got)
 	}
 	session := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"})
-	for _, refused := range []string{"Rename", "Move to group", "Fork", "Review changes", "Open in editor", "Restart"} {
+	for _, refused := range []string{"Rename", "Fork", "Review changes", "Open in editor", "Restart"} {
 		if slices.Contains(session, refused) {
 			t.Errorf("remote session menu offers %s: %v", refused, session)
 		}
 	}
-	if !slices.Contains(session, "Kill") || !slices.Contains(session, "Attach") || !slices.Contains(session, "Delete") {
+	if !slices.Contains(session, "Kill") || !slices.Contains(session, "Attach") || !slices.Contains(session, "Delete") || !slices.Contains(session, "Move to group") {
 		t.Errorf("remote session menu = %v", session)
 	}
-	// The host archives and revives agents only.
+	remapped, err := keybind.Parse("M")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Move remapped to M: the menu names M and M picks it.
+	keys := keybind.DefaultList().With(keybind.Move, keybind.Keys(remapped))
+	far := Selection{Kind: SessionRow, SessionID: "far", Host: "box"}
+	model.openMenu(far, 0, 0, false)
+	ctx := hostsContext(48, 14)
+	ctx.ListKeys = keys
+	if menu := ansi.Strip(strings.Join(renderer{model: model, ctx: ctx, palette: newPalette(ctx.Theme)}.renderMenu(), "\n")); !regexp.MustCompile(`Move to group +M `).MatchString(menu) {
+		t.Errorf("remote session menu with move on M:\n%s", menu)
+	}
+	if decision := model.menuKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")}, KeyContext{ListKeys: keys}); decision.Intent != (Intent{Kind: MoveToGroup, Target: far}) {
+		t.Errorf("M in the remote session menu = %+v", decision.Intent)
+	}
+	// The host archives, revives and moves agents only.
 	if got := labels(Selection{Kind: SessionRow, SessionID: "shell", Group: "ops", Host: "box"}); !slices.Equal(got, []string{"Attach", "Kill"}) {
 		t.Errorf("remote terminal menu = %v, want Attach and Kill", got)
 	}
@@ -249,13 +266,13 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 		t.Errorf("root menu = %v, want New connection", got)
 	}
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "claude", Status: "dead"}}}}})
-	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Revive", "Archive", "Delete"}) {
-		t.Errorf("dead remote session menu = %v, want Revive, Archive and Delete", got)
+	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Move to group", "Revive", "Archive", "Delete"}) {
+		t.Errorf("dead remote session menu = %v, want Move to group, Revive, Archive and Delete", got)
 	}
 	model.SetArchived(true)
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "claude", Status: "dead", Archived: true}}}}})
-	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Restore", "Delete"}) {
-		t.Errorf("archived remote session menu = %v, want Restore and Delete", got)
+	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Move to group", "Restore", "Delete"}) {
+		t.Errorf("archived remote session menu = %v, want Move to group, Restore and Delete", got)
 	}
 }
 

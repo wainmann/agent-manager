@@ -44,6 +44,9 @@ func TestSessionCallAnswersEveryRemoteAction(t *testing.T) {
 			Call{Answered: true, Refusal: "terminal sh has exited on box - x closes it"}},
 		{"a terminal is not archived", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.Archive,
 			Call{Answered: true, Refusal: "a terminal on box is not archived or revived - x closes it"}},
+		{"move picks a group on the host", row, uirail.MoveToGroup, Call{Op: OpMove, Answered: true}},
+		{"a terminal is not moved or nested", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.MoveToGroup,
+			Call{Answered: true, Refusal: "moving or nesting a terminal isn't available on SSH connections yet"}},
 		{"a local action stays local", row, uirail.OpenReview, Call{}},
 	}
 	for _, tc := range cases {

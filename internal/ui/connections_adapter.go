@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
@@ -52,6 +53,9 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		case uirail.Delete:
 			m.confirmRemoveConnection(row.Host)
 			return nil, true
+		case uirail.MoveToGroup:
+			m.reportErr(row.Host + " is a connection, not a group to move")
+			return nil, true
 		}
 	}
 	if intent.Kind == uirail.NewGroup {
@@ -86,6 +90,10 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	}
 	if call.Op == uiconnections.OpAttach {
 		return m.attachRemote(row), true
+	}
+	if call.Op == uiconnections.OpMove {
+		m.openRemoteMove(row)
+		return nil, true
 	}
 	if call.Op == uiconnections.OpNone {
 		return nil, true
@@ -124,6 +132,53 @@ func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call, term
 		remote: &request,
 	})
 	return nil
+}
+
+// openRemoteMove opens the move card on a remote agent with the groups of
+// its own host, since a move never crosses machines. The host refuses an
+// archived group, so the card leaves those out but the agent's own, where
+// enter leaves it in place as it does here.
+func (m *Model) openRemoteMove(row uiconnections.Row) {
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return
+	}
+	host, _ := m.ssh.Host(row.Host)
+	var groups []string
+	archived := map[string]bool{}
+	for _, group := range host.Groups {
+		groups = append(groups, group.Path)
+		archived[group.Path] = group.Archived
+	}
+	hidden := func(path string) bool {
+		return store.EffectivelyArchived(archived, path) && !uirail.InGroupSubtree(row.Group, path)
+	}
+	options, index := spawn.Options(groups, nil, hidden, row.Group)
+	m.gens.dialog++
+	m.push(uidialogs.NewMoveSurface(remoteMoveRoot{moveRoot{m}, row}, uidialogs.MoveSession(row.Ref.ID), spawn.Picker{Groups: options, GroupIndex: index}, m.prefs.glyphMode))
+	m.clearErr()
+}
+
+// remoteMoveRoot is the root as the move card on a remote agent reaches it:
+// the pick goes to the host, and the card closes as it does.
+type remoteMoveRoot struct {
+	moveRoot
+	row uiconnections.Row
+}
+
+func (r remoteMoveRoot) PlaceMove(_ uidialogs.Move, picker *spawn.Picker) tea.Cmd {
+	r.Pop()
+	group := picker.GroupPath()
+	current := r.row.Group
+	if now, ok := r.ssh.Row(uirail.Selection{Kind: uirail.SessionRow, SessionID: r.row.Ref.ID, Host: r.row.Host}); ok {
+		current = now.Group
+	}
+	if group == current {
+		return nil
+	}
+	request := remoteCall(r.row.Host, r.row.Ref, r.row.Name)
+	request.Op, request.Group = uilink.Move, group
+	return r.queueRemote(request)
 }
 
 // queueRemote puts a call on the remote lane, unless the host's last

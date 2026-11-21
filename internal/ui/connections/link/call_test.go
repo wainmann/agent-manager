@@ -19,10 +19,11 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 		{Revive, []string{"revive", "--json", "--", "s1"}},
 		{Archive, []string{"archive", "--json", "--", "s1"}},
 		{Restore, []string{"archive", "--restore", "--json", "--", "s1"}},
+		{Move, []string{"move", "--json", "--", "s1", "ops"}},
 	} {
 		fake := &ssh{}
 		client := listedState(t, fake).Client
-		call := Call{Op: tc.op, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "hello"}
+		call := Call{Op: tc.op, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "hello", Group: "ops"}
 		if _, err := Run(context.Background(), client, nil, call); err != nil {
 			t.Fatalf("%v: %v", tc.op, err)
 		}
