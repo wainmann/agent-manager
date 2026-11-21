@@ -162,14 +162,17 @@ func TestActiveHookNoticesNameTheFailureAndANewOneChangesTheID(t *testing.T) {
 	if len(failed.Body) < 3 || failed.Body[1] != "14:02 session_state notify-state: exit status 1" || failed.Body[len(failed.Body)-1] != src.HooksLog {
 		t.Fatalf("failure body = %#v", failed.Body)
 	}
-	if _, ok := byID["notify-command-not-carried"]; !ok {
-		t.Fatal("the carry-over notice is missing")
-	}
-	var failedCarry Notice
+	var carry, failedCarry Notice
 	for id, notice := range byID {
+		if strings.HasPrefix(id, "notify-command-not-carried-") {
+			carry = notice
+		}
 		if strings.HasPrefix(id, "notify-command-failed-") {
 			failedCarry = notice
 		}
+	}
+	if carry.ID == "" {
+		t.Fatal("the carry-over notice is missing")
 	}
 	if failedCarry.Subtitle != "permission denied" || failedCarry.Body[len(failedCarry.Body)-1] != "permission denied" {
 		t.Fatalf("failed carry-over notice = %+v", failedCarry)
@@ -200,5 +203,29 @@ func TestActiveHookNoticesNameTheFailureAndANewOneChangesTheID(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("a newer failure kept the old notice id")
+	}
+}
+
+func TestActiveShowsANewCarryOverNoticeAfterTheOldOneWasDismissed(t *testing.T) {
+	carryID := func(notices []Notice) string {
+		for _, notice := range notices {
+			if strings.HasPrefix(notice.ID, "notify-command-not-carried-") {
+				return notice.ID
+			}
+		}
+		return ""
+	}
+	src := Sources{Store: true, NotifyNotCarried: "[[hooks.notification]]\ncommand = [\"sh\", \"-c\", \"old\"]"}
+	first := carryID(NewPanel(map[string]bool{}, map[string]bool{}).Active(src))
+	if first == "" {
+		t.Fatal("the carry-over notice is missing")
+	}
+	dismissed := map[string]bool{first: true}
+	if hidden := carryID(NewPanel(dismissed, map[string]bool{}).Active(src)); hidden != "" {
+		t.Fatalf("a dismissed carry-over notice came back as %s", hidden)
+	}
+	src.NotifyNotCarried = "[[hooks.notification]]\ncommand = [\"sh\", \"-c\", \"new\"]"
+	if again := carryID(NewPanel(dismissed, map[string]bool{}).Active(src)); again == "" || again == first {
+		t.Fatalf("a different notify_command raised %q after %q was dismissed", again, first)
 	}
 }

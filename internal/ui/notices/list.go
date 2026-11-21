@@ -203,8 +203,9 @@ func hookNotices(src Sources) []Notice {
 		})
 	}
 	if src.NotifyNotCarried != "" {
+		sum := sha256.Sum256([]byte(src.NotifyNotCarried))
 		notices = append(notices, Notice{
-			ID:       "notify-command-not-carried",
+			ID:       "notify-command-not-carried-" + hex.EncodeToString(sum[:6]),
 			Kind:     KindHeadsUp,
 			Title:    "Your notify command was not carried over",
 			Subtitle: "hooks.toml was already there",
