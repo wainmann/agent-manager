@@ -19,6 +19,8 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 		{Revive, []string{"revive", "--json", "--", "s1"}},
 		{Archive, []string{"archive", "--json", "--", "s1"}},
 		{Restore, []string{"archive", "--restore", "--json", "--", "s1"}},
+		{Rename, []string{"rename-session", "--json", "--", "s1", "hello"}},
+		{RenameGroup, []string{"rename-group", "--json", "--", "api", "hello"}},
 		{Move, []string{"move", "--json", "--", "s1", "ops"}},
 	} {
 		fake := &ssh{}
@@ -97,6 +99,29 @@ func TestADeleteReportsTheHostsNotice(t *testing.T) {
 	state.ApplyCall(root, call, Result{Notice: "worktree kept (has work): /srv/wt/api"}, nil)
 	if want := []string{"deleted api on box; worktree kept (has work): /srv/wt/api"}; !equal(root.errs, want) || len(root.done) != 0 {
 		t.Fatalf("done %q errors %q, want errors %q", root.done, root.errs, want)
+	}
+}
+
+// A rename closes the name field it was typed in once the host took it, and
+// a group's folds here follow it to its new path.
+func TestARenameClosesItsField(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: Rename, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "gateway", ComposerGen: 6}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{}, nil)
+	if !equal(root.renamed, []string{"gateway"}) || len(root.rail) != 0 {
+		t.Fatalf("closed %q, rail %+v; want the field that sent gateway", root.renamed, root.rail)
+	}
+	if want := []string{"renamed api to gateway on box"}; !equal(root.done, want) {
+		t.Fatalf("status = %q, want %q", root.done, want)
+	}
+	root = &recorder{}
+	state.ApplyCall(root, Call{Op: RenameGroup, Host: "box", Name: "apps/web", Text: "frontend", ComposerGen: 7}, Result{}, nil)
+	if !equal(root.renamed, []string{"frontend"}) || !equal(root.done, []string{"renamed group apps/web to apps/frontend on box"}) {
+		t.Fatalf("group rename: closed %q status %q", root.renamed, root.done)
+	}
+	if want := (RailChange{GroupHost: "box", Group: "apps/web", ToGroup: "apps/frontend"}); len(root.rail) != 1 || root.rail[0] != want {
+		t.Fatalf("rail = %+v, want the folds carried %+v", root.rail, want)
 	}
 }
 

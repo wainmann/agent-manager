@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,6 +23,8 @@ const (
 	Restore
 	CreateGroup
 	Delete
+	Rename
+	RenameGroup
 	Move
 )
 
@@ -81,6 +84,10 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 		result.Session, err = client.Archive(ctx, call.Ref, call.Op == Restore)
 	case CreateGroup:
 		_, err = client.CreateGroup(ctx, call.Host, call.Name, call.GroupDir)
+	case Rename:
+		result.Session, err = client.Rename(ctx, call.Ref, call.Text)
+	case RenameGroup:
+		_, err = client.RenameGroup(ctx, call.Host, call.Name, call.Text)
 	case Move:
 		result.Session, err = client.Move(ctx, call.Ref, call.Group)
 	}
@@ -128,6 +135,17 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 	case CreateGroup:
 		root.CloseAsker(call.ComposerGen, GroupFormAsker)
 		root.ReportDone("created group " + call.Name + on)
+	case Rename:
+		root.CloseRename(call.ComposerGen, call.Text)
+		root.ReportDone("renamed " + call.Name + " to " + call.Text + on)
+	case RenameGroup:
+		root.CloseRename(call.ComposerGen, call.Text)
+		renamed := call.Text
+		if parent := uirail.ParentGroup(call.Name); parent != "" {
+			renamed = parent + "/" + call.Text
+		}
+		root.RailConnection(RailChange{GroupHost: call.Host, Group: call.Name, ToGroup: renamed})
+		root.ReportDone("renamed group " + call.Name + " to " + renamed + on)
 	case Move:
 		root.ReportDone("moved " + call.Name + " to " + uiframe.DisplayGroup(call.Group) + on)
 	}

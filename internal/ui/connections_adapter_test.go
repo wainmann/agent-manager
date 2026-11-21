@@ -119,7 +119,7 @@ func TestRemoteActionsAlreadyInPlaceDoNothing(t *testing.T) {
 
 func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 	refused := map[uirail.ActionKind]string{
-		uirail.RenameAction: "rename", uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
+		uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
 		uirail.OpenEditor: "the editor", uirail.CopyReply: "copy reply", uirail.MarkIdle: "mark idle",
 		uirail.CancelEnd: "cancel end", uirail.KillAll: "kill all",
 		uirail.ReviveAll: "revive all",

@@ -130,6 +130,14 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.Move(ctx, ref, "-team/a b")
 			return err
 		}, []string{"move", "--json", "--", "a1b2c3d4", "-team/a b"}},
+		{"rename", func(ctx context.Context, c *Client) error {
+			_, err := c.Rename(ctx, ref, "-new name")
+			return err
+		}, []string{"rename-session", "--json", "--", "a1b2c3d4", "-new name"}},
+		{"rename group", func(ctx context.Context, c *Client) error {
+			_, err := c.RenameGroup(ctx, "gpu", "-team/a", "b c")
+			return err
+		}, []string{"rename-group", "--json", "--", "-team/a", "b c"}},
 		{"create group", func(ctx context.Context, c *Client) error {
 			_, err := c.CreateGroup(ctx, "gpu", "-team/a", "/srv/team")
 			return err
@@ -180,6 +188,8 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	_, err = c.Archive(ctx, bad, true)
 	errs = append(errs, err)
 	_, err = c.Move(ctx, bad, "work")
+	errs = append(errs, err)
+	_, err = c.Rename(ctx, bad, "work")
 	errs = append(errs, err)
 	for i, err := range errs {
 		if err == nil {
@@ -325,6 +335,12 @@ func TestUnknownCommandIsTooOldNotUnreadable(t *testing.T) {
 	}
 	if _, err := c.Delete(context.Background(), Ref{Host: "gpu", ID: "a1"}); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
 		t.Fatalf("delete on a host that predates it = %v", err)
+	}
+	if _, err := c.Rename(context.Background(), Ref{Host: "gpu", ID: "a1"}, "api"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("rename on a host that predates it = %v", err)
+	}
+	if _, err := c.RenameGroup(context.Background(), "gpu", "web", "api"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("rename-group on a host that predates it = %v", err)
 	}
 	if _, err := c.Move(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ops"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
 		t.Fatalf("move on a host that predates it = %v", err)

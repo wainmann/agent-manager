@@ -150,6 +150,18 @@ func (f *fakeSessions) Move(sessionID, targetID, group string) (sessioncmd.Sessi
 	return moved, f.failWith
 }
 
+func (f *fakeSessions) RenameGroup(sessionID, path, name string) (sessioncmd.Group, error) {
+	f.callerID, f.groupPath, f.message = sessionID, path, name
+	return sessioncmd.Group{Path: "renamed"}, f.failWith
+}
+
+func (f *fakeSessions) RenameSession(sessionID, targetID, name string) (sessioncmd.Session, error) {
+	f.callerID, f.targetID, f.message = sessionID, targetID, name
+	renamed := f.session
+	renamed.Name = name
+	return renamed, f.failWith
+}
+
 func (f *fakeSessions) EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error) {
 	f.callerID, f.action = sessionID, action
 	return sessioncmd.AfterTurn{Pending: action, ManagerAwake: true}, f.failWith
@@ -568,8 +580,8 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
-		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "rename-session", "archive-self", "kill-self", "prompts", "env",
+		"groups", "create-group", "delete-group", "rename-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}
 	for _, name := range registered {

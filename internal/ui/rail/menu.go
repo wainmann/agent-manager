@@ -106,38 +106,40 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 // remote host's CLI.
 func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menuItem {
 	group := menuItem{label: "New group", action: NewGroup}
+	rename := []menuItem{{label: "Rename", action: RenameAction}}
 	switch row.kind {
 	case ConnectionRow:
 		return menuSections(append(create, group),
 			[]menuItem{{label: "Edit connection", action: RenameAction}, connection},
 			[]menuItem{{label: "Remove connection", action: Delete, danger: true}})
 	case GroupRow:
-		return append(create, group)
+		return menuSections(append(create, group), rename)
 	}
 	remove := menuItem{label: "Delete", action: Delete, danger: true}
 	var move []menuItem
 	if !row.sess.IsShell {
 		move = []menuItem{{label: "Move to group", action: MoveToGroup}}
 	}
+	manage := append(rename, move...)
 	if row.sess.Archived {
-		return menuSections(move, []menuItem{{label: "Restore", action: Restore}, remove})
+		return menuSections(manage, []menuItem{{label: "Restore", action: Restore}, remove})
 	}
 	kill := menuItem{label: "Kill", action: Kill, danger: true}
 	if row.sess.IsShell {
 		// The host archives, revives and moves agents only.
 		if row.sess.Status == "dead" {
-			return []menuItem{kill}
+			return menuSections(rename, []menuItem{kill})
 		}
-		return menuSections([]menuItem{{label: "Attach", action: Attach}}, []menuItem{kill})
+		return menuSections([]menuItem{{label: "Attach", action: Attach}}, rename, []menuItem{kill})
 	}
 	archive := menuItem{label: "Archive", action: Archive}
 	if row.sess.Status == "dead" {
-		return menuSections(move, []menuItem{{label: "Revive", action: Revive}}, []menuItem{archive, remove})
+		return menuSections(manage, []menuItem{{label: "Revive", action: Revive}}, []menuItem{archive, remove})
 	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: Attach}},
 		[]menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}},
-		move,
+		manage,
 		[]menuItem{archive, kill, remove},
 	)
 }

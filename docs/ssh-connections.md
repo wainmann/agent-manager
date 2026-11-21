@@ -26,8 +26,8 @@ The protocol is the remote host's own CLI, run over SSH as `agent-manager <comma
 | Message an agent | `send --from=<sender> --json -- <id> <text>` |
 | Answer an agent from the quick bar | `type --json -- <id> <text>` |
 | Spawn | `spawn --json ...`, `terminal create --json ...` |
-| Lifecycle | `kill`, `delete`, `revive`, `archive [--restore]`, `move`, `terminal close` |
-| Groups | `create-group`, `delete-group` |
+| Lifecycle | `kill`, `delete`, `revive`, `archive [--restore]`, `move`, `rename-session`, `terminal close` |
+| Groups | `create-group`, `delete-group`, `rename-group` |
 | Attach | `ssh -t <dest>` running `tmux -L agentmgr attach-session -t <session>`, then taking back any review or editor request the host's keys left on its tmux server |
 
 The snapshot envelope carries `version`. A remote that does not know `snapshot`, or answers with an older version, says to update agent-manager on that host. One that answers with a newer version says to update it on this machine.
@@ -38,12 +38,13 @@ Once a connection is saved, every agent on this machine can reach that host thro
 
 An SSH call has no calling session on the remote host. The commands it uses run without one:
 - `kill`, `delete`, `revive`, `archive`, `move`, `create-group` and `delete-group` act as the user would.
+- `rename-session` and `rename-group` rename a row the way the user's rename key does, and are refused from inside a session, which names itself with `rename` through its manager. They write the host's store directly, as `kill` and `move` do.
 - `terminal create` opens a terminal that belongs to no session. `terminal send`, `read` and `close` drive only such terminals. A terminal nested under a session stays that session's.
 - Every SSH call is the same caller there, so the local MCP server tells them apart: it records which session's `create_terminal` opened a remote terminal, and `send_terminal` and `close_terminal` on a `host::id` refuse any other session before calling ssh. A terminal opened with `T` on the connection row has no such record, so only the user drives it. The record goes when the terminal is closed through MCP or its session is deleted.
 - `send --from` names the sender, at most 64 bytes. The delivered message says it came from another of the user's machines and that a reply cannot reach it. Every `--from` sender shares one rate limit per target.
 - `type` submits the user's quick bar prompt in an agent's pane at once, as the local quick bar does. It is refused from inside a session. It carries no envelope and no rate limit, so it sits outside the guardrail the other commands keep: anything that escapes caller detection can type into any agent as the user. Each pane's send holds a lock file beside the tmux socket, so a typed prompt and the host manager's own delivery never interleave. When the host's paste started before the send failed, `type` exits with status 3; that, or a call cut off after agent-manager started there, means the prompt may sit in the pane, so the quick bar drops it rather than type it again, as it does on this machine.
 
-Tasks, file reservations, rename and review still need a calling session.
+Tasks, file reservations, `rename` and review still need a calling session.
 
 ### SSH invocation
 
@@ -75,7 +76,7 @@ The local machine can be Linux, macOS or Windows. The remote host must be Linux 
 ## Not in scope
 
 These are refused on a remote row with a message naming the gap:
-- Rename, moving or deleting a group, moving or nesting a terminal, restart and fork.
+- Moving or deleting a group, moving or nesting a terminal, restart and fork.
 - Diff review.
 - The editor.
 - Copying a reply, marking idle, cancelling an after-turn end, reordering.

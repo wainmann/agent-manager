@@ -80,6 +80,7 @@ type recorder struct {
 	rail     []RailChange
 	answered []bool
 	closed   []Asker
+	renamed  []string
 	cleared  int
 	errs     []string
 	done     []string
@@ -94,6 +95,8 @@ func (r *recorder) RailConnection(change RailChange) { r.rail = append(r.rail, c
 func (r *recorder) AnswerSave(gen uint64, failed bool) { r.answered = append(r.answered, failed) }
 
 func (r *recorder) CloseAsker(gen int, asker Asker) { r.closed = append(r.closed, asker) }
+
+func (r *recorder) CloseRename(gen int, name string) { r.renamed = append(r.renamed, name) }
 
 func (r *recorder) ClearAccepted(composerGen int, draft string, closeAfterSend bool) { r.cleared++ }
 

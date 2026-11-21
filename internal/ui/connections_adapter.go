@@ -62,6 +62,10 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		m.openGroupForm()
 		return nil, true
 	}
+	if intent.Kind == uirail.RenameAction {
+		m.openRemoteRename(row)
+		return nil, true
+	}
 	if intent.Kind == uirail.NewTerminal {
 		group := row.Group
 		return m.queueRemote(newTerminalCall(row.Host, group)), true
@@ -102,6 +106,25 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
 	return m.confirmRemote(request, call, row.Terminals), true
+}
+
+// openRemoteRename types a remote agent's, terminal's or group's new name
+// into its row, as r does here; an offline host refuses first.
+func (m *Model) openRemoteRename(row uiconnections.Row) {
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return
+	}
+	m.gens.dialog++
+	call := remoteCall(row.Host, row.Ref, row.Name)
+	call.Op, call.ComposerGen = uilink.Rename, int(m.gens.dialog)
+	rename := uidialogs.RenameRemote(row.Host, row.Ref.ID, row.Name)
+	if row.Kind == uiconnections.GroupRow {
+		call.Op, call.Name = uilink.RenameGroup, row.Group
+		rename = uidialogs.RenameRemoteGroup(row.Host, row.Group)
+	}
+	m.push(uidialogs.NewRenameSurface(remoteRenameRoot{m, call}, rename))
+	m.clearErr()
 }
 
 // remoteOp is the call a remote row's lifecycle op makes.
@@ -197,12 +220,15 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// remoteRepeat refuses a second enter on a composer whose prompt or spawn
-// is still on its way to the host, as the local lane refuses one.
+// remoteRepeat refuses a second enter on a composer or a name field whose
+// prompt, spawn or rename is still on its way to the host, as the local lane
+// refuses one.
 func (m *Model) remoteRepeat(request uilink.Call) (string, bool) {
 	refusal, guarded := map[uilink.Op]string{
-		uilink.Type:  "this prompt is already being sent",
-		uilink.Spawn: "this spawn is already in progress",
+		uilink.Type:        "this prompt is already being sent",
+		uilink.Spawn:       "this spawn is already in progress",
+		uilink.Rename:      "this rename is already on its way",
+		uilink.RenameGroup: "this rename is already on its way",
 	}[request.Op]
 	if !guarded {
 		return "", false

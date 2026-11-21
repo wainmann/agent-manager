@@ -85,6 +85,16 @@ func TestRemoteLegendOffersDeleteOnAnAgentOnly(t *testing.T) {
 	}
 }
 
+func TestRemoteLegendOffersRenameOnAgentsShellsAndGroups(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}
+	for _, row := range []rail.RemoteRow{{Kind: rail.SessionRow, Host: "box"}, {Kind: rail.SessionRow, Host: "box", Terminal: true}, {Kind: rail.GroupRow, Host: "box"}} {
+		if legend := model.RemoteLegend(ctx, row, false); !slices.Contains(legend.Pairs, [2]string{"r", "rename"}) {
+			t.Fatalf("%s should offer rename, got %+v", legend.Title, legend.Pairs)
+		}
+	}
+}
+
 func TestRemoteLegendOffersMoveOnAnAgentOnly(t *testing.T) {
 	model := rail.New(nil)
 	remapped, err := keybind.Parse("M")

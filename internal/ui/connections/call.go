@@ -42,22 +42,21 @@ type Call struct {
 // Refusals names the rail actions a connection's rows do not offer, as the
 // status line words them.
 var Refusals = map[uirail.ActionKind]string{
-	uirail.RenameAction: "rename",
-	uirail.MoveToGroup:  "moving a group",
-	uirail.Delete:       "deleting a group",
-	uirail.Restart:      "restart",
-	uirail.Fork:         "fork",
-	uirail.OpenReview:   "review",
-	uirail.OpenEditor:   "the editor",
-	uirail.CopyReply:    "copy reply",
-	uirail.MarkIdle:     "mark idle",
-	uirail.CancelEnd:    "cancel end",
-	uirail.KillAll:      "kill all",
-	uirail.ReviveAll:    "revive all",
-	uirail.Kill:         "kill",
-	uirail.Revive:       "revive",
-	uirail.Archive:      "archive",
-	uirail.Restore:      "restore",
+	uirail.MoveToGroup: "moving a group",
+	uirail.Delete:      "deleting a group",
+	uirail.Restart:     "restart",
+	uirail.Fork:        "fork",
+	uirail.OpenReview:  "review",
+	uirail.OpenEditor:  "the editor",
+	uirail.CopyReply:   "copy reply",
+	uirail.MarkIdle:    "mark idle",
+	uirail.CancelEnd:   "cancel end",
+	uirail.KillAll:     "kill all",
+	uirail.ReviveAll:   "revive all",
+	uirail.Kill:        "kill",
+	uirail.Revive:      "revive",
+	uirail.Archive:     "archive",
+	uirail.Restore:     "restore",
 }
 
 var confirm = map[Op]struct {

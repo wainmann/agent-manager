@@ -29,11 +29,13 @@ const (
 	usageRevive        = "revive <session-id> [--json]"
 	usageArchive       = "archive <session-id> [--restore] [--json]"
 	usageMove          = "move <session-id> <group> [--json]"
+	usageRenameSession = `rename-session <session-id> "<name>" [--json]`
 	usageArchiveSelf   = "archive-self [--cancel] [--json]"
 	usageKillSelf      = "kill-self [--cancel] [--json]"
 	usageGroups        = "groups [--json]"
 	usageCreateGroup   = "create-group <path> [--directory <path>] [--json]"
 	usageDeleteGroup   = "delete-group <path> [--json]"
+	usageRenameGroup   = `rename-group <path> "<name>" [--json]`
 )
 
 type sessionCommands interface {
@@ -53,11 +55,13 @@ type sessionCommands interface {
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
 	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
+	RenameSession(sessionID, targetID, name string) (sessioncmd.Session, error)
 	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
 	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
+	RenameGroup(sessionID, path, name string) (sessioncmd.Group, error)
 }
 
 func newSessions(configDir string) sessionCommands {
@@ -113,11 +117,13 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
 			{name: "move", usage: usageMove, about: "file a session under another existing group, the way the move key does; an empty group is the root, and a host::id moves it on that SSH connection", run: bind(func(configDir string) moveLayer { return moveLayer{open(configDir), storedHosts(configDir)} }, runMove)},
+			{name: "rename-session", usage: usageRenameSession, about: "rename an agent or a terminal the way the rename key does, its worktree branch included; only for a caller with no session here, such as a manager on another machine over SSH", run: bind(open, runRenameSession)},
 			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(open, runArchiveSelf)},
 			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(open, runKillSelf)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
 			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(open, runCreateGroup)},
 			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(open, runDeleteGroup)},
+			{name: "rename-group", usage: usageRenameGroup, about: "rename a group where it stands, its subgroups and sessions moving with it, the way the edit card's name does; only for a caller with no session here", run: bind(open, runRenameGroup)},
 		},
 	}
 }
@@ -407,6 +413,20 @@ func moveOnHost(layer moveLayer, ref remote.Ref, group, sessionID string) (sessi
 	return moved, nil
 }
 
+func runRenameSession(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageRenameSession)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 2, 2)
+	if err != nil {
+		return err
+	}
+	renamed, err := sessions.RenameSession(sessionID, operands[0], operands[1])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, renamed, "renamed "+sessioncmd.FormatSession(renamed))
+}
+
 func runArchiveSelf(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	return runEndSelf(out, sessions, args, sessionID, usageArchiveSelf, store.AfterTurnArchive)
 }
@@ -475,4 +495,18 @@ func runDeleteGroup(out io.Writer, sessions sessionCommands, args []string, sess
 		return err
 	}
 	return emit(out, *asJSON, removal, sessioncmd.FormatGroupRemoval(removal))
+}
+
+func runRenameGroup(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageRenameGroup)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 2, 2)
+	if err != nil {
+		return err
+	}
+	renamed, err := sessions.RenameGroup(sessionID, operands[0], operands[1])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, renamed, "renamed group "+operands[0]+" to "+renamed.Path)
 }
