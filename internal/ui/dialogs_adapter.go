@@ -399,7 +399,7 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 			m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
 			m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
 			m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
-			m.queueRail(m.rail.RenameGroup(request.OldGroup, request.NewGroup).Mutations, 0, true)
+			m.queueRail(m.rail.RenameGroup("", request.OldGroup, request.NewGroup).Mutations, 0, true)
 		}
 	} else {
 		m.workspace.sessions = inventory.RenamedSession(request.SessID, stages, request.Name, result.Branch, request.Tool)
@@ -449,7 +449,7 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base, env string
 	m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
 	m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
 	m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
-	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
+	m.queueRail(m.rail.RenameGroup("", old, newPath).Mutations, 0, true)
 }
 
 // openGroupForm opens the New Group card, seeded with the parent picker and

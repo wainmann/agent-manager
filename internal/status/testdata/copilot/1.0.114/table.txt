@@ -1,0 +1,40 @@
+ [Current]  Sessions   Issues   Pull requests   Gists
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                    │
+│  ╭─╮╭─╮                             │  Getting started                                                             │
+│  ╰─╯╰─╯  Copilot v1.0.114 uses AI.  │  Use the tabs above to explore your sessions and pull requests               │
+│  █ ▘▝ █  Check for mistakes.        │  /init — Initialize Copilot instructions for this repository                 │
+│   ▔▔▔▔                              │  /model — Switch models across providers, or use Copilot Fusion              │
+│                                                                                                                    │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Discover MAI Code 2 Flash                                                                                          │
+│ Try a fast model built for responsive coding tasks, 50% off right now.                                             │
+│ Click here or enter /model mai-code-2-flash to switch                                                              │
+│ ctrl+x → m switch for this session                                                                                 │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ● No Copilot instructions found for this repository. Run /init to generate them.
+
+ ! Connected Connectors could not be loaded; existing local and self-hosted MCP servers remain available.
+
+ ❯ Reply with a markdown table of three fruits and their colors, then one sentence after the table. Use no       20:28
+   tools.
+
+ ● ┌────────────┬────────┐
+   │ Fruit      │ Color  │
+   ├────────────┼────────┤
+   │ Banana     │ Yellow │
+   ├────────────┼────────┤
+   │ Strawberry │ Red    │
+   ├────────────┼────────┤
+   │ Blueberry  │ Blue   │
+   └────────────┴────────┘
+
+   These are just a few common examples of colorful fruits.
+
+ /private/tmp/cpl/work [⎇ main%]                                                                 Session: 7.45 AIC used
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab                  Claude Sonnet 5.5

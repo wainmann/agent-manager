@@ -93,6 +93,7 @@ var knownStyles = map[string]bool{
 	"antigravity":  true,
 	"cursor":       true,
 	"kiro":         true,
+	"copilot":      true,
 	StyleNone:      true,
 }
 
@@ -184,6 +185,12 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 			return "", err
 		}
 		return command, nil
+	case "copilot":
+		path := filepath.Join(hooksDir, "mcp-copilot.json")
+		if err := atomicfile.WriteIfChanged(path, copilotConfig(exe), 0o644); err != nil {
+			return "", err
+		}
+		return command + " --additional-mcp-config " + tmux.ShellQuote("@"+path), nil
 	default:
 		return command, nil
 	}
@@ -198,6 +205,22 @@ func claudeConfig(exe string) []byte {
 				"env": map[string]string{
 					hooks.EnvSessionID: "${" + hooks.EnvSessionID + "}",
 				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(config, "", "  ")
+	return data
+}
+
+// Copilot starts a local server with the session's environment, so the
+// server finds its session id there.
+func copilotConfig(exe string) []byte {
+	config := map[string]any{
+		"mcpServers": map[string]any{
+			serverName: map[string]any{
+				"type":    "local",
+				"command": exe,
+				"args":    []string{"mcp"},
 			},
 		},
 	}

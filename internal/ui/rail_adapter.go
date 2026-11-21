@@ -207,9 +207,19 @@ func (m *Model) prepareRailFrame(width, height int) {
 	}
 	rename := uirail.Rename{}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
-		rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID()}
-		if session, ok := m.sessionByID(s.SessionID()); ok {
-			rename.Target.Group = session.Group
+		switch {
+		case s.Group() != "":
+			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: s.Group(), Host: s.Host()}
+		case s.Host() != "":
+			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID(), Host: s.Host()}
+			if row, ok := m.ssh.Row(rename.Target); ok {
+				rename.Target.Group = row.Group
+			}
+		default:
+			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID()}
+			if session, ok := m.sessionByID(s.SessionID()); ok {
+				rename.Target.Group = session.Group
+			}
 		}
 		fieldWidth := width - 4
 		for _, row := range m.rail.Rows() {

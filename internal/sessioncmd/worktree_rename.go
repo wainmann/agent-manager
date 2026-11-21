@@ -1,7 +1,10 @@
 package sessioncmd
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -9,6 +12,29 @@ import (
 type worktreeRenameStore interface {
 	ListSessions(bool) ([]store.Session, error)
 	RenameSessionWorktreeBranch(string, string) error
+}
+
+// ApplyName names a session the way the manager does: its managed branch
+// first, so a name git cannot give it leaves the session as it was, then its
+// row. It starts from the row as stored, not a caller's earlier copy, since
+// another rename or a group rename may have landed since, and returns it
+// renamed. The caller relabels the pane.
+func ApplyName(gitDrv *git.Driver, st *store.Store, id, name string) (store.Session, error) {
+	sess, err := st.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Session{}, fmt.Errorf("session %s: %w", id, store.ErrSessionGone)
+	}
+	if err != nil || name == sess.Name {
+		return sess, err
+	}
+	if err := RenameWorktreeBranch(gitDrv, st, &sess, name); err != nil {
+		return store.Session{}, fmt.Errorf("worktree rename: %w", err)
+	}
+	if err := st.RenameSession(id, name); err != nil {
+		return store.Session{}, err
+	}
+	sess.Name = name
+	return sess, nil
 }
 
 // RenameWorktreeBranch keeps a managed branch aligned with its

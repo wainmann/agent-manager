@@ -47,6 +47,7 @@ var builtinKeyModes = map[string]struct {
 	"muse":         {legacyKeys, "not verified: not installed"},
 	"omp":          {legacyKeys, "not verified: not installed"},
 	"kiro":         {legacyKeys, "not verified: not installed"},
+	"copilot":      {extendedKeys, "Ext 2, Copilot CLI 1.0.114 under tmux 3.8"},
 }
 
 // Shift+Enter and Ctrl+Enter reach a focused CLI as a new line when its pane

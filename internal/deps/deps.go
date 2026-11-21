@@ -62,6 +62,7 @@ var official = map[string]string{
 	"opencode":     unixOpencode(),
 	"cursor-agent": "curl https://cursor.com/install -fsS | bash",
 	"kiro-cli":     "curl -fsSL https://cli.kiro.dev/install | bash",
+	"copilot":      "curl -fsSL https://gh.io/copilot-install | bash",
 	"hermes":       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
 	"pi":           "curl -fsSL https://pi.dev/install.sh | sh",
 }
@@ -83,6 +84,7 @@ var windowsOfficial = map[string]string{
 	"psmux":        "winget install --id marlocarlo.psmux -e",
 	"cursor-agent": "irm 'https://cursor.com/install?win32=true' | iex",
 	"kiro-cli":     "irm 'https://cli.kiro.dev/install.ps1' | iex",
+	"copilot":      "winget install --id GitHub.Copilot -e",
 }
 
 // shown is the one line the setup dialog prints and copies for a recipe

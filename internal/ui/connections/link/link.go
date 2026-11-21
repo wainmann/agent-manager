@@ -42,6 +42,9 @@ type Root interface {
 	// CloseAsker closes the form or card a completed call came from, when
 	// it is still the one that asked.
 	CloseAsker(gen int, asker Asker)
+	// CloseRename closes the name field a completed rename came from, when
+	// it still holds the name that was sent or names a group.
+	CloseRename(gen int, name string)
 	// ClearAccepted clears the quick bar a send came from, when it still
 	// holds that draft.
 	ClearAccepted(composerGen int, draft string, closeAfterSend bool)

@@ -335,6 +335,7 @@ func toolLabel(toolName string) string {
 		"omp":          "Oh My Pi",
 		"cursor":       "Cursor CLI",
 		"kiro":         "Kiro CLI",
+		"copilot":      "GitHub Copilot CLI",
 	}
 	if label, known := labels[toolName]; known {
 		return label

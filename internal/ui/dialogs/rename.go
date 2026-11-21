@@ -1,6 +1,8 @@
 package dialogs
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -10,9 +12,12 @@ import (
 // rename on the effect lane and closes it from the fenced completion.
 type Rename struct {
 	sessionID string
-	input     textinput.Model
-	tools     []string
-	toolIndex int
+	// host is the SSH connection a remote row belongs to, and group the path
+	// of a remote group, whose rename keeps its parent.
+	host, group string
+	input       textinput.Model
+	tools       []string
+	toolIndex   int
 }
 
 func nameField(name string) textinput.Model {
@@ -47,7 +52,27 @@ func RenameSession(id, name, tool string, tools []string) Rename {
 	}
 }
 
+// RenameRemote opens a rename of a row on an SSH connection: its name only,
+// since the tools are the other machine's.
+func RenameRemote(host, id, name string) Rename {
+	d := RenameSession(id, name, "", nil)
+	d.host = host
+	return d
+}
+
+// RenameRemoteGroup opens a rename of a group on an SSH connection, typed as
+// the last part of its path, which stays under its parent.
+func RenameRemoteGroup(host, path string) Rename {
+	d := RenameRemote(host, "", path[strings.LastIndex(path, "/")+1:])
+	d.group = path
+	return d
+}
+
 func (d Rename) SessionID() string { return d.sessionID }
+
+func (d Rename) Host() string { return d.host }
+
+func (d Rename) Group() string { return d.group }
 
 func (d Rename) Name() string { return cleanName(d.input.Value()) }
 
@@ -134,6 +159,9 @@ func (d *Rename) submit() RenameKey {
 }
 
 func (d Rename) Hints() [][2]string {
+	if d.group != "" {
+		return [][2]string{{"↵", "save; its subgroups and sessions move with it"}, {"esc", "cancel"}}
+	}
 	if tool := d.Tool(); tool != "" {
 		return [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 	}

@@ -254,6 +254,53 @@ func TestCodexAddsHooksForTheLaunchOnly(t *testing.T) {
 	}
 }
 
+func TestCopilotLoadsAPluginForTheLaunch(t *testing.T) {
+	target := testTarget(t)
+	command, err := Apply("copilot", target, "copilot --resume abc", map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(target.HooksDir, "agent-manager-copilot")
+	if want := "copilot --resume abc --plugin-dir " + tmux.ShellQuote(dir); command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+	var manifest struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "plugin.json"))), &manifest); err != nil || manifest.Name != "agent-manager" {
+		t.Fatalf("plugin.json = %+v %v", manifest, err)
+	}
+	var parsed struct {
+		Version int `json:"version"`
+		Hooks   map[string][]struct {
+			Type string `json:"type"`
+			Bash string `json:"bash"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "hooks", "hooks.json"))), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Version != 1 || len(parsed.Hooks) != 2 {
+		t.Fatalf("hooks.json = %+v", parsed)
+	}
+	for _, event := range []string{"sessionStart", "userPromptSubmitted"} {
+		handlers := parsed.Hooks[event]
+		if len(handlers) != 1 || handlers[0].Type != "command" || handlers[0].Bash != HookCommand(oddExe, "copilot", "sessionId")+" --unless agentId" {
+			t.Fatalf("%s = %+v, want our one handler", event, handlers)
+		}
+	}
+}
+
+func TestCopilotFailsWhenThePluginCannotBeWritten(t *testing.T) {
+	target := testTarget(t)
+	blocker := filepath.Join(target.HooksDir, "file")
+	writeFile(t, blocker, "", 0o644)
+	target.HooksDir = filepath.Join(blocker, "hooks")
+	if command, err := Apply("copilot", target, "copilot", map[string]string{}); err == nil || strings.Contains(command, "--plugin-dir") {
+		t.Fatalf("Apply = %q, %v; want an error and no flag", command, err)
+	}
+}
+
 func TestGeminiLogsTelemetryToAFileOfTheManagers(t *testing.T) {
 	isolateGemini(t)
 	target := testTarget(t)

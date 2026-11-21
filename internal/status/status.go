@@ -55,6 +55,7 @@ type toolRules struct {
 	dialogFooter   *regexp.Regexp
 	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
+	scrollbar      *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
 	composerPlaceholder string
@@ -99,6 +100,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.DialogFooter, &tr.dialogFooter},
 			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},
+			{tool.Scrollbar, &tr.scrollbar},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {

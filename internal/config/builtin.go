@@ -655,4 +655,53 @@ rules = [
   { state = "waiting", pattern = "(?m)^ /sessions[ \\t]*\\n(?:[^\\n]*\\n)*? ↑↓ to navigate · ↵ to select · ctrl\\+p to preview · \\+ to view all controls[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
   { state = "working", pattern = "(?m)^›[ \\t]+Kiro is working · [^\\n]*(?:\\n(?:[^›\\n][^\\n]*)?)*\\z" },
 ]
+
+[tools.copilot]
+command = "copilot"
+# 1.0.51 is the first release whose --session-id starts a new session under
+# the id it is given.
+minimum_version = "1.0.51"
+# a plugin of the manager's own reports each conversation at its next prompt
+session_report = "copilot"
+session_id_flag = "--session-id"
+resume_by_id_command = "copilot --resume {id}"
+resume_picker_command = "copilot --resume"
+revive_command = "copilot --continue"
+prompt_flag = "-i"
+# ACP lists the models a plan offers, each with its reasoning levels. A plan
+# with only Copilot Fusion (Copilot Free) lists none.
+catalog = "acp"
+catalog_command = "copilot --acp"
+model_args = "--model {model}"
+effort_args = "--reasoning-effort {effort}"
+default_status = "idle"
+# The composer is the only "❯" row at column zero: an echoed prompt, a
+# thought summary and a dialog's selected option are all indented.
+activity_cutoff = "(?m)^❯"
+# the transcript's scrollbar, in the pane's last column
+scrollbar = "[ \\t]+┃$"
+# The workspace row above the composer counts the session's AI credits,
+# which tick after every turn. The header box, its blinking mascot and the
+# tab bar are frame too; the box starts at the left edge, where a table in a
+# reply is indented under its bullet.
+chrome_line = "^\\s*[│─╭╮╰╯├┤]*\\s*$|^│.*│\\s*$|^ \\S.*\\s(?:Run on: .+|Session: [\\d.]+ AIC used)$|^\\s*\\[?Current\\]?\\s+\\[?Sessions\\]?\\s"
+message_start = "^ [●✗$] "
+# a submitted prompt echoes indented, with the time it was sent at the
+# right edge of its first row, one space after the text when the prompt wraps
+user_echo = "^ ❯ (.*?)\\s+\\d{1,2}:\\d{2}$"
+# the trust prompt and the permission asks replace the composer with a box
+dialog_question = "(?m)^│ ((?:Do you want|Do you trust)[^?\\n]*\\?)"
+rules = [
+  # the trust prompt and every permission ask draw this footer as the last
+  # row of a box that replaces the composer
+  { state = "waiting", pattern = "(?m)^│ ↑/↓ to navigate · enter to select · esc to cancel[ \\t]*│[ \\t]*\\n╰─+╯[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  # the ask_user form replaces the composer, its own input indented
+  { state = "waiting", pattern = "(?m)^ Copilot needs information\\.[ \\t]*(?:\\n(?:[^❯\\n][^\\n]*)?)*\\z" },
+  # the session picker that --resume opens
+  { state = "waiting", pattern = "(?m)^ / search · ↑/↓ navigate\\b" },
+  # the footer under the composer while a turn runs, its spinner first
+  { state = "working", pattern = "(?m)^ \\S Working\\b[^\\n]*(?:\\n[ \\t]*)*\\z" },
+  # a failed turn leaves its "✗" row as the last thing above the composer
+  { state = "errored", pattern = "(?m)^ ✗ [^\\n]*(?:\\n   \\S[^\\n]*)*(?:\\n[ \\t]*)*\\n \\S[^\\n]*\\n─{8,}[ \\t]*\\n❯[^\\n]*(?:\\n[^─\\n][^\\n]*)*\\n─{8,}[ \\t]*\\n[^\\n]*(?:\\n[ \\t]*)*\\z" },
+]
 `

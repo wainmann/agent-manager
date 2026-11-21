@@ -1,0 +1,40 @@
+ [Current]  Sessions   Issues   Pull requests   Gists
+
+                                                                                                                       ┃
+ ❯ Create a file named hello.txt containing the word hi.                                                         14:21 ┃
+                                                                                                                       ┃
+ ❯ Thought for 1s                                                                                                      ┃
+                                                                                                                       ┃
+ ● Edit  Create hello.txt (+1)                                                                                         ┃
+                                                                                                                       ┃
+ ● Created  hello.txt  containing  hi .                                                                                ┃
+                                                                                                                       ┃
+ ❯ Ask me which color I like, as a single question, and wait for my answer. Do not use any tools.                14:21 ┃
+                                                                                                                       ┃
+ ● What is your favorite color?                                                                                        ┃
+                                                                                                                       ┃
+ ❯ Write a 400 word essay about tmux.                                                                            14:22 ┃
+                                                                                                                       ┃
+ ● Operation cancelled by user                                                                                         ┃
+                                                                                                                       ┃
+ ❯ Write three short paragraphs about terminal multiplexers.                                                     14:22 ┃
+                                                                                                                       ┃
+ ● Terminal multiplexers let users manage several terminal sessions inside one terminal window. Tools such as tmux,    ┃
+   GNU Screen, and Zellij provide panes, tabs or windows, and session controls that help organize work. They are       ┃
+   especially useful when a developer is compiling code, monitoring logs, editing files, and running servers           ┃
+   simultaneously.                                                                                                     ┃
+                                                                                                                       ┃
+   One major advantage is session persistence. A multiplexer keeps processes running when the connection to a remote   ┃
+   server is interrupted or when a local terminal is closed. Users can later reconnect and resume the same working     ┃
+   environment rather than restarting jobs and recreating layouts. This capability makes terminal multiplexers         ┃
+   valuable for remote administration and long-running tasks.                                                          ┃
+                                                                                                                       ┃
+   Terminal multiplexers are also highly configurable. Keyboard shortcuts can create panes, switch sessions, copy      ┃
+   text, and control layouts, while configuration files support custom themes and workflows. Although the learning     ┃
+   curve can feel significan                                                                                           ┃
+                                                                                                                       ┃
+ /private/tmp/cpl/work [⎇ main%]                                                                 Session: 0.21 AIC used
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ◉ Working · 1.1 KiB ctrl+c interrupt                                                 Copilot Fusion → mai-code-2-flash

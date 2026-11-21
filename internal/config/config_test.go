@@ -300,7 +300,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("Default: %v", err)
 	}
 	// Tools that accept a chosen id launch with it and resume by it.
-	for _, name := range []string{"claude", "grok", "gemini", "pi"} {
+	for _, name := range []string{"claude", "grok", "gemini", "pi", "copilot"} {
 		tool := cfg.Tools[name]
 		if tool.SessionIDFlag != "--session-id" {
 			t.Fatalf("%s session_id_flag = %q want --session-id", name, tool.SessionIDFlag)
@@ -338,6 +338,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"omp", "omp --resume"},
 		{"cursor", "cursor-agent ls"},
 		{"kiro", "kiro-cli chat --resume-picker"},
+		{"copilot", "copilot --resume"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
@@ -359,7 +360,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
 		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
 	}
-	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp", "cursor", "kiro"} {
+	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp", "cursor", "kiro", "copilot"} {
 		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
 			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
@@ -594,6 +595,26 @@ func TestCursorDefaults(t *testing.T) {
 	}
 	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" {
 		t.Fatalf("cursor status defaults = %+v", tool)
+	}
+}
+
+func TestCopilotDefaults(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := cfg.Tools["copilot"]
+	if !ok || tool.Command != "copilot" || tool.SessionIDFlag != "--session-id" || tool.PromptFlag != "-i" || tool.SessionReport != "copilot" || tool.MCP != "" || tool.MinimumVersion != "1.0.51" {
+		t.Fatalf("copilot defaults = %+v", tool)
+	}
+	if tool.ResumeByIDCommand != "copilot --resume {id}" || tool.ResumePickerCommand != "copilot --resume" || tool.ReviveCommand != "copilot --continue" {
+		t.Fatalf("copilot revive = %+v", tool)
+	}
+	if tool.SessionStore != "" || tool.ForkCommand != "" || tool.ForkKeys != "" || tool.Catalog != "acp" || tool.CatalogCommand != "copilot --acp" || tool.ModelArgs != "--model {model}" || tool.EffortArgs != "--reasoning-effort {effort}" {
+		t.Fatalf("copilot fork and catalog = %+v", tool)
+	}
+	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" || tool.Scrollbar == "" {
+		t.Fatalf("copilot status defaults = %+v", tool)
 	}
 }
 

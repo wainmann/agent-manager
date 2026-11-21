@@ -2,6 +2,7 @@ package sessioncmd
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
@@ -302,4 +303,65 @@ func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 		t.Fatalf("read status-left of %s: %v: %s", id, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// The user's rename key on another machine renames a group where it stands,
+// and its subgroups and every session filed under it follow, as the local
+// edit card's name change does.
+func TestRenameGroupMovesItsSubtreeWithNoCaller(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, path := range []string{"fleet", "fleet/web", "fleet/web/jobs"} {
+		if _, err := h.sessions.CreateGroup("", path, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", path, err)
+		}
+	}
+	group := "fleet/web/jobs"
+	worker, err := h.sessions.Create("", CreateSessionOptions{Name: "worker", Group: &group})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	renamed, err := h.sessions.RenameGroup("", "fleet/web", " gateway ")
+	if err != nil {
+		t.Fatalf("RenameGroup: %v", err)
+	}
+	if renamed.Path != "fleet/gateway" {
+		t.Fatalf("renamed = %+v", renamed)
+	}
+	groups, err := h.sessions.Groups("")
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	var paths []string
+	for _, g := range groups {
+		paths = append(paths, g.Path)
+	}
+	if !slices.Contains(paths, "fleet/gateway/jobs") || slices.Contains(paths, "fleet/web") || slices.Contains(paths, "fleet/web/jobs") {
+		t.Fatalf("groups after the rename = %v", paths)
+	}
+	if stored, err := h.store.Get(worker.ID); err != nil || stored.Group != "fleet/gateway/jobs" {
+		t.Fatalf("worker after the rename = %+v (%v)", stored, err)
+	}
+	if got := statusLeft(t, h, worker.ID); !strings.Contains(got, "fleet/gateway/jobs") {
+		t.Fatalf("status-left = %q, want the new group", got)
+	}
+}
+
+func TestRenameGroupRefusesACallerAndABadName(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	for _, path := range []string{"fleet", "other"} {
+		if _, err := h.sessions.CreateGroup("", path, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", path, err)
+		}
+	}
+	for _, tc := range []struct{ caller, path, name, want string }{
+		{h.caller.ID, "fleet", "x", "agent-manager"},
+		{"", "fleet", "  ", "group name cannot be empty"},
+		{"", "fleet", "a/b", "group name cannot contain /"},
+		{"", "nosuch", "x", `group "nosuch" does not exist`},
+		{"", "fleet", "other", "group other already exists"},
+	} {
+		if _, err := h.sessions.RenameGroup(tc.caller, tc.path, tc.name); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("RenameGroup(%q, %q, %q) = %v, want %q", tc.caller, tc.path, tc.name, err, tc.want)
+		}
+	}
 }

@@ -71,14 +71,14 @@ type Tool struct {
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse", "antigravity", "cursor", "kiro" or
-	// "none".
+	// "hermes", "command-code", "muse", "antigravity", "cursor", "kiro",
+	// "copilot" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP string `toml:"mcp"`
 	// SessionReport names how the manager learns each conversation the
 	// running agent switches to, so revive resumes the one it was on: the
 	// agent reports it ("claude", "pi", "omp", "opencode", "command-code",
-	// "codex", "gemini"), or the manager reads it from what the CLI keeps
+	// "codex", "gemini", "copilot"), or the manager reads it from what the CLI keeps
 	// ("muse", "grok", "antigravity", "hermes"). "none" keeps the id
 	// captured at launch.
 	SessionReport  string `toml:"session_report"`
@@ -109,6 +109,10 @@ type Tool struct {
 	// still running. Its off frame captures that cell as a styled blank,
 	// which a read of the pane fills back in with this glyph.
 	BlinkingMarker string `toml:"blinking_marker"`
+	// Scrollbar matches the scrollbar a full-screen tool draws in the
+	// pane's last column, at the end of a row. A read of the pane removes it
+	// from the rows that reach that column, so it never joins a reply.
+	Scrollbar string `toml:"scrollbar"`
 	// ToolResult marks the row a tool call's result is drawn under, which
 	// a copied reply leaves out. Narrower than chrome_line, which every
 	// caller drops: the row quote keeps these.
