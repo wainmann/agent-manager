@@ -29,11 +29,16 @@ brew install --cask yoanwai/tap/agent-manager
 
 ## Install script (macOS / Linux)
 
-Download the script, read it, then run it. With `gh` logged in, verify it before it runs. Drop the `gh` line to skip that check.
+Download the script and, with `gh` logged in, verify it. Drop the `gh` line to skip that check.
 
 ```bash
 curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo wainmann/agent-manager &&
+gh attestation verify install.sh --repo wainmann/agent-manager
+```
+
+Read `install.sh`, then run it:
+
+```bash
 sh install.sh
 ```
 
