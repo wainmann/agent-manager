@@ -287,14 +287,14 @@ func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Le
 		})}
 	case GroupRow:
 		return Legend{Title: "Group", Leads: leads, Pairs: boundPairs([][2]string{
-			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"},
+			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Rename), "rename"},
 		})}
 	}
 	title, kill := "Session", "kill"
 	if row.Terminal {
 		title, kill, leads = "Shell", "close", nil
 	}
-	pairs := [][2]string{{k(keybind.Open, keybind.Attach), "attach over SSH"}, {k(keybind.Kill), kill}}
+	pairs := [][2]string{{k(keybind.Open, keybind.Attach), "attach over SSH"}, {k(keybind.Kill), kill}, {k(keybind.Rename), "rename"}}
 	if !row.Terminal {
 		pairs = append(pairs, [2]string{k(keybind.Delete), "delete"})
 	}

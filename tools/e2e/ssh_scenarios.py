@@ -5,7 +5,7 @@ A fixture `ssh` first on PATH drops every argument but the remote command and
 runs it with /bin/sh under a second disposable profile, so the manager talks
 to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
-remote row offers: preview, quick send, kill, revive, archive, restore,
+remote row offers: preview, rename, quick send, kill, revive, archive, restore,
 delete, attach, quick spawn and a new terminal. A second connection whose host
 refuses shows as unreachable and is removed. Every process it started is ended by PID.
 """
@@ -32,6 +32,8 @@ from smoke import Sandbox
 CONNECTION = 'box'
 DOWN = 'down'
 REMOTE_AGENT = 'remote-agent'
+RENAMED_AGENT = 'renamed-agent'
+RENAMED_GROUP = 'frontend'
 REMOTE_GROUP = 'web'
 GROUPED_AGENT = 'api'
 REMOTE_NEW_GROUP = 'ops'
@@ -278,6 +280,26 @@ def confirm(sandbox, name, question, done):
     frame(sandbox, name + '-done', done)
 
 
+def rename(sandbox, remote, agent_id):
+    """r types the new name into the row and the host renames the agent, which goes back to its old name
+    for the steps after, then the group the other agent is filed in."""
+    agent = f"SELECT name FROM sessions WHERE id = '{agent_id}'"
+    grouped = f"SELECT group_name FROM sessions WHERE name = '{GROUPED_AGENT}'"
+    for name, needle, before, after, done, query in (
+            ('remote-rename', f'{REMOTE_AGENT}  on {CONNECTION}', REMOTE_AGENT, RENAMED_AGENT, '', agent),
+            ('remote-rename-back', f'{RENAMED_AGENT}  on {CONNECTION}', RENAMED_AGENT, REMOTE_AGENT, '', agent),
+            ('remote-group-rename', f'{REMOTE_GROUP}  on {CONNECTION}', REMOTE_GROUP, RENAMED_GROUP, 'group ', grouped)):
+        select(sandbox, name, needle)
+        key(sandbox, 'r')
+        frame(sandbox, name + '-field', 'Rename')
+        key(sandbox, 'C-u')
+        sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', after)
+        key(sandbox, 'Enter')
+        frame(sandbox, name + '-done', f'renamed {done}{before} to {after} on {CONNECTION}')
+        sandbox.wait(name + '-stored', lambda query=query: str(remote.query(query)),
+                     lambda value, after=after: value == str([(after,)]))
+
+
 def lifecycle(sandbox, remote, agent_id):
     """Kill, revive, archive and restore, each confirmed, each landing on the host."""
     key(sandbox, 'x')
@@ -424,8 +446,8 @@ def scenario(sandbox, remote, binary):
 
     select_remote_agent(sandbox)
     frame(sandbox, 'remote-preview', READY_MARKER)
-    key(sandbox, 'r')
-    frame(sandbox, 'remote-refusal', "rename isn't available on SSH connections yet")
+    rename(sandbox, remote, agent_id)
+    select_remote_agent(sandbox)
     key(sandbox, 'Space')
     sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', QUICK_TEXT)
     frame(sandbox, 'quick-typed', QUICK_TEXT)

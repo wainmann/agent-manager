@@ -2,7 +2,6 @@ package execution
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 
@@ -10,16 +9,15 @@ import (
 )
 
 // applyPendingRename picks up a name the session's agent left via the
-// rename subcommand: the store row and tmux label update together here,
-// keeping the manager the sole database writer. The file is consumed
-// even when the name is unchanged so it never lingers, and the outcome
-// is left in the result mailbox for the subcommand still waiting on it.
-// A dead tmux session cannot take a label, which is fine; the label is
-// rewritten on revive. A worktree session's branch follows the new name
-// while its live directory stays fixed, and a name git cannot give the
-// branch keeps the session on the one it has: the file is consumed either
-// way, so the reason is reported once rather than on every poll from
-// here on.
+// rename subcommand: the store row and tmux label update together here.
+// The file is consumed even when the name is unchanged so it never
+// lingers, and the outcome is left in the result mailbox for the
+// subcommand still waiting on it. A dead tmux session cannot take a label,
+// which is fine; the label is rewritten on revive. A worktree session's
+// branch follows the new name while its live directory stays fixed, and a
+// name git cannot give the branch keeps the session on the one it has: the
+// file is consumed either way, so the reason is reported once rather than
+// on every poll from here on.
 func (p *Runner) applyPendingRename(sess *store.Session) error {
 	request, name, found, err := p.hooks.ClaimName(sess.ID)
 	if err != nil || !found {
@@ -50,17 +48,15 @@ func (p *Runner) applyPendingRename(sess *store.Session) error {
 }
 
 func (p *Runner) renamePending(sess *store.Session, name string) error {
-	if name == "" || name == sess.Name {
+	if name == "" {
 		return nil
 	}
-	if err := sessioncmd.RenameWorktreeBranch(p.gitDrv, p.store, sess, name); err != nil {
-		return fmt.Errorf("worktree rename: %w", err)
-	}
-	if err := p.store.RenameSession(sess.ID, name); err != nil {
+	renamed, err := sessioncmd.ApplyName(p.gitDrv, p.store, sess.ID, name)
+	if err != nil {
 		return err
 	}
-	sess.Name = name
-	_ = p.tmux.SetLabel(sess.ID, sessioncmd.SessionLabel(sess.Group, name))
+	sess.Name, sess.WorktreeBranch = renamed.Name, renamed.WorktreeBranch
+	_ = sessioncmd.Relabel(p.tmux, p.store, sess.ID)
 	return nil
 }
 

@@ -460,14 +460,29 @@ func (m *Model) ForgetGroups(paths []string) Decision {
 	return m.collapsedDecision()
 }
 
-func (m *Model) RenameGroup(oldPath, newPath string) Decision {
-	for path, collapsed := range m.collapsed {
+// RenameGroup carries the folds of a renamed group and its subgroups to the
+// new path; host names the connection a remote group is on.
+func (m *Model) RenameGroup(host, oldPath, newPath string) Decision {
+	renamed := func(path string) (string, bool) {
 		if path != oldPath && !strings.HasPrefix(path, oldPath+"/") {
-			continue
+			return "", false
 		}
-		delete(m.collapsed, path)
-		renamed := newPath + strings.TrimPrefix(path, oldPath)
-		m.collapsed[renamed] = collapsed
+		return newPath + strings.TrimPrefix(path, oldPath), true
+	}
+	if host != "" {
+		for fold, folded := range m.hostFolds {
+			if path, ok := renamed(fold.Path); ok && fold.Host == host {
+				delete(m.hostFolds, fold)
+				m.hostFolds[HostFold{Host: host, Path: path}] = folded
+			}
+		}
+	} else {
+		for path, collapsed := range m.collapsed {
+			if next, ok := renamed(path); ok {
+				delete(m.collapsed, path)
+				m.collapsed[next] = collapsed
+			}
+		}
 	}
 	m.rebuildRows()
 	return m.collapsedDecision()

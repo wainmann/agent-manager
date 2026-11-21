@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 type Group struct {
@@ -204,19 +205,81 @@ func (s *Sessions) Move(sessionID, targetID, group string) (Session, error) {
 	return runtime.sessionInfo(moved, runtime.driver.Exists(moved.ID), moved.ID == sessionID), nil
 }
 
-// relabel skips a dead pane, which takes its label when it is revived.
+// RenameGroup gives a group a new last path part where it stands; its
+// subgroups and every session filed under them follow, as the edit card's
+// name change does.
+func (s *Sessions) RenameGroup(sessionID, path, name string) (Group, error) {
+	if err := refuseRenameCaller(sessionID); err != nil {
+		return Group{}, err
+	}
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "":
+		return Group{}, errors.New("group name cannot be empty")
+	case strings.Contains(name, "/"):
+		return Group{}, errors.New("group name cannot contain /; it names the group where it stands")
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return Group{}, err
+	}
+	defer runtime.Close()
+	groups, err := runtime.store.Groups()
+	if err != nil {
+		return Group{}, err
+	}
+	var target *store.Group
+	for i := range groups {
+		if groups[i].Name == path {
+			target = &groups[i]
+			break
+		}
+	}
+	if target == nil {
+		return Group{}, fmt.Errorf("group %q does not exist; call %s for the existing ones", path, runtime.words.ListGroups)
+	}
+	renamed := name
+	if parent := parentGroup(path); parent != "" {
+		renamed = parent + "/" + name
+	}
+	if err := runtime.store.RenameGroup(path, renamed); err != nil {
+		return Group{}, err
+	}
+	moved, err := runtime.store.SessionsInSubtree(renamed)
+	if err != nil {
+		return Group{}, fmt.Errorf("renamed %s, but could not read its sessions to update their status bars: %w", path, err)
+	}
+	ids := make([]string, len(moved))
+	for i, sess := range moved {
+		ids[i] = sess.ID
+	}
+	if err := runtime.relabel(ids); err != nil {
+		return Group{}, fmt.Errorf("renamed %s, but could not update its status bars: %w", path, err)
+	}
+	target.Name = renamed
+	return runtime.groupRows([]store.Group{*target}, moved)[0], nil
+}
+
 func (r *runtime) relabel(ids []string) error {
+	return Relabel(r.driver, r.store, ids...)
+}
+
+// Relabel writes each live pane's label from its stored row, so a group or a
+// name another writer changed meanwhile is the one shown; a dead pane takes
+// its label when it is revived.
+func Relabel(driver *tmux.Driver, st *store.Store, ids ...string) error {
 	var failed error
 	for _, id := range ids {
-		if !r.driver.Exists(id) {
+		if !driver.Exists(id) {
 			continue
 		}
-		sess, err := r.store.Get(id)
+		sess, err := st.Get(id)
 		if err != nil {
 			failed = errors.Join(failed, err)
 			continue
 		}
-		failed = errors.Join(failed, r.driver.SetLabel(id, SessionLabel(sess.Group, sess.Name)))
+		failed = errors.Join(failed, driver.SetLabel(id, SessionLabel(sess.Group, sess.Name)))
 	}
 	return failed
 }

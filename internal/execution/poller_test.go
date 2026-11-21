@@ -149,6 +149,76 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	}
 }
 
+// A group renamed by another writer after this pass listed the sessions,
+// such as rename-group over SSH, is the group the renamed pane's label shows.
+func TestPendingRenameLabelsThePaneWithTheGroupAsStoredNow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "worker", t.TempDir(), "web")
+	sess := m.sessionRows()[0]
+	if err := m.store.RenameGroup("web", "api"); err != nil {
+		t.Fatalf("rename group: %v", err)
+	}
+	writeName(t, m, sess.ID, "renamed")
+
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	out, err := exec.Command(tmux.Binary, "-L", m.tmux.SocketName(), "show-options", "-v", "-t", "am_"+sess.ID, "status-left").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-left: %v: %s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != sessioncmd.SessionLabel("api", "renamed") {
+		t.Fatalf("status-left = %q, want the group as stored now", got)
+	}
+}
+
+// A rename-session that landed after this pass listed the sessions moved
+// the branch; the agent's own rename starts from the branch that one left.
+func TestPendingRenameStartsFromTheBranchAsStoredNow(t *testing.T) {
+	m := buildModel(t)
+	spawned := createWorktreeSession(t, m, "first", seedRepo(t))
+	if _, err := sessioncmd.ApplyName(m.gitDrv, m.store, spawned.ID, "second"); err != nil {
+		t.Fatalf("rename meanwhile: %v", err)
+	}
+	writeName(t, m, spawned.ID, "third")
+
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil || stored.Name != "third" || stored.WorktreeBranch != "am/third" || sess.WorktreeBranch != "am/third" {
+		t.Fatalf("stored %+v, pass copy branch %q (%v); want both on am/third", stored, sess.WorktreeBranch, err)
+	}
+	if head := gitOutput(t, spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD"); head != "am/third" {
+		t.Fatalf("HEAD = %q, want am/third", head)
+	}
+}
+
+// The agent asking for the name this pass read, after a rename-session gave
+// the row another, still gets that name: the verdict says what is stored.
+func TestPendingRenameToTheNameThePassReadStillApplies(t *testing.T) {
+	m := buildModel(t)
+	spawned := createWorktreeSession(t, m, "first", seedRepo(t))
+	if _, err := sessioncmd.ApplyName(m.gitDrv, m.store, spawned.ID, "second"); err != nil {
+		t.Fatalf("rename meanwhile: %v", err)
+	}
+	request := writeName(t, m, spawned.ID, "first")
+
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil || stored.Name != "first" || stored.WorktreeBranch != "am/first" {
+		t.Fatalf("stored %+v (%v), want first on am/first", stored, err)
+	}
+	verdict, found, err := m.hooks.ReadNameResult(spawned.ID, request)
+	if err != nil || !found || verdict.Refusal != nil || verdict.Applied != "first" {
+		t.Fatalf("result = %+v, %v, %v; want first applied", verdict, found, err)
+	}
+}
+
 func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)

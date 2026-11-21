@@ -257,6 +257,12 @@ func (c *Client) Move(ctx context.Context, ref Ref, group string) (sessioncmd.Se
 	return c.lifecycle(ctx, ref, []string{"move", "--json"}, group)
 }
 
+// Rename names an agent or a terminal on its host, its managed branch
+// included.
+func (c *Client) Rename(ctx context.Context, ref Ref, name string) (sessioncmd.Session, error) {
+	return c.lifecycle(ctx, ref, []string{"rename-session", "--json"}, name)
+}
+
 func (c *Client) lifecycle(ctx context.Context, ref Ref, args []string, operands ...string) (sessioncmd.Session, error) {
 	var session sessioncmd.Session
 	if err := validRef(ref); err != nil {
@@ -283,6 +289,14 @@ func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd
 	var removal sessioncmd.GroupRemoval
 	err := c.decode(ctx, host, callTimeout, &removal, "delete-group", "--json", "--", path)
 	return cleanRemoval(removal), err
+}
+
+// RenameGroup renames the group at path where it stands on host; its
+// subgroups and sessions move with it.
+func (c *Client) RenameGroup(ctx context.Context, host, path, name string) (sessioncmd.Group, error) {
+	var renamed sessioncmd.Group
+	err := c.decode(ctx, host, callTimeout, &renamed, "rename-group", "--json", "--", path, name)
+	return cleanGroup(renamed), err
 }
 
 func validRef(ref Ref) error {

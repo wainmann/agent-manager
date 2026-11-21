@@ -413,6 +413,44 @@ func TestTypeReachesTheLayerWithItsPrompt(t *testing.T) {
 	}
 }
 
+// The SSH client's form, like type's: the id and the name after a bare --,
+// so a name that starts with a dash stays the name.
+func TestRenameSessionReachesTheLayerWithItsName(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runRenameSession(out, fake, []string{"--json", "--", "beef1234", "-new name"}, ""); err != nil {
+		t.Fatalf("rename-session --json -- id name: %v", err)
+	}
+	if fake.callerID != "" || fake.targetID != "beef1234" || fake.message != "-new name" {
+		t.Fatalf("rename-session reached the layer as caller=%q target=%q name=%q", fake.callerID, fake.targetID, fake.message)
+	}
+	var renamed sessioncmd.Session
+	if err := json.Unmarshal(out.Bytes(), &renamed); err != nil || renamed.ID != "beef1234" {
+		t.Fatalf("rename-session --json = %q (%v)", out.String(), err)
+	}
+	if err := runRenameSession(&bytes.Buffer{}, &fakeSessions{}, []string{"beef1234"}, ""); err == nil || err.Error() != "usage: agent-manager "+usageRenameSession {
+		t.Fatalf("rename-session without a name = %v, want the usage", err)
+	}
+}
+
+func TestRenameGroupReachesTheLayerWithItsName(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{}
+	if err := runRenameGroup(out, fake, []string{"--json", "--", "-team/a", "b c"}, ""); err != nil {
+		t.Fatalf("rename-group --json -- path name: %v", err)
+	}
+	if fake.callerID != "" || fake.groupPath != "-team/a" || fake.message != "b c" {
+		t.Fatalf("rename-group reached the layer as caller=%q path=%q name=%q", fake.callerID, fake.groupPath, fake.message)
+	}
+	var renamed sessioncmd.Group
+	if err := json.Unmarshal(out.Bytes(), &renamed); err != nil || renamed.Path != "renamed" {
+		t.Fatalf("rename-group --json = %q (%v)", out.String(), err)
+	}
+	if err := runRenameGroup(&bytes.Buffer{}, &fakeSessions{}, []string{"web"}, ""); err == nil || err.Error() != "usage: agent-manager "+usageRenameGroup {
+		t.Fatalf("rename-group without a name = %v, want the usage", err)
+	}
+}
+
 func TestSnapshotPrintsOnlyJSON(t *testing.T) {
 	fake := &fakeSessions{session: sampleSession()}
 	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")
