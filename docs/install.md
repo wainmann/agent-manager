@@ -19,9 +19,9 @@ The mise, `go install`, and prebuilt-binary routes install the binary alone, so 
 brew install agent-manager
 ```
 
-The homebrew-core formula builds from source and installs tmux with it if missing. Homebrew runs on git, so both dependencies are covered.
+The homebrew-core formula installs a prebuilt bottle where one matches your system, and tmux with it if missing. Homebrew runs on git, so both dependencies are covered.
 
-The cask installs the released binary rather than building it, and pulls in tmux.
+The cask installs the binary from the GitHub release, and pulls in tmux.
 
 ```bash
 brew install --cask yoanwai/tap/agent-manager
