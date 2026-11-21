@@ -297,7 +297,7 @@ func TestMoveIntoItsOwnGroupKeepsTheRowInPlace(t *testing.T) {
 
 func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 	t.Helper()
-	out, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+id, "status-left").CombinedOutput()
+	out, err := exec.Command("tmux", "-u", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+id, "status-left").CombinedOutput()
 	if err != nil {
 		t.Fatalf("read status-left of %s: %v: %s", id, err, out)
 	}
