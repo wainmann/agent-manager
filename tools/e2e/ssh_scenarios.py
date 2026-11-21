@@ -357,8 +357,9 @@ def attach(sandbox, remote, agent_id):
     """Attach runs ssh -t in this terminal; the remote pane fills it until detach."""
     # The remote write can finish before the manager polls its updated roster.
     # Navigating the stale list lets that poll move the selection under attach.
+    # The revived fixture prints its marker after start, so it rests on idle or finished by timing.
     sandbox.wait('remote-restored-row', lambda: capture(sandbox),
-                 lambda value: any(re.search(re.escape(REMOTE_AGENT) + r'\s+idle\b',
+                 lambda value: any(re.search(re.escape(REMOTE_AGENT) + r'\s+(?:idle|finished)\b',
                                              line[:RAIL_WIDTH])
                                    for line in value.splitlines()))
     select_remote_agent(sandbox)
