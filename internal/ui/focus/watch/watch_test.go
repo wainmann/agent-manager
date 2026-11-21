@@ -3,10 +3,10 @@ package watch
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/testenv"
@@ -47,68 +47,24 @@ func TestFocusWatchForwardDistinguishesUnavailableFromAdmitted(t *testing.T) {
 	}
 }
 
-// The pane writes an invisible update before each echo, as Codex, Muse and
-// Oh My Pi do.
 func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
-	driver, id, arrivals, watch := startFocusArrivalWatch(t)
-	echo := `bash -c 'echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.01; printf "<%s>" "$key"; done'`
-	if err := driver.SendText(id, echo); err != nil {
-		t.Fatalf("SendText: %v", err)
-	}
-
-	waitFocusArrival(t, arrivals, "42ready")
-
-	// The echo's frame comes a capture gap after the invisible update's frame
-	// when it is not held and a frame budget after when it is, plus one
-	// capture either way. That capture is timed beside each attempt and taken
-	// off, so the bound sits halfway between the two however slow the host.
-	target := tmux.PaneTarget(id)
-	captureTime := func() time.Duration {
-		start := time.Now()
-		for _, command := range []string{"capture-pane -p -e -t " + target,
-			`display-message -p -t ` + target + ` "` + paneStateFormat + `"`} {
-			if available, err := watch.Forward(command); !available || err != nil {
-				t.Fatalf("timing a capture: available %v, err %v", available, err)
-			}
+	synctest.Test(t, func(t *testing.T) {
+		loop := startCaptureLoop(t)
+		defer loop.close()
+		synctest.Sleep(2 * frameBudget)
+		loop.output("seed")
+		loop.output("<a>")
+		loop.wantFrames(2)
+		time.Sleep(captureGap - time.Nanosecond)
+		synctest.Wait()
+		loop.wantFrames(2)
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		loop.wantFrames(3)
+		if got := loop.frames()[2]; got.preview != "<a>" || got.at.Sub(loop.frames()[1].at) != captureGap {
+			t.Fatalf("echo after invisible update = %+v", got)
 		}
-		return time.Since(start)
-	}
-	fastest := time.Hour
-	for attempt := range 5 {
-		time.Sleep(2 * frameBudget)
-		for len(arrivals) > 0 {
-			<-arrivals
-		}
-		key := string(rune('a' + attempt))
-		token := "<" + key + ">"
-		if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); err != nil {
-			t.Fatalf("send-keys: %v", err)
-		}
-		gap := echoAfterUpdate(t, arrivals, token, time.Now())
-		fastest = min(fastest, gap-captureTime())
-	}
-	if bound := (captureGap + frameBudget) / 2; fastest >= bound {
-		t.Fatalf("echo waited %v after the invisible update's frame, want under %v", fastest, bound)
-	}
-}
-
-// echoAfterUpdate is how long after the previous frame, or after sent when
-// there was none, the frame showing token arrived.
-func echoAfterUpdate(t *testing.T, arrivals <-chan focusArrival, token string, sent time.Time) time.Duration {
-	t.Helper()
-	previous := sent
-	deadline := time.After(5 * time.Second)
-	for {
-		select {
-		case got := <-arrivals:
-			if strings.Contains(got.preview, token) {
-				return got.at.Sub(previous)
-			}
-			previous = got.at
-		case <-deadline:
-			t.Fatalf("no preview containing %q", token)
-		}
-	}
+	})
 }
 
 // A focused pane streams at the frame budget; one only previewed beside the
@@ -282,31 +238,35 @@ func startFocusArrivalWatch(t *testing.T) (*tmux.Driver, string, <-chan focusArr
 func TestFocusWatchEchoesRepeatedInputBeforeTheFrameBudget(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
-			driver, id, arrivals, watch := startFocusArrivalWatch(t)
-			background := ""
-			if stream {
-				background = `while :; do printf "\033[s\033[1;1H%05d\033[u" "$((++i))"; sleep 0.004; done & `
-			}
-			echo := `bash -c '` + background + `echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.025; printf "<%s>" "$key"; done'`
-			if err := driver.SendText(id, echo); err != nil {
-				t.Fatal(err)
-			}
-			waitFocusArrival(t, arrivals, "42ready")
-			var echoes []time.Duration
-			for attempt := range 12 {
-				key := string(rune('a' + attempt))
-				watch.InputSent(id)
-				if available, err := watch.Forward("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); !available || err != nil {
-					t.Fatal("control client did not accept input")
+			synctest.Test(t, func(t *testing.T) {
+				loop := startCaptureLoop(t)
+				defer loop.close()
+				for attempt := range 12 {
+					synctest.Sleep(2 * frameBudget)
+					if stream {
+						loop.output(fmt.Sprintf("stream%d", attempt))
+						synctest.Sleep(captureGap)
+					}
+					loop.input <- struct{}{}
+					synctest.Wait()
+					count := len(loop.frames())
+					loop.output(loop.currentPane())
+					loop.wantFrames(count + 1)
+					unchanged := loop.frames()[count]
+					token := fmt.Sprintf("<%d>", attempt)
+					loop.output(token)
+					time.Sleep(captureGap - time.Nanosecond)
+					synctest.Wait()
+					loop.wantFrames(count + 1)
+					time.Sleep(time.Nanosecond)
+					synctest.Wait()
+					loop.wantFrames(count + 2)
+					got := loop.frames()[count+1]
+					if got.preview != token || got.at.Sub(unchanged.at) != captureGap {
+						t.Fatalf("echo %d = %+v after %+v", attempt, got, unchanged)
+					}
 				}
-				sent := time.Now()
-				got := waitFocusArrival(t, arrivals, "<"+key+">")
-				echoes = append(echoes, got.at.Sub(sent))
-			}
-			slices.Sort(echoes)
-			if median := echoes[len(echoes)/2]; median >= 3*frameBudget/4 {
-				t.Fatalf("median echo took %v, want under %v", median, 3*frameBudget/4)
-			}
+			})
 		})
 	}
 }
@@ -333,55 +293,38 @@ func TestFocusWatchWaitsForPaneOutputAfterInput(t *testing.T) {
 }
 
 func TestFocusWatchBoundsInputCapturesAndRestoresTheStreamBudget(t *testing.T) {
-	driver, id, arrivals, watch := startFocusArrivalWatch(t)
-	if err := driver.SendText(id, "for i in $(seq 1 800); do echo line$i; sleep 0.004; done"); err != nil {
-		t.Fatal(err)
-	}
-	waitFocusArrival(t, arrivals, "line1")
-	inputDone := make(chan struct{})
-	go func() {
-		defer close(inputDone)
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		until := time.After(500 * time.Millisecond)
-		for {
-			select {
-			case <-ticker.C:
-				watch.InputSent(id)
-			case <-until:
-				return
+	synctest.Test(t, func(t *testing.T) {
+		loop := startCaptureLoop(t)
+		defer loop.close()
+		for tick := range 500 {
+			loop.input <- struct{}{}
+			synctest.Wait()
+			loop.output(fmt.Sprintf("line%d", tick))
+			time.Sleep(time.Millisecond)
+			synctest.Wait()
+		}
+		loop.wantFrames(1 + 500/int(captureGap/time.Millisecond))
+		for index := 1; index < len(loop.frames()); index++ {
+			if gap := loop.frames()[index].at.Sub(loop.frames()[index-1].at); gap != captureGap {
+				t.Fatalf("input capture gap = %v, want %v", gap, captureGap)
 			}
 		}
-	}()
-	var stamps []time.Time
-	for collecting := true; collecting; {
-		select {
-		case got := <-arrivals:
-			stamps = append(stamps, got.at)
-		case <-inputDone:
-			collecting = false
+		time.Sleep(2 * frameBudget)
+		synctest.Wait()
+		loop.output("stream")
+		for index := range 5 {
+			previous := loop.frames()[len(loop.frames())-1]
+			loop.output(fmt.Sprintf("next%d", index))
+			count := len(loop.frames())
+			synctest.Sleep(frameBudget - time.Nanosecond)
+			loop.wantFrames(count)
+			synctest.Sleep(time.Nanosecond)
+			loop.wantFrames(count + 1)
+			if gap := loop.frames()[count].at.Sub(previous.at); gap != frameBudget {
+				t.Fatalf("stream capture gap = %v, want %v", gap, frameBudget)
+			}
 		}
-	}
-	if len(stamps) < 10 {
-		t.Fatalf("input produced %d previews, want at least 10", len(stamps))
-	}
-	for i := 1; i < len(stamps); i++ {
-		if gap := stamps[i].Sub(stamps[i-1]); gap < captureGap {
-			t.Fatalf("input captures came %v apart, want at least %v", gap, captureGap)
-		}
-	}
-	time.Sleep(3 * frameBudget)
-	for len(arrivals) > 0 {
-		<-arrivals
-	}
-	previous := waitFocusArrival(t, arrivals, "line")
-	for range 5 {
-		got := waitFocusArrival(t, arrivals, "line")
-		if gap := got.at.Sub(previous.at); gap < frameBudget {
-			t.Fatalf("stream captures after input came %v apart, want at least %v", gap, frameBudget)
-		}
-		previous = got
-	}
+	})
 }
 
 func waitFocusArrival(t *testing.T, arrivals <-chan focusArrival, contains string) focusArrival {

@@ -119,6 +119,11 @@ def frame(sandbox, name, present, absent=''):
                         lambda value: present in value and (not absent or absent not in value))
 
 
+def close_settings(sandbox, step):
+    key(sandbox, 'Escape')
+    frame(sandbox, step, 'A G E N T', 'Settings')
+
+
 def select_setting(sandbox, label, marker):
     def selected():
         match = re.search(r'│\s+' + re.escape(marker) + r' ([^│\n]+)', capture(sandbox))
@@ -212,6 +217,7 @@ def agent_panes(sandbox, command, name='pane'):
                                                '#{pane_id} #{pane_current_command}',
                                                socket='agentmgr', check=False).stdout,
                          lambda value: any(line.split()[-1:] == [command] for line in value.splitlines()))
+    sandbox.process_snapshot(name + '-ready')
     return [line.split()[0] for line in value.splitlines() if line.split()[-1:] == [command]]
 
 
@@ -308,7 +314,7 @@ def scenario(sandbox, binary, glyph_mode='advanced'):
     select_setting(sandbox, 'list density', marker)
     key(sandbox, 'Right')
     sandbox.wait('settings-density-cycled', lambda: capture(sandbox), lambda value: 'comfortable' in value)
-    key(sandbox, 'Escape')
+    close_settings(sandbox, 'settings-closed')
     def density():
         with sqlite3.connect(profile_dir(sandbox) / 'state.db') as conn:
             row = conn.execute("SELECT value FROM settings WHERE key='list_density'").fetchone()
@@ -316,7 +322,7 @@ def scenario(sandbox, binary, glyph_mode='advanced'):
     sandbox.wait('settings-persisted', density, lambda value: value == 'comfortable')
     key(sandbox, 's')
     frame(sandbox, 'settings-reopened', 'comfortable')
-    key(sandbox, 'Escape')
+    close_settings(sandbox, 'settings-reclosed')
     select_row(sandbox, name + 'X', 'forking')
     key(sandbox, 'f')
     frame(sandbox, 'fork-open', name + 'X-fork')

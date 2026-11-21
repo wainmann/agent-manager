@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -24,45 +25,32 @@ func TestRunCancellationClosesResults(t *testing.T) {
 }
 
 func TestBlockedSubscriberDoesNotBlockCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	runner := &Runner{interval: time.Millisecond, poke: make(chan struct{}, 1)}
-	var count atomic.Int32
-	results := runner.run(ctx, func() Result { n := count.Add(1); return Result{Snapshot: Snapshot{Agents: AgentStats{Count: int(n)}}} })
-	deadline := time.Now().Add(time.Second)
-	for count.Load() < 4 {
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("blocked subscriber stopped runtime steps")
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		runner := &Runner{interval: time.Millisecond, poke: make(chan struct{}, 1)}
+		var count atomic.Int32
+		results := runner.run(ctx, func() Result {
+			next := count.Add(1)
+			return Result{Snapshot: Snapshot{Agents: AgentStats{Count: int(next)}}}
+		})
+		synctest.Wait()
+		for want := int32(2); want <= 4; want++ {
+			time.Sleep(time.Millisecond)
+			synctest.Wait()
+			if count.Load() != want {
+				t.Fatalf("blocked subscriber runtime steps = %d, want %d", count.Load(), want)
+			}
 		}
-		time.Sleep(time.Millisecond)
-	}
-	cancel()
-	// The unread newest result survives cancellation. A step that finished
-	// before cancel may still land once that one is read, so at most one
-	// newer result follows before the channel closes.
-	last, received := 0, 0
-	for {
-		select {
-		case <-time.After(time.Second):
-			t.Fatal("runner did not close after cancellation")
-		case result, open := <-results:
-			if !open {
-				if received == 0 {
-					t.Fatal("cancellation dropped the unread result")
-				}
-				return
-			}
-			received++
-			count := result.Snapshot.Agents.Count
-			if count < 3 || count <= last {
-				t.Fatalf("result %d after cancellation: count=%d, previous %d", received, count, last)
-			}
-			if received > 2 {
-				t.Fatal("runner kept stepping after cancellation")
-			}
-			last = count
+		cancel()
+		synctest.Wait()
+		result, open := <-results
+		if !open || result.Snapshot.Agents.Count != 4 {
+			t.Fatalf("cancellation dropped the newest unread result = %+v, open %v", result, open)
 		}
-	}
+		if _, open := <-results; open {
+			t.Fatal("runner kept stepping after cancellation")
+		}
+	})
 }
 
 func TestCancellationWaitsForOutstandingCapture(t *testing.T) {

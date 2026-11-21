@@ -87,11 +87,22 @@ class SandboxTests(unittest.TestCase):
         self.assertTrue(self.sandbox.socket_dir.exists())
 
     def test_failure_capture_continues_without_raising(self):
-        with patch.object(self.sandbox, 'tmux', side_effect=[
-                TimeoutError('capture deadline'), subprocess.CompletedProcess([], 0, 'shell frame', '')]):
+        with patch.object(self.sandbox, 'process_snapshot'), \
+                patch.object(self.sandbox, 'tmux', side_effect=[
+                    TimeoutError('capture deadline'), subprocess.CompletedProcess([], 0, 'shell frame', '')]):
             errors = self.sandbox.failure_frames()
         self.assertEqual(len(errors), 1)
         self.assertEqual((self.sandbox.artifacts / 'agentmgr-last-frame.txt').read_text(), 'shell frame')
+
+    def test_process_snapshot_keeps_server_and_pane_identity(self):
+        panes = subprocess.CompletedProcess([], 0, '123 am_fixture %0 456 sleep 0\n', '')
+        processes = subprocess.CompletedProcess([], 0, '123 1 123 123 S tmux\n', '')
+        with patch.object(self.sandbox, 'tmux', return_value=panes) as tmux, \
+                patch.object(self.sandbox, 'run', return_value=processes):
+            self.sandbox.process_snapshot('spawn')
+        self.assertIn('#{pid}', tmux.call_args.args[-1])
+        self.assertEqual((self.sandbox.artifacts / 'spawn-panes.txt').read_text(), panes.stdout)
+        self.assertEqual((self.sandbox.artifacts / 'spawn-processes.txt').read_text(), processes.stdout)
 
     def test_unknown_socket_rejected_before_dispatch(self):
         with patch.object(self.sandbox, 'run') as run:
