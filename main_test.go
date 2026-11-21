@@ -22,6 +22,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -656,5 +657,20 @@ func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
 	}
 	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"-h"}, t.TempDir(), start); !errors.Is(err, cli.ErrUsageShown) {
 		t.Fatalf("serve -h = %v", err)
+	}
+}
+
+func TestACommandSendsTerminalSequencesToStderr(t *testing.T) {
+	previous := termseq.Out
+	t.Cleanup(func() { termseq.Out = previous })
+	termseq.Out = os.Stdout
+	err := withBackend(t.TempDir(), "kill", func(*sessioncmd.Backend) error {
+		if termseq.Out != os.Stderr {
+			t.Fatal("a command's stdout carries its answer, so the bell fallback belongs on stderr")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

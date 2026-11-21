@@ -13,14 +13,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/remote/value"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
 const (
-	callTimeout   = 15 * time.Second
-	createTimeout = 60 * time.Second
-	maxInFlight   = 4
+	callTimeout = 15 * time.Second
+	// hookCallTimeout is for a call that can fire hooks there. The CLI on
+	// the host waits up to DrainCall for them before it answers.
+	hookCallTimeout = callTimeout + lifecyclehook.DrainCall
+	createTimeout   = 60 * time.Second
+	maxInFlight     = 4
 	// exitSSH is ssh's own failure; the remote command's status passes
 	// through otherwise.
 	exitSSH = 255

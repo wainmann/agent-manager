@@ -25,7 +25,7 @@ type observation struct {
 }
 
 func observe(ctx context.Context, profileDir string, driver *tmux.Driver, output io.Writer) (err error) {
-	local, err := app.OpenLocal(profileDir, driver)
+	local, err := app.OpenLocal(profileDir, "dev", driver)
 	if err != nil {
 		return err
 	}

@@ -232,7 +232,7 @@ func (c *Client) Delete(ctx context.Context, ref Ref) (sessioncmd.Deletion, erro
 	if err := validRef(ref); err != nil {
 		return deleted, err
 	}
-	if err := c.decode(ctx, ref.Host, callTimeout, &deleted, "delete", "--json", "--", ref.ID); err != nil {
+	if err := c.decode(ctx, ref.Host, hookCallTimeout, &deleted, "delete", "--json", "--", ref.ID); err != nil {
 		return deleted, err
 	}
 	session, err := cleanSession(deleted.Session)
@@ -262,7 +262,7 @@ func (c *Client) lifecycle(ctx context.Context, ref Ref, args []string, operands
 	if err := validRef(ref); err != nil {
 		return session, err
 	}
-	if err := c.decode(ctx, ref.Host, callTimeout, &session, append(append(args, "--", ref.ID), operands...)...); err != nil {
+	if err := c.decode(ctx, ref.Host, hookCallTimeout, &session, append(append(args, "--", ref.ID), operands...)...); err != nil {
 		return session, err
 	}
 	session, err := cleanSession(session)
@@ -281,7 +281,7 @@ func (c *Client) CreateGroup(ctx context.Context, host, path, directory string) 
 
 func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd.GroupRemoval, error) {
 	var removal sessioncmd.GroupRemoval
-	err := c.decode(ctx, host, callTimeout, &removal, "delete-group", "--json", "--", path)
+	err := c.decode(ctx, host, hookCallTimeout, &removal, "delete-group", "--json", "--", path)
 	return cleanRemoval(removal), err
 }
 

@@ -80,6 +80,9 @@ type Session struct {
 	// so an agent that loses its session environment cannot reach a terminal
 	// the user or a session opened.
 	OpenedWithoutSession bool
+	// SpawnedBy is the session id that created this row through Sessions.Create.
+	// A picker launch and a fork leave it empty.
+	SpawnedBy string
 }
 
 const (
@@ -154,13 +157,13 @@ func (s *Store) createSession(sess Session, anchorID string, requireActive bool)
 		}
 	}
 	_, err = tx.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, spawned_by, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
 		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt, sess.TmuxSocket,
-		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession), sess.Environment,
+		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession), sess.Environment, sess.SpawnedBy,
 		sess.Group, sess.ParentID,
 	)
 	if err != nil {
@@ -178,7 +181,7 @@ func (s *Store) createSession(sess Session, anchorID string, requireActive bool)
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment, spawned_by
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -201,7 +204,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
 			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment); err != nil {
+			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment, &sess.SpawnedBy); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -229,13 +232,13 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched, afterTurnAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment, spawned_by
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
 		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment)
+		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment, &sess.SpawnedBy)
 	if err != nil {
 		return Session{}, err
 	}
@@ -335,25 +338,24 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 // announcing what it derived from a pane it cannot see. It also reports
 // whether this write is what moved the stored status: managers sharing a
 // server derive the same transition, and only one of them may announce it.
-func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (written, changed bool, err error) {
+func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (written, changed bool, previous string, err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, false, err
+		return false, false, "", err
 	}
 	defer tx.Rollback()
-	var previous string
 	err = tx.QueryRow(`SELECT status FROM sessions WHERE id = ? AND tmux_socket IN ('', ?)`, id, socket).Scan(&previous)
 	if err == sql.ErrNoRows {
-		return false, false, nil
+		return false, false, "", nil
 	}
 	if err != nil {
-		return false, false, err
+		return false, false, "", err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
 		newStatus, encodeTime(time.Now()), id); err != nil {
-		return false, false, err
+		return false, false, "", err
 	}
-	return true, previous != newStatus, tx.Commit()
+	return true, previous != newStatus, previous, tx.Commit()
 }
 
 // Acknowledge atomically marks a session idle and acked if its stored
