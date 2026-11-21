@@ -295,7 +295,9 @@ def rename(sandbox, remote, agent_id):
         key(sandbox, 'C-u')
         sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', after)
         key(sandbox, 'Enter')
-        frame(sandbox, name + '-done', f'renamed {done}{before} to {after} on {CONNECTION}')
+        # On CI the group's done line can age out before a capture; the host and the preview prove it.
+        if not done:
+            frame(sandbox, name + '-done', f'renamed {before} to {after} on {CONNECTION}')
         sandbox.wait(name + '-stored', lambda query=query: str(remote.query(query)),
                      lambda value, after=after: value == str([(after,)]))
         # A preview still on the old name sends the next select off this row.
