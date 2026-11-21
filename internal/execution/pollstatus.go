@@ -76,7 +76,7 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 				return "", err
 			}
 		} else if hookStatus, ok := p.hooks.Read(sess.ID); ok {
-			return p.applyHookStatus(sess, text, hookStatus), nil
+			return p.unseenTurn(sess, p.applyHookStatus(sess, text, hookStatus), hasRegion, regionHash), nil
 		}
 	}
 	newStatus, matched := p.engine.Match(sess.Tool, text)
@@ -126,10 +126,28 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 	} else {
 		delete(p.quietSince, sess.ID)
 	}
+	newStatus = p.unseenTurn(sess, newStatus, hasRegion, regionHash)
 	if newStatus == status.Finished && sess.Acked {
 		newStatus = status.Idle
 	}
 	return newStatus, nil
+}
+
+// unseenTurn reads a session as working when its content region moved
+// while it rested at both ends: a whole turn ran between two polls, so the
+// next poll reports its end as a stored change of its own.
+func (p *Runner) unseenTurn(sess store.Session, verdict string, hasRegion bool, regionHash uint64) string {
+	previous, seen := p.paneHashes[sess.ID]
+	if !hasRegion || !seen || previous == regionHash || !rested(sess.Status) || !rested(verdict) {
+		return verdict
+	}
+	return status.Working
+}
+
+// rested is a status a turn leaves behind. Waiting is left out, because
+// working through a dialog moves the region without a new turn.
+func rested(current string) bool {
+	return current == status.Finished || current == status.Idle
 }
 
 // turnInFlight reports whether a status means a turn is running or resting
