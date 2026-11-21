@@ -459,6 +459,8 @@ func TestPendingFocusDistinguishesIgnoredAndBoundKeys(t *testing.T) {
 				}
 				m.services.listKeys = m.services.listKeys.With(keybind.Help, keybind.Keys(key))
 			}
+			requested := railSelectedSession(m)
+			generation := m.gens.foreground
 			_, pending := m.focusSelected()
 			m.Update(tea.KeyMsg{Type: tea.KeyF12})
 			if bound {
@@ -472,7 +474,7 @@ func TestPendingFocusDistinguishesIgnoredAndBoundKeys(t *testing.T) {
 				t.Fatal("old focus reopened after help was dismissed")
 			}
 			if !bound && !m.focused() {
-				t.Fatal("ignored key cancelled pending focus")
+				t.Fatalf("ignored key cancelled pending focus: err=%q, grounded=%t (requested=%d current=%d quitting=%t), listClear=%t, selected=%q requested=%q, screen=%v", m.errBar.text, (focusProbeHost{m}).Grounded(generation), generation, m.gens.foreground, m.effects.Quitting, m.listClear(), railSelectedSession(m).ID, requested.ID, m.screenID())
 			}
 		})
 	}

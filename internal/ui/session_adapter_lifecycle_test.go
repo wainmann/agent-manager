@@ -1653,13 +1653,14 @@ func TestReviveOfADeletedRowLeavesNoPane(t *testing.T) {
 }
 
 func TestRevivedLaunchTimeSitsInsideStartingGrace(t *testing.T) {
-	created := time.Now().Add(-5 * 24 * time.Hour)
-	revived := store.Session{CreatedAt: created, AgentLaunchedAt: time.Now()}
-	if time.Since(revived.LaunchTime()) >= 30*time.Second {
+	now := time.Unix(1_700_000_000, 0)
+	created := now.Add(-5 * 24 * time.Hour)
+	revived := store.Session{CreatedAt: created, AgentLaunchedAt: now}
+	if now.Sub(revived.LaunchTime()) >= 30*time.Second {
 		t.Fatal("a revive that stamps launch time must still be inside the grace")
 	}
 	stale := store.Session{CreatedAt: created}
-	if time.Since(stale.LaunchTime()) < 30*time.Second {
+	if now.Sub(stale.LaunchTime()) < 30*time.Second {
 		t.Fatal("a 5-day-old row with no relaunch is outside the grace")
 	}
 }

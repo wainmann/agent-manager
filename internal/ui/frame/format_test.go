@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -29,19 +30,21 @@ func TestDisplayGroupNamesTheRoot(t *testing.T) {
 }
 
 func TestRelTimeStepsInFivesUnderAMinute(t *testing.T) {
-	now := time.Now()
-	if got := RelTime(now.Add(-3 * time.Second)); got != "0s" {
-		t.Fatalf("three seconds ago = %q, want 0s", got)
-	}
-	if got := RelSince(now.Add(-90 * time.Second)); got != "1m ago" {
-		t.Fatalf("ninety seconds ago = %q", got)
-	}
-	if got := RelTime(now.Add(-3 * time.Hour)); got != "3h" {
-		t.Fatalf("three hours ago = %q", got)
-	}
-	if got := RelTime(now.Add(-49 * time.Hour)); got != "2d" {
-		t.Fatalf("two days ago = %q", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Now()
+		if got := RelTime(now.Add(-3 * time.Second)); got != "0s" {
+			t.Fatalf("three seconds ago = %q, want 0s", got)
+		}
+		if got := RelSince(now.Add(-90 * time.Second)); got != "1m ago" {
+			t.Fatalf("ninety seconds ago = %q", got)
+		}
+		if got := RelTime(now.Add(-3 * time.Hour)); got != "3h" {
+			t.Fatalf("three hours ago = %q", got)
+		}
+		if got := RelTime(now.Add(-49 * time.Hour)); got != "2d" {
+			t.Fatalf("two days ago = %q", got)
+		}
+	})
 }
 
 func TestHumanAndDiskBytesPickTheirBase(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
@@ -232,8 +233,13 @@ func TestFormMarksAFailedBaseFetch(t *testing.T) {
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
 	next := m.recordBaseFetch(m.refreshSpawnBase()().(uilaunch.BaseFetchedMsg))
 	m.recordBaseFetch(next().(uilaunch.BaseFetchedMsg))
+	dir := m.formSpawnDir()
+	answer := m.ledger.spawner.WorktreeRepos[dir]
+	answer.At = time.Now().Add(-24 * time.Hour)
+	m.ledger.spawner.WorktreeRepos[dir] = answer
+
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
-		t.Fatalf("form should say the base was not refreshed, got %q", view)
+		t.Fatalf("form should say the base was not refreshed, got %q (repo=%+v fetch=%+v)", view, answer, m.ledger.spawner.BaseFetch(dir, m.groupBase(m.selectedGroupPath())))
 	}
 }
 

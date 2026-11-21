@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,27 +274,42 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	m.applyRequestedRefresh(t, msg)
 }
 
-// applyRequestedRefresh runs the pass a fenced listing asks the poller for.
-// Windows advances the monotonic clock once per interrupt, so a listing taken
-// in the tick an effect finished in compares equal to it and is fenced.
+// freshListingAt orders a hand-built listing after every observation it confirms.
+func (m *Model) freshListingAt() time.Time {
+	at := m.workspace.lastListedAt
+	if m.effects.latestObservation.After(at) {
+		at = m.effects.latestObservation
+	}
+	for _, launched := range m.ledger.lifecycle.Launched {
+		if launched.After(at) {
+			at = launched
+		}
+	}
+	for _, marks := range []map[string]uilifecycle.GoneMark{m.ledger.lifecycle.Gone, m.ledger.lifecycle.GoneGroups} {
+		for _, mark := range marks {
+			if mark.At.After(at) {
+				at = mark.At
+			}
+		}
+	}
+	return at.Add(time.Nanosecond)
+}
+
+// applyRequestedRefresh runs a new listing after all effects have drained.
 func (m *Model) applyRequestedRefresh(t *testing.T, msg tea.Msg) {
 	t.Helper()
-	for attempt := 0; ; attempt++ {
-		listing, ok := msg.(refreshMsg)
-		if !ok || !m.listingFenced(listing.listedAt) {
-			return
-		}
-		if attempt == 100 {
-			t.Fatal("listing stayed fenced after 100 passes")
-		}
-		time.Sleep(time.Millisecond)
-		msg = m.refreshCmd()()
-		if failed, ok := msg.(errMsg); ok {
-			t.Fatalf("refresh after a fenced listing: %v", failed.err)
-		}
-		m.applyTestMsg(t, msg)
-		m.drainEffects(t)
+	listing, ok := msg.(refreshMsg)
+	if !ok || !m.listingFenced(listing.listedAt) {
+		return
 	}
+	msg = m.refreshCmd()()
+	if failed, ok := msg.(errMsg); ok {
+		t.Fatalf("refresh after a fenced listing: %v", failed.err)
+	}
+	listing = msg.(refreshMsg)
+	listing.listedAt = m.freshListingAt()
+	m.applyTestMsg(t, listing)
+	m.drainEffects(t)
 }
 
 // drainEffects drives only finite UI effects; recurring preview/poll timers stay idle.

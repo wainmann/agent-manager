@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -538,6 +539,31 @@ func TestForkOpencodeOpensTheCopyItsStoreMade(t *testing.T) {
 	}
 }
 
+func TestForkCaptureWaitsForArguments(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "fork-args")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		const want = "/store/gemini/session-source.jsonl\n"
+		written := make(chan struct{})
+		go func() {
+			defer close(written)
+			time.Sleep(time.Millisecond)
+			if _, err := file.WriteString(want); err != nil {
+				t.Error(err)
+			}
+		}()
+		got := readWhenWritten(t, path)
+		<-written
+		if got != want {
+			t.Fatalf("fork arguments = %q, want %q", got, want)
+		}
+	})
+}
+
 // gemini forks by handing `--session-file` the source's on-disk session file;
 // gemini imports it as a brand-new conversation, so the fork launches with no
 // conversation id and the resolver's path must reach the command line intact.
@@ -604,20 +630,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 		t.Fatalf("forked AgentSessionID = %q, want empty until the gemini store captures it", forked.AgentSessionID)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	var raw []byte
-	var err error
-	for time.Now().Before(deadline) {
-		raw, err = os.ReadFile(argsFile)
-		if err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(string(raw)); got != sourceFile {
+	if got := strings.TrimSpace(readWhenWritten(t, argsFile)); got != sourceFile {
 		t.Fatalf("session file passed to fork = %q, want %q", got, sourceFile)
 	}
 }
