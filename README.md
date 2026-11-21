@@ -68,102 +68,33 @@ Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build
 
 ## Install
 
-Runs on macOS and Linux, natively on Windows with [psmux](docs/install.md#windows), and inside WSL2.
-
-### Homebrew (macOS / Linux)
+Runs on macOS, Linux, Windows (with [psmux](docs/install.md#windows)) and WSL2.
 
 ```bash
-brew install agent-manager
+brew install agent-manager                         # Homebrew (macOS / Linux)
+brew install --cask yoanwai/tap/agent-manager      # Homebrew cask, prebuilt binary
+yay -S agent-manager-bin                           # Arch Linux (AUR)
+mise use -g github:wainmann/agent-manager          # mise
+go install github.com/YoanWai/agent-manager@latest # Go
 ```
 
-Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. This is the homebrew-core formula, which builds from source. For the prebuilt binary, `brew install --cask yoanwai/tap/agent-manager`.
-
-### Scoop (Windows)
+```bash
+# install script (macOS / Linux / WSL2)
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh
+```
 
 ```powershell
+# install script (Windows)
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 | iex
+```
+
+```powershell
+# Scoop (Windows)
 scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update`, then `scoop update agent-manager`. A global install adds `--global` to the second command, in an elevated PowerShell. The in-app updater shows those instructions instead of replacing Scoop's binary.
-
-<!--
-winget is not listed yet. Each release opens a manifest PR to
-microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
-microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
-Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
-and microsoft/winget-pkgs#469116 (0.47.1).
-When the package is published, add a winget section here with:
-winget install --id YoanWai.AgentManager -e
--->
-
-### Install script (macOS / Linux)
-
-Download the script, read it, then run it. `sh install.sh` runs only after that download succeeds.
-
-```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh &&
-sh install.sh
-```
-
-That copy is the script on `main`. It is not in `checksums.txt`. The release that first attaches `install.sh` lists that file in `checksums.txt`. Once it does, download the attached file and, when `gh` is logged in, verify it before the script runs:
-
-```bash
-curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo wainmann/agent-manager &&
-sh install.sh
-```
-
-The release URL above has no file until that tag exists, so the first command is the one that works until then. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
-
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. When that check fails, the script tries again with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which older releases need, and stops only if both fail. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
-
-Running it without a file to read first:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh
-```
-
-### Verified zip (Windows)
-
-Download the Windows zip for your architecture and `checksums.txt` from the same [release](https://github.com/wainmann/agent-manager/releases/latest). Compare its SHA-256 with the matching line in `checksums.txt` before extracting it. The [manual Windows install](docs/install.md#download-and-verify-the-zip) gives the PowerShell commands, optional provenance verification, and dependency setup.
-
-### Install script (Windows)
-
-Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
-
-```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Content .\install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-}
-```
-
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example: PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
-
-```powershell
-irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Command gh -ErrorAction Stop | Out-Null
-    if ($?) {
-        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
-        if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
-        if ($LASTEXITCODE -eq 0) {
-            Get-Content .\install.ps1
-            Unblock-File .\install.ps1
-            powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-        }
-    }
-}
-```
-
-On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone). `Unblock-File` does nothing in that case.
-
-Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
-
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, updating, and uninstalling: [docs/install.md](docs/install.md).
+Prebuilt binaries for every platform are on [Releases](https://github.com/wainmann/agent-manager/releases). [docs/install.md](docs/install.md) covers dependencies, checking a download, updating and uninstalling.
 
 ## Usage
 

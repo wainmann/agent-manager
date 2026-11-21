@@ -69,102 +69,33 @@ agent-manager は、すでにお使いの CLI の上にかぶせる薄いレイ�
 
 ## インストール
 
-macOS と Linux で動きます。Windows では [psmux](docs/install.md#windows) でネイティブに、または WSL2 内で動きます。
-
-### Homebrew（macOS / Linux）
+macOS、Linux、Windows（[psmux](docs/install.md#windows) を使用）、WSL2 で動きます。
 
 ```bash
-brew install agent-manager
+brew install agent-manager                         # Homebrew（macOS / Linux）
+brew install --cask yoanwai/tap/agent-manager      # Homebrew cask、ビルド済みバイナリ
+yay -S agent-manager-bin                           # Arch Linux（AUR）
+mise use -g github:wainmann/agent-manager          # mise
+go install github.com/YoanWai/agent-manager@latest # Go
 ```
 
-tmux がなければ一緒にインストールされ、Homebrew 自体が git で動くので、依存関係は両方そろいます。これは homebrew-core の formula で、ソースからビルドします。ビルド済みバイナリを使う場合は `brew install --cask yoanwai/tap/agent-manager` です。
-
-### Scoop（Windows）
+```bash
+# インストールスクリプト（macOS / Linux / WSL2）
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh
+```
 
 ```powershell
+# インストールスクリプト（Windows）
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 | iex
+```
+
+```powershell
+# Scoop（Windows）
 scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update`、続けて `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で 2 つ目のコマンドに `--global` を付けます。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
-
-<!--
-winget is not listed yet. Each release opens a manifest PR to
-microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
-microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
-Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
-and microsoft/winget-pkgs#469116 (0.47.1).
-When the package is published, add a winget section here with:
-winget install --id YoanWai.AgentManager -e
--->
-
-### インストールスクリプト（macOS / Linux）
-
-スクリプトをダウンロードし、中身を確認してから実行します。`sh install.sh` はダウンロードが成功したときだけ実行されます。
-
-```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh &&
-sh install.sh
-```
-
-これは `main` ブランチにあるスクリプトで、`checksums.txt` には含まれていません。`install.sh` を初めて添付するリリースで、このファイルが `checksums.txt` に載ります。それ以降は、添付されたファイルをダウンロードし、`gh` にログインしていれば、スクリプトを実行する前に検証してください。
-
-```bash
-curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo wainmann/agent-manager &&
-sh install.sh
-```
-
-そのタグができるまで上のリリース URL にはファイルがないため、それまでは最初のコマンドを使ってください。古いリリースは `--repo wainmann/agent-manager` の代わりに `--owner YoanWai --signer-repo YoanWai/agent-manager` で検証します。
-
-お使いのプラットフォーム向けの最新リリースをダウンロードし、公開されているチェックサムで検証してから `~/.local/bin` にインストールします。続いて tmux 3.1 以降と git を確認します。macOS では Homebrew を提案し、Homebrew がなければ先にそのインストールを提案します。Linux では apt、dnf、pacman、zypper、apk、Homebrew を提案し、デスクトップ環境ではクリップボードと通知のパッケージも提案します。断った場合はコマンドを表示します。ターミナルがない状態で実行すると、確認をスキップしてバイナリだけをインストールします。`AGENT_MANAGER_INSTALL_DIR` でインストール先を、`AGENT_MANAGER_VERSION` でバージョンを指定でき、`AGENT_MANAGER_INSTALL_DEPS=1` で依存関係の確認にあらかじめ同意できます（`=0` でスキップ）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` を設定すると、ダウンロードしたアーカイブを `gh attestation verify` が受け入れない限りインストールしません。その検証に失敗すると、古いリリース向けに `--owner YoanWai --signer-repo YoanWai/agent-manager` で再試行し、両方とも失敗した場合にだけ止まります。`gh` のないマシンにインストールする場合は設定しないでください。`gh` は証明の拒否、未ログイン、ネットワークエラーに同じ終了コードを返すため、スクリプトはこれらを区別しません。
-
-先にファイルを確認せずに実行する場合：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh
-```
-
-### 検証済み zip（Windows）
-
-お使いのアーキテクチャ向けの Windows zip と `checksums.txt` を同じ[リリース](https://github.com/wainmann/agent-manager/releases/latest)からダウンロードします。展開する前に、zip の SHA-256 を `checksums.txt` の該当行と照合してください。[Windows の手動インストール](docs/install.md#download-and-verify-the-zip)に、PowerShell のコマンド、任意の来歴証明（provenance）の検証、依存関係のセットアップがあります。
-
-### インストールスクリプト（Windows）
-
-スクリプトをダウンロードし、中身を確認してから実行します。インストーラーはダウンロードが成功したときだけ実行されます。Windows PowerShell 5.1 には `&&` がないため、`if ($?)` で判定します。リリースに `install.ps1` が添付されるまでは、確認するファイルは `main` ブランチにあるものです。それは `checksums.txt` には含まれていません。
-
-```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Content .\install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-}
-```
-
-リリースに `install.ps1` が添付され、`checksums.txt` に載ったら、そちらをダウンロードしてください。`gh` にログインしていれば、ダウンロードの後、インストーラーの前に検証します。古いリリースは `--repo wainmann/agent-manager` の代わりに `--owner YoanWai --signer-repo YoanWai/agent-manager` で検証します。`gh` がない場合はこの例は止まります。そうしないと PowerShell は直前の `$LASTEXITCODE` を保持し、前のコマンドの `0` が検証成功のように見えてしまうためです。そのタグができるまで、このリリース URL にはファイルがありません。
-
-```powershell
-irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Command gh -ErrorAction Stop | Out-Null
-    if ($?) {
-        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
-        if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
-        if ($LASTEXITCODE -eq 0) {
-            Get-Content .\install.ps1
-            Unblock-File .\install.ps1
-            powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-        }
-    }
-}
-```
-
-実行ポリシーが設定されていない Windows クライアントでは、有効なポリシーは Restricted なので、すべての `.ps1` が拒否されます。`-ExecutionPolicy Bypass` はファイルを確認した後、そのプロセスにだけ適用されます。ポリシーがすでに RemoteSigned なら、`Unblock-File` のあと `.\install.ps1` で十分です。RemoteSigned は Mark of the Web が付いたままの署名なしスクリプトを拒否します。ブラウザでのダウンロードはこの印を付けます。`irm -OutFile` は付けません（Microsoft のドキュメントでは、`Invoke-WebRequest` はインターネットゾーンの印を付けないとされています）。その場合 `Unblock-File` は何もしません。
-
-最新リリースを `%LOCALAPPDATA%\Programs\agent-manager` にインストールし、ユーザーの `Path` に追加し、psmux、git、PowerShell 7 がなければインストールを提案します。`AGENT_MANAGER_INSTALL_DEPS=1` で同意、`AGENT_MANAGER_INSTALL_DEPS=0` で確認をスキップします。ターミナルがない場合は確認をスキップし、バイナリはインストールされたままになります。`AGENT_MANAGER_VERIFY_ATTESTATION` はシェルスクリプトと同じように動きます。
-
-Arch Linux、mise、`go install`、ビルド済みバイナリ、Windows（ネイティブと WSL2）、依存関係、更新方法、アンインストール：[docs/install.md](docs/install.md)。
+全プラットフォーム向けのビルド済みバイナリは [Releases](https://github.com/wainmann/agent-manager/releases) にあります。依存関係、ダウンロードの検証、更新、アンインストールは [docs/install.md](docs/install.md) を参照してください。
 
 ## 使い方
 

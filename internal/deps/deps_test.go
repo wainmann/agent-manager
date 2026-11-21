@@ -665,27 +665,24 @@ func TestPowerShellAttestationExampleRequiresGh(t *testing.T) {
 	if _, err := exec.LookPath("pwsh"); err != nil {
 		t.Skip("pwsh is not installed")
 	}
-	for _, path := range []string{"README.md", "docs/install.md"} {
-		fence := powershellFence(t, path, "gh attestation verify .\\install.ps1")
-		if !strings.Contains(fence, "Get-Command gh -ErrorAction Stop") {
-			t.Fatalf("%s attestation example does not require gh", path)
-		}
-		out, code := runPwsh(t, missingGhPrelude()+fence, "")
-		if strings.Contains(out, "RAN") || code == 0 {
-			t.Fatalf("%s missing gh ran the installer: exit %d\n%s", path, code, out)
-		}
+	script := powershellFence(t, "docs/install.md", "gh attestation verify .\\install.ps1")
+	if !strings.Contains(script, "Get-Command gh -ErrorAction Stop") {
+		t.Fatal("docs/install.md attestation example does not require gh")
+	}
+	out, code := runPwsh(t, missingGhPrelude()+script, "")
+	if strings.Contains(out, "RAN") || code == 0 {
+		t.Fatalf("missing gh ran the installer: exit %d\n%s", code, out)
 	}
 	zip := powershellFence(t, "docs/install.md", "gh attestation verify $archive")
-	out, code := runPwsh(t, "$global:LASTEXITCODE = 0\n$archive = 'archive.zip'\n"+zip+"'PASSED'\n", "")
+	out, code = runPwsh(t, "$global:LASTEXITCODE = 0\n$archive = 'archive.zip'\n"+zip+"'PASSED'\n", "")
 	if strings.Contains(out, "PASSED") || code == 0 {
 		t.Fatalf("zip verify treated a missing gh as success: exit %d\n%s", code, out)
 	}
-	readme := powershellFence(t, "README.md", "gh attestation verify .\\install.ps1")
-	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 0))
+	out, code = runPwsh(t, missingGhPrelude()+script, writeGhStub(t, 0))
 	if code != 0 || !strings.Contains(out, "RAN") {
 		t.Fatalf("verify success should install: exit %d\n%s", code, out)
 	}
-	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 1))
+	out, code = runPwsh(t, missingGhPrelude()+script, writeGhStub(t, 1))
 	if strings.Contains(out, "RAN") || code == 0 {
 		t.Fatalf("verify failure should stop: exit %d\n%s", code, out)
 	}
