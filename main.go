@@ -205,6 +205,7 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 		}
 		return json.NewEncoder(out).Encode(started)
 	}
+	termseq.Out = errs
 	release, acquired, err := app.LockServe(dir)
 	if err != nil {
 		return err

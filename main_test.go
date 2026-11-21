@@ -660,6 +660,28 @@ func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
 	}
 }
 
+func TestServeSendsTerminalSequencesToStderr(t *testing.T) {
+	previous := termseq.Out
+	t.Cleanup(func() { termseq.Out = previous })
+	dir := t.TempDir()
+	release, acquired, err := app.LockServe(dir)
+	if err != nil || !acquired {
+		t.Fatalf("LockServe = %v, %v", acquired, err)
+	}
+	defer release()
+	out, errs := &bytes.Buffer{}, &bytes.Buffer{}
+	start := func([]string, string) (int, error) { t.Fatal("serve started a manager"); return 0, nil }
+	if err := runServe(out, errs, nil, dir, start); err != nil {
+		t.Fatal(err)
+	}
+	if err := termseq.Emit("\a"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "\a") || !strings.Contains(errs.String(), "\a") {
+		t.Fatalf("serve stdout %q, stderr %q: the bell belongs on stderr", out.String(), errs.String())
+	}
+}
+
 func TestACommandSendsTerminalSequencesToStderr(t *testing.T) {
 	previous := termseq.Out
 	t.Cleanup(func() { termseq.Out = previous })
