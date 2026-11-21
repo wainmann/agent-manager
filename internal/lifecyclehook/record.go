@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,27 +20,35 @@ const (
 
 var logMu sync.Mutex
 
-func (d *Dispatcher) record(ev Event, command, reason, output string) {
-	if !d.allow(ev.Name) {
+// record throttles one command failing over and over for one session, so
+// a different command or another session's failure is still written.
+func (d *Dispatcher) record(ev Event, argv []string, reason, output string) {
+	key := strings.Join(append([]string{ev.Name, ev.Session.ID}, argv...), "\x00")
+	if !d.allow(key) {
 		return
 	}
-	d.writeFailure(ev, command, reason, output)
+	d.writeFailure(ev, argv[0], reason, output)
 }
 
-func (d *Dispatcher) allow(event string) bool {
+func (d *Dispatcher) allow(key string) bool {
 	d.failMu.Lock()
 	defer d.failMu.Unlock()
 	now := time.Now()
-	if last, ok := d.failAt[event]; ok && now.Sub(last) < FailureWindow {
+	if last, ok := d.failAt[key]; ok && now.Sub(last) < FailureWindow {
 		return false
 	}
-	d.failAt[event] = now
+	for seen, last := range d.failAt {
+		if now.Sub(last) >= FailureWindow {
+			delete(d.failAt, seen)
+		}
+	}
+	d.failAt[key] = now
 	return true
 }
 
 func (d *Dispatcher) writeFailure(ev Event, command, reason, output string) {
-	_ = d.db.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Command: command, Reason: reason})
-	line := fmt.Sprintf("%s %s %s: %s\n", time.Now().UTC().Format(time.RFC3339), ev.Name, command, reason)
+	_ = d.db.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Session: ev.Session.ID, Command: command, Reason: reason})
+	line := fmt.Sprintf("%s %s session=%s %s: %s\n", time.Now().UTC().Format(time.RFC3339), ev.Name, ev.Session.ID, command, reason)
 	if output != "" {
 		line += output
 		if output[len(output)-1] != '\n' {

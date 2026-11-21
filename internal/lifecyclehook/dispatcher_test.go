@@ -207,6 +207,47 @@ func TestDispatcherFailureIsOnceAndPrivate(t *testing.T) {
 	}
 }
 
+func TestDispatcherRecordsEachCommandAndSessionFailure(t *testing.T) {
+	dir := t.TempDir()
+	first := script(t, "echo first-failure >&2\nexit 7\n")
+	second := script(t, "echo second-failure >&2\nexit 9\n")
+	hooks := "schema_version = 1\n[[hooks.session_archive]]\ncommand = [" + strconv.Quote(first) + "]\n[[hooks.session_archive]]\ncommand = [" + strconv.Quote(second) + "]\n"
+	if err := os.WriteFile(filepath.Join(dir, HooksFile), []byte(hooks), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, st := openDispatcher(t, dir)
+	for _, id := range []string{"a", "a", "b"} {
+		d.Emit(Event{Name: EventSessionArchive, Session: store.Session{ID: id}})
+	}
+	closeDispatcher(d, 5*time.Second)
+	failures, err := st.HookFailures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, failure := range failures {
+		got = append(got, failure.Session+" "+failure.Command+" "+failure.Reason)
+	}
+	want := []string{
+		"a " + first + " exit status 7",
+		"a " + second + " exit status 9",
+		"b " + first + " exit status 7",
+		"b " + second + " exit status 9",
+	}
+	if slices.Sort(got); !slices.Equal(got, want) {
+		t.Fatalf("failures = %q, want %q", got, want)
+	}
+	log := readFile(t, filepath.Join(dir, LogFile))
+	for _, line := range []string{"session=a " + second + ": exit status 9", "second-failure", "session=b " + first + ": exit status 7"} {
+		if !strings.Contains(log, line) {
+			t.Fatalf("log lacks %q:\n%s", line, log)
+		}
+	}
+	if strings.Count(log, "session=a "+first+":") != 1 {
+		t.Fatalf("a repeat of one command for one session was logged again:\n%s", log)
+	}
+}
+
 func TestDispatcherFiltersStatusAndRunsNotificationHooksOnlyOnNotifications(t *testing.T) {
 	dir := t.TempDir()
 	gate := filepath.Join(dir, "gate")

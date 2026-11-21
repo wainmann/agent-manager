@@ -26,6 +26,7 @@ const hookFailureCap = 20
 type HookFailure struct {
 	At      time.Time `json:"at"`
 	Event   string    `json:"event"`
+	Session string    `json:"session_id,omitempty"`
 	Command string    `json:"command"`
 	Reason  string    `json:"reason"`
 }

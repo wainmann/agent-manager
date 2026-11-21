@@ -168,7 +168,9 @@ func (d *Dispatcher) Close(ctx context.Context) {
 		d.cond.Broadcast()
 		d.wg.Wait()
 		for _, ev := range dropped {
-			d.record(ev, "", "dropped on close", "")
+			if d.allow(ev.Name) {
+				d.writeFailure(ev, "", "dropped on close", "")
+			}
 		}
 	}
 }
@@ -245,7 +247,7 @@ func (d *Dispatcher) dispatch(ev Event) {
 			if timedOut {
 				reason = "timed out after " + hook.Timeout.String()
 			}
-			d.record(ev, hook.Command[0], reason, output)
+			d.record(ev, hook.Command, reason, output)
 		}
 	}
 }
