@@ -39,7 +39,6 @@ type Styles struct {
 	Subtle  lipgloss.Style
 	Value   lipgloss.Style
 	Match   lipgloss.Style
-	Cursor  lipgloss.Style
 }
 
 func CurrentStyles() Styles {
@@ -51,7 +50,6 @@ func CurrentStyles() Styles {
 		Subtle:  uitheme.SubtleStyle(),
 		Value:   uitheme.ValueStyle(),
 		Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
-		Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
 	}
 }
 
@@ -185,7 +183,7 @@ func (s State) Content(ctx Context) Content {
 func (s State) searchLine(sections []helpSection, ctx Context) string {
 	line := ctx.Styles.Key.Render("search ") + ctx.Styles.Value.Render(s.query)
 	if s.searching {
-		line += ctx.CursorMarker + ctx.Styles.Cursor.Render(presentation.ChromeFor(ctx.Glyphs.Mode).CursorGlyph)
+		line += ctx.CursorMarker + " "
 	}
 	count := helpRowCount(sections)
 	label := " keys"

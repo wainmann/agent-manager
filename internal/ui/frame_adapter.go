@@ -28,7 +28,10 @@ func (m *Model) View() string {
 	if m.layout.frame == "" {
 		return "loading..."
 	}
-	return m.layout.frame
+	if m.focus.imeCursor == nil {
+		return m.layout.frame
+	}
+	return m.focus.imeCursor.Stamp() + m.layout.frame
 }
 
 func (m *Model) prepareFrame() {

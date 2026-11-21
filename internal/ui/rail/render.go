@@ -90,7 +90,7 @@ func (r *renderer) railLines() []Line {
 func (r renderer) searchFieldLine() string {
 	indent := strings.Repeat(" ", railInset)
 	glyph := r.palette.key.Render(r.glyphs().SearchGlyph + " ")
-	caret := r.ctx.CursorMarker + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.chrome().CursorGlyph)
+	caret := r.ctx.CursorMarker + " "
 	hint := r.palette.keyCap("esc", "close")
 	if !r.model.searching {
 		caret, hint = "", r.palette.keyCap("esc", "clear")

@@ -200,7 +200,7 @@ func TestUpdatePublishesPreparedFrame(t *testing.T) {
 
 func preparedView(m *Model) string {
 	m.prepareFrame()
-	return m.View()
+	return uiframe.StripCursorStamps(m.View())
 }
 
 func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {

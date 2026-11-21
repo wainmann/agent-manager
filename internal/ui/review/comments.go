@@ -73,11 +73,9 @@ func (m Model) AnnotationView(cursorMarker string) string {
 		}
 		return cursorMarker + value
 	})
-	markedView := marked.View()
-	if !input.Cursor.Blink {
-		return markedView
-	}
-	return insertMarkerAtCursor(input.View(), markedView, cursorMarker)
+	plain := input
+	plain.Cursor.Blink = true
+	return insertMarkerAtCursor(plain.View(), marked.View(), cursorMarker)
 }
 
 func insertMarkerAtCursor(normal, marked, marker string) string {

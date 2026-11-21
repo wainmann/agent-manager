@@ -26,6 +26,9 @@ type FrameContext struct {
 	CaretRow       int
 	CursorStyle    lipgloss.Style
 	SelectionStyle lipgloss.Style
+	// HostCursor reports that the real terminal cursor is shown at the
+	// caret, which then stays unpainted.
+	HostCursor bool
 }
 
 type FrameContent struct {
@@ -52,9 +55,10 @@ func (m *Model) PrepareFrame(ctx FrameContext) FrameContent {
 			Height: len(pane),
 			Valid:  true,
 		},
-		lines:     lines,
-		links:     frameLinks(safe, lines, ctx.Width),
-		rowOffset: rowOffset,
+		lines:      lines,
+		links:      frameLinks(safe, lines, ctx.Width),
+		rowOffset:  rowOffset,
+		hostCursor: ctx.HostCursor,
 	}
 
 	rendered := make([]string, len(pane))
@@ -103,7 +107,7 @@ func (m Model) renderPaneRow(row int, raw string, width int, cursorStyle, select
 
 func (m Model) withCursor(row int, raw string, width int, style lipgloss.Style) string {
 	cursorRow, cursorCol, ok := m.cursorCell()
-	if !ok || cursorRow != row {
+	if !ok || cursorRow != row || m.frame.hostCursor {
 		return fitPaneLine(raw, width)
 	}
 	clean := safePaneLine(raw)

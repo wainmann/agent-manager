@@ -174,3 +174,37 @@ func TestTabbedRowSharesItsColumns(t *testing.T) {
 		t.Fatalf("dragging over the painted columns copied %q", text)
 	}
 }
+
+// While the terminal shows its own cursor at the caret, the pane paints none,
+// so the user sees one caret. The anchor stays on the same cell either way.
+func TestHostCursorReplacesThePaintedCaret(t *testing.T) {
+	for _, host := range []bool{false, true} {
+		var model Model
+		model.Enter(EnterContext{SessionID: "s1"})
+		model.ApplyPane(PaneUpdate{
+			SessionID: "s1",
+			Cursor:    Cursor{X: 2, Y: 0, Visible: true, PositionKnown: true},
+		}, "s1")
+		content := model.PrepareFrame(FrameContext{
+			Preview:        "prompt\n",
+			Width:          10,
+			Height:         1,
+			OriginX:        7,
+			OriginY:        5,
+			CaretRow:       0,
+			CursorStyle:    litStyle(),
+			SelectionStyle: lipgloss.NewStyle(),
+			HostCursor:     host,
+		})
+		painted := strings.Contains(content.Rows[0], litStyle().Render("o"))
+		if painted == host {
+			t.Fatalf("host cursor %v: painted caret = %v, row %q", host, painted, content.Rows[0])
+		}
+		if ansi.Strip(content.Rows[0]) != "prompt    " {
+			t.Fatalf("host cursor %v: row text = %q", host, ansi.Strip(content.Rows[0]))
+		}
+		if col, row, ok := model.CursorAnchor("s1"); !ok || col != 10 || row != 6 {
+			t.Fatalf("host cursor %v: anchor = (%d,%d,%v), want (10,6,true)", host, col, row, ok)
+		}
+	}
+}

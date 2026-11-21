@@ -11,7 +11,9 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
@@ -171,8 +173,55 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 			t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.layout.width, m.layout.height)
 		}
 		plain := strings.Split(ansi.Strip(frame), "\n")
-		if row > len(plain) || !strings.Contains(plain[row-1], "search 中文"+presentation.ChromeFor(mode).CursorGlyph) {
-			t.Fatalf("anchor row %d does not contain the help input: %q", row, plain[row-1])
+		if row > len(plain) || !strings.HasSuffix(ansi.Truncate(plain[row-1], col-1, ""), "search 中文") {
+			t.Fatalf("anchor (%d, %d) is not just past the help input: %q", col, row, plain[row-1])
 		}
+	}
+}
+
+// Bubble Tea repaints only when View changes. With the painted caret left to
+// the real cursor, a caret moving over unchanged pane text still has to
+// change the frame, or the terminal cursor would stay behind.
+func TestFocusViewChangesWhenOnlyTheCaretMoves(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	m := &Model{
+		layout: layoutState{width: 100, height: 28},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		workspace: workspace{
+			preview:  "$ echo hi\n",
+			sessions: []store.Session{{ID: "focused"}},
+		},
+		rail:  railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
+		focus: focusState{imeCursor: &uiframe.CursorAnchor{}},
+	}
+	m.push(newFocusSurface(m))
+	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
+
+	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
+	m.prepareFrame()
+	before := m.View()
+	beforeCol, beforeRow, ok := m.focus.imeCursor.Get()
+	if !ok {
+		t.Fatal("focus mode published no cursor anchor")
+	}
+
+	setFocusCursor(m, paneCursor{x: 5, y: 0, ok: true})
+	m.prepareFrame()
+	after := m.View()
+	afterCol, afterRow, _ := m.focus.imeCursor.Get()
+
+	if afterCol != beforeCol+1 || afterRow != beforeRow {
+		t.Fatalf("anchor moved from (%d, %d) to (%d, %d), want one cell right", beforeCol, beforeRow, afterCol, afterRow)
+	}
+	if before == after {
+		t.Fatal("a caret move left the frame unchanged, so Bubble Tea would skip the repaint")
+	}
+	if uiframe.StripCursorStamps(before) != uiframe.StripCursorStamps(after) {
+		t.Fatal("the pane still paints a caret of its own beside the real cursor")
 	}
 }

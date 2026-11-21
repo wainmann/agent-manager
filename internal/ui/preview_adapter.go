@@ -222,6 +222,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 			CaretRow:       m.paneCaretRow(),
 			CursorStyle:    lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent()),
 			SelectionStyle: lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent2()),
+			HostCursor:     m.agentOwnsKeyboard() && m.focus.imeCursor != nil,
 		})
 		if !rendered.HasPane {
 			return m.emptyPreview(width, gutter, loader)

@@ -39,7 +39,6 @@ func testContext(width int) Context {
 			Subtle:  lipgloss.NewStyle(),
 			Value:   lipgloss.NewStyle(),
 			Match:   lipgloss.NewStyle().Bold(true),
-			Cursor:  lipgloss.NewStyle(),
 		},
 	}
 }

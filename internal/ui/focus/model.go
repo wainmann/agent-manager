@@ -46,6 +46,9 @@ type displayedFrame struct {
 	lines     []string
 	links     [][]paneLink
 	rowOffset int
+	// hostCursor is set while the real terminal cursor marks the caret, so
+	// painting one too would show two.
+	hostCursor bool
 }
 
 type Box struct {
