@@ -41,7 +41,7 @@ With `gh` logged in, verify it:
 gh attestation verify install.sh --repo wainmann/agent-manager
 ```
 
-Run it only when the download and the verify succeeded. Read `install.sh` first:
+Run it only when the download succeeded, and the verify too if you ran it. Read `install.sh` first:
 
 ```bash
 sh install.sh
