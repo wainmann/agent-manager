@@ -298,6 +298,9 @@ def rename(sandbox, remote, agent_id):
         frame(sandbox, name + '-done', f'renamed {done}{before} to {after} on {CONNECTION}')
         sandbox.wait(name + '-stored', lambda query=query: str(remote.query(query)),
                      lambda value, after=after: value == str([(after,)]))
+        # A preview still on the old name sends the next select off this row.
+        sandbox.wait(name + '-shown', lambda: preview_of(capture(sandbox)),
+                     lambda value, after=after: f'{after}  on {CONNECTION}' in value)
 
 
 def move(sandbox, remote):
