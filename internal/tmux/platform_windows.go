@@ -306,6 +306,12 @@ func (d *Driver) SocketPath() string {
 	return path
 }
 
+// FocusEndpoint is the Unix socket the manager running this namespace
+// answers focus requests on, beside the registry psmux keeps for it.
+func (d *Driver) FocusEndpoint() string {
+	return d.SocketPath() + ".focus"
+}
+
 // psmuxDir is where psmux keeps its registry: PSMUX_DATA_DIR when it is an
 // absolute path, else ~\.psmux, and \.psmux with no home, as psmux does.
 func psmuxDir() string {

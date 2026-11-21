@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -22,6 +23,8 @@ const (
 	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
 	usageType          = `type <session-id> "<prompt>" [--json]`
 	usageRead          = "read <session-id> [--styled] [--json]"
+	usageFocus         = "focus <session-id> [--json]"
+	usageSelect        = "select <session-id> [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
 	usageKill          = "kill <session-id> [--json]"
@@ -46,6 +49,7 @@ type sessionCommands interface {
 	ExpandSaved(name, text string) (string, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	ReadStyled(sessionID, targetID string) (sessioncmd.SessionScreen, error)
+	Focus(targetID string, enter bool) (sessioncmd.Session, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
@@ -106,6 +110,8 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
 			{name: "type", usage: usageType, about: "type a prompt into an agent's pane and submit it now, as the user's quick bar does; only for a caller with no session here, such as a manager on another machine over SSH", run: bind(open, runType)},
 			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(open, runRead)},
+			{name: "focus", usage: usageFocus, about: "open a session in the running manager the way enter does, unfolding its groups first; a dialog holding input stays open and the cursor moves under it", run: callerless(open, runFocus)},
+			{name: "select", usage: usageSelect, about: "move the running manager's cursor to a session's row without opening it, unfolding its groups first", run: callerless(open, runSelect)},
 			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(open, runWait)},
 			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(open, runMessageStatus)},
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
@@ -264,6 +270,47 @@ func runRead(out io.Writer, sessions sessionCommands, args []string, sessionID s
 		return err
 	}
 	return emit(out, *asJSON, screen, sessioncmd.FormatSessionScreen(screen))
+}
+
+// callerless binds a command that acts as no session, so it never asks tmux
+// which pane started it.
+func callerless(open func(string) sessionCommands, run func(io.Writer, sessionCommands, []string) error) Command {
+	return func(args []string, _ func() string, configDir string) error {
+		return run(os.Stdout, open(configDir), args)
+	}
+}
+
+func runFocus(out io.Writer, sessions sessionCommands, args []string) error {
+	return runBringForward(out, sessions, args, usageFocus, true)
+}
+
+func runSelect(out io.Writer, sessions sessionCommands, args []string) error {
+	return runBringForward(out, sessions, args, usageSelect, false)
+}
+
+// runBringForward reports a refusal as a JSON object too when --json is
+// given, so a script reading stdout sees why nothing moved.
+func runBringForward(out io.Writer, sessions sessionCommands, args []string, usage string, enter bool) error {
+	set := newFlagSet(usage)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	target, err := sessions.Focus(operands[0], enter)
+	if err != nil {
+		if *asJSON {
+			if jsonErr := writeJSON(out, map[string]string{"error": err.Error()}); jsonErr != nil {
+				return jsonErr
+			}
+		}
+		return err
+	}
+	verb := "selected "
+	if enter {
+		verb = "focused "
+	}
+	return emit(out, *asJSON, target, verb+sessioncmd.FormatSession(target))
 }
 
 // runWait exits non-zero when the session never reached an awaited state, so

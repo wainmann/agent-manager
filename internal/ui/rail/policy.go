@@ -443,6 +443,53 @@ func (m *Model) SetArchived(show bool) {
 	m.rebuildRows()
 }
 
+// RevealSession puts the cursor on a session's row for a request from
+// outside the list: it unfolds the groups above the session, and drops a
+// status filter or the archive view only when it hides the row. found is
+// false when the list still has no row for it.
+func (m *Model) RevealSession(id, group string) (decision Decision, found bool) {
+	previous, previousOK := m.Selected()
+	unfolded := m.unfoldAncestors(group)
+	m.rebuildRows()
+	found = m.FocusSession(id)
+	narrowingDropped := false
+	if !found && m.filter != statusFilterAll {
+		m.ClearStatusFilter()
+		narrowingDropped = true
+		found = m.FocusSession(id)
+	}
+	if !found && m.showArchived {
+		m.SetArchived(false)
+		decision.Refresh = true
+		narrowingDropped = true
+		found = m.FocusSession(id)
+	}
+	current, currentOK := m.Selected()
+	decision.Consumed = true
+	decision.SelectionChanged = previousOK != currentOK || previous != current
+	decision.Selection = current
+	switch {
+	case narrowingDropped:
+		decision.SelectionEffect = SelectionEffectFilter
+	case decision.SelectionChanged:
+		decision.SelectionEffect = SelectionEffectPreview
+	}
+	if unfolded {
+		decision.Mutations = []Mutation{m.saveFolds()}
+	}
+	return decision, found
+}
+
+func (m *Model) unfoldAncestors(path string) (unfolded bool) {
+	for ancestor := path; ancestor != ""; ancestor = ParentGroup(ancestor) {
+		if m.collapsed[ancestor] {
+			delete(m.collapsed, ancestor)
+			unfolded = true
+		}
+	}
+	return unfolded
+}
+
 func (m *Model) ForgetGroups(paths []string) Decision {
 	changed := false
 	for _, removed := range paths {
@@ -491,13 +538,7 @@ func (m *Model) RevealGroup(path string) Decision {
 	m.filter = statusFilterAll
 	m.search = ""
 	m.searching = false
-	collapsedChanged := false
-	for ancestor := path; ancestor != ""; ancestor = ParentGroup(ancestor) {
-		if m.collapsed[ancestor] {
-			delete(m.collapsed, ancestor)
-			collapsedChanged = true
-		}
-	}
+	collapsedChanged := m.unfoldAncestors(path)
 	m.rebuildRows()
 	m.Focus(Selection{Kind: GroupRow, Group: path})
 	current, currentOK := m.Selected()

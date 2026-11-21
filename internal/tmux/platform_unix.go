@@ -162,6 +162,13 @@ func (d *Driver) SocketPath() string {
 	return path
 }
 
+// FocusEndpoint is the Unix socket the manager running this server answers
+// focus requests on. It sits beside the server's own socket, so it is as
+// private as that socket's directory and shares its short path.
+func (d *Driver) FocusEndpoint() string {
+	return socketPathFromEnv(d.socket) + ".focus"
+}
+
 // socketPathFromEnv rebuilds what tmux resolves -L to, without asking a
 // server that may not be running. tmux reports the path with its symlinks
 // resolved, so this does too and the two agree once a server exists.

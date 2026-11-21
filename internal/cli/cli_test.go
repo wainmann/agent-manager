@@ -31,6 +31,7 @@ type fakeSessions struct {
 	timeout   time.Duration
 	messageID int64
 	archived  bool
+	entered   bool
 	action    string
 	canceled  bool
 	groupPath string
@@ -97,6 +98,11 @@ func (f *fakeSessions) ExpandSaved(name, text string) (string, error) {
 		return "saved:" + name, nil
 	}
 	return "saved:" + name + "\n\n" + text, nil
+}
+
+func (f *fakeSessions) Focus(targetID string, enter bool) (sessioncmd.Session, error) {
+	f.targetID, f.entered = targetID, enter
+	return f.session, f.failWith
 }
 
 func (f *fakeSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
@@ -292,6 +298,8 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"send --from", []string{"beef1234", "ship it", "--from", "laptop-agent"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "") }},
 		{"type", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runType(out, sessions, args, "") }},
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
+		{"focus", []string{"beef1234"}, func(out io.Writer, args []string) error { return runFocus(out, sessions, args) }},
+		{"select", []string{"beef1234"}, func(out io.Writer, args []string) error { return runSelect(out, sessions, args) }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
@@ -335,6 +343,23 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 	}
 }
 
+// A script asking for JSON reads stdout, so a refused focus says why there
+// as well as failing.
+func TestFocusJSONReportsARefusalAsAnObject(t *testing.T) {
+	failure := errors.New("no Agent Manager is running to bring the session forward")
+	out := &bytes.Buffer{}
+	err := runFocus(out, &fakeSessions{failWith: failure}, []string{"beef1234", "--json"})
+	if !errors.Is(err, failure) {
+		t.Fatalf("error = %v, want the layer's own", err)
+	}
+	var reported struct {
+		Error string `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out.Bytes(), &reported); jsonErr != nil || reported.Error != failure.Error() {
+		t.Fatalf("focus --json printed %q (%v), want the refusal as an object", out.String(), jsonErr)
+	}
+}
+
 func TestJSONFlagPrintsTheRecord(t *testing.T) {
 	out := &bytes.Buffer{}
 	fake := &fakeSessions{session: sampleSession()}
@@ -369,6 +394,12 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 		},
 		"kill": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runKill(out, f, args, "cafe0001")
+		},
+		"focus": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runFocus(out, f, args)
+		},
+		"select": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runSelect(out, f, args)
 		},
 		"delete": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runDelete(out, f, args, "cafe0001")
@@ -558,7 +589,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 		t.Fatal("the caller was resolved")
 		return ""
 	}
-	for _, name := range []string{"update", "issue", "feature", "settings", "prompts", "env"} {
+	for _, name := range []string{"update", "issue", "feature", "settings", "prompts", "env", "focus", "select"} {
 		if err := table[name]([]string{"-h"}, resolve, t.TempDir()); !errors.Is(err, ErrUsageShown) {
 			t.Fatalf("%s -h: %v", name, err)
 		}
@@ -568,7 +599,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "focus", "select", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}

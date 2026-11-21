@@ -100,6 +100,8 @@ type focusState struct {
 	// imeCursor is the cell the input method opens beside, owned here
 	// because the frame writer publishes into it.
 	imeCursor *uiframe.CursorAnchor
+	// forward is the focus request waiting on its open.
+	forward pendingForward
 }
 
 type mouseCapture struct {

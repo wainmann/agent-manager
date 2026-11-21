@@ -103,6 +103,8 @@ type fakeSessionCommands struct {
 	reservations  []sessioncmd.Reservation
 	revivedID     string
 	killedID      string
+	focusedID     string
+	focusEntered  bool
 	deletedID     string
 	archivedID    string
 	archived      bool
@@ -154,6 +156,11 @@ func (f *fakeSessionCommands) Wait(_ context.Context, _, id string, until []stri
 func (f *fakeSessionCommands) MessageStatus(_ string, messageID int64) (sessioncmd.MessageState, error) {
 	f.statusID = messageID
 	return sessioncmd.MessageState{MessageID: messageID, SessionID: "a1b2c3d4", State: "delivered"}, f.err
+}
+
+func (f *fakeSessionCommands) Focus(id string, enter bool) (sessioncmd.Session, error) {
+	f.focusedID, f.focusEntered = id, enter
+	return f.created, f.err
 }
 
 func (f *fakeSessionCommands) Read(_ string, id string) (sessioncmd.SessionScreen, error) {
@@ -777,7 +784,7 @@ func TestListsFleetTools(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"list_sessions", "create_session", "read_session", "send_session",
+		"list_sessions", "create_session", "read_session", "focus_session", "send_session",
 		"revive_session", "kill_session", "delete_session", "archive_session", "move_session", "archive_self", "kill_self",
 		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
@@ -859,6 +866,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"list_sessions":    {"Call first", "create_session"},
 		"create_session":   {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
 		"read_session":     {"after create_session", "current screen"},
+		"focus_session":    {"only when the user asked", "stays open"},
 		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work", "five messages a minute"},
 		"message_status":   {"delivered", "queued"},
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
@@ -956,6 +964,13 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 
 	if text, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1b2c3d4"}); isError || text != "tests passing" {
 		t.Fatalf("read_session = %q, isError=%v", text, isError)
+	}
+
+	if text, isError := callText(t, session, "focus_session", map[string]any{"session_id": "a1b2c3d4"}); isError || !strings.HasPrefix(text, "focused ") {
+		t.Fatalf("focus_session = %q, isError=%v", text, isError)
+	}
+	if fake.focusedID != "a1b2c3d4" || !fake.focusEntered {
+		t.Fatalf("focus args = id %q enter %v", fake.focusedID, fake.focusEntered)
 	}
 
 	if text, isError := callText(t, session, "wait_for_session", map[string]any{

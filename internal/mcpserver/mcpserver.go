@@ -200,6 +200,7 @@ type sessionCommands interface {
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
+	Focus(targetID string, enter bool) (sessioncmd.Session, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Delete(sessionID, targetID string) (sessioncmd.Deletion, error)
@@ -451,6 +452,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 		return textContent(sessioncmd.FormatSessionScreen(screen)), screen, nil
 	})
+	addFocusSession(server, noCaller, sessions)
 
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "send_session",
@@ -912,29 +914,6 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 // addTool registers a tool that refuses outright when the server has no
 // calling session, so no tool, present or future, opens the workspace to a
 // CLI running outside Agent Manager.
-func addTool[In, Out any](server *mcp.Server, noCaller error, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) {
-	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, Out, error) {
-		if noCaller != nil {
-			var none Out
-			return nil, none, noCaller
-		}
-		return handler(ctx, req, args)
-	})
-}
-
-func toolAnnotations(readOnly, destructive, openWorld bool) *mcp.ToolAnnotations {
-	return &mcp.ToolAnnotations{
-		ReadOnlyHint:    readOnly,
-		DestructiveHint: &destructive,
-		IdempotentHint:  readOnly,
-		OpenWorldHint:   &openWorld,
-	}
-}
-
-func textContent(message string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}
-}
-
 // applyFailure carries the declarations a review call already applied
 // into its error, so a caller that set several at once knows which took
 // effect before the failing one.

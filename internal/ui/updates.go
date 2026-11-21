@@ -40,6 +40,7 @@ var messageRoutes = []func(*Model, tea.Msg) (tea.Model, tea.Cmd, bool){
 	(*Model).routeStartupMsg,
 	(*Model).routePreviewMsg,
 	(*Model).routeRefreshMsg,
+	(*Model).routeForwardMsg,
 	(*Model).routeNoticesMsg,
 	(*Model).routePasteMsg,
 	(*Model).routeFocusMsg,

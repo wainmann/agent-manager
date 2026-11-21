@@ -24,6 +24,7 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 		{"create_session", map[string]any{"name": "x", "host": "box"}},
 		{"read_session", map[string]any{"session_id": "a1"}},
 		{"read_session", map[string]any{"session_id": "box::a1"}},
+		{"focus_session", map[string]any{"session_id": "a1"}},
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
 		{"send_session", map[string]any{"session_id": "box::a1", "message": "hi"}},
 		{"message_status", map[string]any{"message_id": 7}},
@@ -76,7 +77,7 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 			t.Errorf("%s is not checked with no caller", tool.Name)
 		}
 	}
-	if terminals.sentID != "" || sessions.killedID != "" || sessions.revivedID != "" || sessions.archivedID != "" {
+	if terminals.sentID != "" || sessions.killedID != "" || sessions.focusedID != "" || sessions.revivedID != "" || sessions.archivedID != "" {
 		t.Fatalf("a refused call still reached the workspace: sent %q, killed %q, revived %q, archived %q",
 			terminals.sentID, sessions.killedID, sessions.revivedID, sessions.archivedID)
 	}

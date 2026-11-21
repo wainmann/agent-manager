@@ -733,6 +733,13 @@ func (m *Model) reconcileListing(msg *refreshMsg) {
 // out. The fences are compared here, on the completion rather than the
 // request, because the user may have moved the screen while it waited.
 func (m *Model) applyAttachEffect(request uilifecycle.AttachRequest, result uilifecycle.AttachResult, err error) tea.Cmd {
+	before := m.errBar
+	cmd := m.startAttach(request, result, err)
+	m.answerForward(request.ID, cmd != nil, before)
+	return cmd
+}
+
+func (m *Model) startAttach(request uilifecycle.AttachRequest, result uilifecycle.AttachResult, err error) tea.Cmd {
 	if err != nil {
 		m.reportErr(err.Error())
 		return nil

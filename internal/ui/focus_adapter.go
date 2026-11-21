@@ -386,7 +386,11 @@ func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 
 // applyFocusEffect enters focus once the dead-pane probe has run.
 func (m *Model) applyFocusEffect(request focusruntime.ProbeRequest, err error) tea.Cmd {
-	return focusruntime.ApplyProbe(focusProbeHost{m}, request, err)
+	before := m.errBar
+	cmd := focusruntime.ApplyProbe(focusProbeHost{m}, request, err)
+	selected, ok := m.selected()
+	m.answerForward(request.SessionID, m.focused() && ok && selected.ID == request.SessionID, before)
+	return cmd
 }
 
 // applyDetachEffect opens what a session asked for before it detached.
