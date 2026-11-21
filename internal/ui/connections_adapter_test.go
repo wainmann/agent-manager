@@ -143,10 +143,6 @@ func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 			t.Fatalf("kill on %+v: status %q", target, m.errBar.text)
 		}
 	}
-	m.clearErr()
-	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "deleting a group isn't available on SSH connections yet" {
-		t.Fatalf("delete on a remote group: status %q", m.errBar.text)
-	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls = %q, want none", calls)
 	}
@@ -177,6 +173,10 @@ func TestOfflineHostRefusesCallsWithItsError(t *testing.T) {
 	}
 	if m.errBar.text != "box: unreachable over SSH: connection refused" {
 		t.Fatalf("status = %q", m.errBar.text)
+	}
+	m.clearErr()
+	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "box: unreachable over SSH: connection refused" {
+		t.Fatalf("group delete on an offline host: confirm %v, status %q", confirmOpen(m), m.errBar.text)
 	}
 }
 
@@ -376,6 +376,44 @@ func TestRemoteDeleteConfirmCountsTheTerminalsItTakes(t *testing.T) {
 	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls before an answer = %q", calls)
+	}
+}
+
+// d on a remote group asks with that host's counts, worded like the local
+// group delete, and the yes sends the ids of the sessions it counted, so the
+// host refuses when its sessions changed since.
+func TestRemoteGroupDeleteAsksWithTheHostsCountsAndSendsThem(t *testing.T) {
+	fake := &fakeSSH{}
+	m := listedModel(t, fake)
+	fake.snapshot.Groups = append(fake.snapshot.Groups, sessioncmd.Group{Path: "web/ui"})
+	fake.snapshot.Sessions = append(fake.snapshot.Sessions, sessioncmd.Session{ID: "s4", Name: "ui", Tool: "claude", Group: "web/ui", Status: "idle", Running: true})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	m.rail.Focus(boxGroup)
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup})
+	prompt := pendingConfirm(m).prompt
+	if want := "delete group web on box (1 subgroups, 5 sessions incl. archived)? kills their tmux sessions there."; !confirmOpen(m) || prompt.Label != want || !prompt.Group || prompt.Action != uidialogs.ConfirmDelete {
+		t.Fatalf("confirm %v = %+v, want %q", confirmOpen(m), prompt, want)
+	}
+	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "y"))
+	if want := []string{"delete-group", "--json", "--with-sessions=s1,s2,s3,s4,t1", "--", "web"}; len(fake.taken()) != 1 || !slices.Equal(fake.taken()[0], want) {
+		t.Fatalf("calls = %q, want one %q", fake.taken(), want)
+	}
+	if m.errBar.text != "deleted group web on box" {
+		t.Fatalf("status = %q", m.errBar.text)
+	}
+}
+
+// The archived view's d deletes only the archived rows under a group, which
+// the host has no call for, so it refuses rather than delete the live ones.
+func TestRemoteGroupDeleteInTheArchivedViewIsRefused(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.rail.SetArchived(true)
+	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "deleting a group from the archive isn't available on SSH connections yet" {
+		t.Fatalf("confirm %v, status %q", confirmOpen(m), m.errBar.text)
+	}
+	if calls := fake.taken(); len(calls) != 0 {
+		t.Fatalf("calls = %q, want none", calls)
 	}
 }
 

@@ -220,6 +220,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			},
 		},
 		{
+			name: "delete-group --with-sessions deletes them with the group",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runDeleteGroup(out, f, args, "")
+			},
+			args: []string{"fleet", "--with-sessions=a1,b2,c3"},
+			want: "deleted fleet, fleet/web and the 3 session(s) in them",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if !f.deleted || f.groupPath != "fleet" || !slices.Equal(f.confirmed, []string{"a1", "b2", "c3"}) {
+					t.Fatalf("delete-group --with-sessions got %q with %q, deleting %v", f.groupPath, f.confirmed, f.deleted)
+				}
+			},
+		},
+		{
 			name: "create-group takes a path and a directory",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runCreateGroup(out, f, args, "cafe0001")
@@ -248,6 +261,20 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				testCase.inspect(t, fake)
 			}
 		})
+	}
+}
+
+// The flag itself opts in, so an empty value is a group the user confirmed
+// holding nothing, not a plain delete-group that moves sessions to the root.
+func TestDeleteGroupWithSessionsTakesTheConfirmedIDs(t *testing.T) {
+	fake := &fakeSessions{}
+	if err := runDeleteGroup(&bytes.Buffer{}, fake, []string{"fleet", "--with-sessions="}, ""); err != nil || !fake.deleted || len(fake.confirmed) != 0 {
+		t.Fatalf("--with-sessions= = %v, deleting %v with %q", err, fake.deleted, fake.confirmed)
+	}
+	fake = &fakeSessions{}
+	var out bytes.Buffer
+	if err := runDeleteGroup(&out, fake, []string{"fleet"}, ""); err != nil || fake.deleted || !strings.Contains(out.String(), "moved") {
+		t.Fatalf("delete-group without the flag = %v, deleting %v, printing %q", err, fake.deleted, out.String())
 	}
 }
 

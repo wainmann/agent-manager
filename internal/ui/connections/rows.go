@@ -1,6 +1,12 @@
 package connections
 
-import remote "github.com/YoanWai/agent-manager/internal/remote/value"
+import (
+	"slices"
+	"strings"
+
+	remote "github.com/YoanWai/agent-manager/internal/remote/value"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+)
 
 // Kind is which of a connection's rows a target names.
 type Kind uint8
@@ -59,6 +65,25 @@ func (c *Connections) Row(target Target) (Row, bool) {
 		}
 	}
 	return Row{}, false
+}
+
+// Subtree is what deleting a group on a host takes, from its last snapshot:
+// how many groups are nested under it, and the ids of every agent and
+// terminal filed in it or them, archived ones included, as the host's
+// delete-group selects them.
+func (c *Connections) Subtree(host, path string) (subgroups int, sessions []string) {
+	state := c.hosts[host]
+	for _, group := range state.Groups {
+		if strings.HasPrefix(group.Path, path+"/") {
+			subgroups++
+		}
+	}
+	for _, sess := range slices.Concat(state.Sessions, state.Terminals) {
+		if uirail.InGroupSubtree(sess.Group, path) {
+			sessions = append(sessions, sess.ID)
+		}
+	}
+	return subgroups, sessions
 }
 
 func (r Row) of(sess Session, terminal bool) Row {

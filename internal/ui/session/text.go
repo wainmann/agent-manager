@@ -56,6 +56,13 @@ func DegradedResumeText(name string) string {
 	return fmt.Sprintf("revived %s with --continue: no conversation id captured, may resume the wrong conversation", name)
 }
 
+// GroupDeleteLabel asks to delete a group with everything under it, named by
+// subject, counting the subgroups and every session that goes, archived ones
+// included.
+func GroupDeleteLabel(subject string, subgroups, sessions int, consequence string) string {
+	return fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? %s", subject, subgroups, sessions, consequence)
+}
+
 // FollowConfirmLabel asks to archive, restore, kill or delete one session and
 // its live children, naming how many terminals go with it.
 func FollowConfirmLabel(verb, name string, extra int, one, many string) string {

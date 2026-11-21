@@ -43,7 +43,6 @@ type Call struct {
 var Refusals = map[uirail.ActionKind]string{
 	uirail.RenameAction: "rename",
 	uirail.MoveToGroup:  "move",
-	uirail.Delete:       "deleting a group",
 	uirail.Restart:      "restart",
 	uirail.Fork:         "fork",
 	uirail.OpenReview:   "review",

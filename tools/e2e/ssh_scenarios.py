@@ -6,7 +6,7 @@ runs it with /bin/sh under a second disposable profile, so the manager talks
 to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
 remote row offers: preview, quick send, kill, revive, archive, restore,
-delete, attach, quick spawn and a new terminal. A second connection whose host
+delete, attach, quick spawn, a new terminal, and deleting a group with its agent. A second connection whose host
 refuses shows as unreachable and is removed. Every process it started is ended by PID.
 """
 import argparse
@@ -35,6 +35,9 @@ REMOTE_AGENT = 'remote-agent'
 REMOTE_GROUP = 'web'
 GROUPED_AGENT = 'api'
 REMOTE_NEW_GROUP = 'ops'
+GROUP_AGENT = 'ops-agent'
+LATE_AGENT = 'ops-late'
+SWAP_AGENT = 'ops-swap'
 QUICK_TEXT = 'ssh-quick-input'
 SPAWN_TEXT = 'ssh-spawn-prompt'
 # command-code's prompt marker, the composer an attached ← reads.
@@ -392,6 +395,57 @@ def spawn_and_terminal(sandbox, remote):
     frame(sandbox, 'remote-group-row', REMOTE_NEW_GROUP)
 
 
+def delete_group(sandbox, remote, manager):
+    """d on a remote group deletes it on the host with the agents filed in it, as d does here.
+
+    The confirm counts the sessions from the last snapshot and the host checks
+    their ids, so an agent started there while the question is open, or one
+    swapped for another, refuses the delete and nothing goes.
+    """
+    def spawn(name):
+        remote.run(sandbox, [str(manager), 'spawn', '--json', '--name=' + name, '--tool=' + FAKE_CLI,
+                             '--directory=' + str(remote.home / 'work'), '--group=' + REMOTE_NEW_GROUP])
+        return remote.query(f"SELECT id FROM sessions WHERE name = '{name}'")[0][0]
+
+    def left():
+        return str(remote.query(f"SELECT name FROM groups WHERE name = '{REMOTE_NEW_GROUP}' UNION ALL "
+                                f"SELECT name FROM sessions WHERE group_name = '{REMOTE_NEW_GROUP}' ORDER BY 1"))
+
+    agents = [spawn(GROUP_AGENT)]
+    frame(sandbox, 'group-agent-row', GROUP_AGENT)
+    select(sandbox, 'remote-new-group', f'{REMOTE_NEW_GROUP}  on {CONNECTION}')
+    key(sandbox, 'd')
+    frame(sandbox, 'remote-group-delete-stale-confirm', f'delete group {REMOTE_NEW_GROUP} on {CONNECTION} (0 subgroups, 1 sessions')
+    agents.append(spawn(LATE_AGENT))
+    key(sandbox, 'y')
+    frame(sandbox, 'remote-group-delete-refused', 'changed since')
+    if left() != str(sorted([(REMOTE_NEW_GROUP,), (GROUP_AGENT,), (LATE_AGENT,)])):
+        raise AssertionError(f'a refused group delete changed the host: {left()}')
+
+    frame(sandbox, 'late-agent-row', LATE_AGENT)
+    select(sandbox, 'remote-new-group-again', f'{REMOTE_NEW_GROUP}  on {CONNECTION}')
+    key(sandbox, 'd')
+    frame(sandbox, 'remote-group-delete-swap-confirm', f'delete group {REMOTE_NEW_GROUP} on {CONNECTION} (0 subgroups, 2 sessions')
+    remote.run(sandbox, [str(manager), 'delete', '--json', '--', agents[0]])
+    agents.append(spawn(SWAP_AGENT))
+    key(sandbox, 'y')
+    # The first refusal's line stays until the yes clears it; only a frame
+    # without the question can hold the second one.
+    frame(sandbox, 'remote-group-delete-swap-refused', 'changed since', '(0 subgroups, 2 sessions')
+    if left() != str(sorted([(REMOTE_NEW_GROUP,), (LATE_AGENT,), (SWAP_AGENT,)])):
+        raise AssertionError(f'a swap under the question changed the host: {left()}')
+
+    frame(sandbox, 'swap-agent-row', SWAP_AGENT)
+    select(sandbox, 'remote-new-group-last', f'{REMOTE_NEW_GROUP}  on {CONNECTION}')
+    key(sandbox, 'd')
+    confirm(sandbox, 'remote-group-delete', f'delete group {REMOTE_NEW_GROUP} on {CONNECTION} (0 subgroups, 2 sessions',
+            f'deleted group {REMOTE_NEW_GROUP} on {CONNECTION}')
+    sandbox.wait('remote-group-deleted', left, lambda value: value == '[]')
+    for agent_id in agents:
+        sandbox.wait('group-agent-pane-gone-' + agent_id, lambda: remote_pane_code(sandbox, remote, agent_id),
+                     lambda code: code != '0')
+
+
 def offline_connection(sandbox):
     """A host ssh cannot reach says unreachable with ssh's error, refuses actions, and comes out."""
     add_connection(sandbox, DOWN)
@@ -446,6 +500,7 @@ def scenario(sandbox, remote, binary):
     attach(sandbox, remote, agent_id)
     left_at_prompt_head(sandbox, remote, agent_id)
     spawn_and_terminal(sandbox, remote)
+    delete_group(sandbox, remote, manager)
     offline_connection(sandbox)
     local = sqlite3.connect(str(profile_dir(sandbox) / 'state.db'), timeout=5)
     try:

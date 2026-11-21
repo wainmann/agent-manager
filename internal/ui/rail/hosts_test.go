@@ -248,6 +248,9 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 	if got := labels(Selection{Kind: GroupRow}); !slices.Contains(got, "New connection") {
 		t.Errorf("root menu = %v, want New connection", got)
 	}
+	if got := labels(Selection{Kind: GroupRow, Group: "ops", Host: "box"}); !slices.Contains(got, "Delete") {
+		t.Errorf("remote group menu = %v, want Delete", got)
+	}
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "claude", Status: "dead"}}}}})
 	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Revive", "Archive", "Delete"}) {
 		t.Errorf("dead remote session menu = %v, want Revive, Archive and Delete", got)
@@ -256,6 +259,12 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "claude", Status: "dead", Archived: true}}}}})
 	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Restore", "Delete"}) {
 		t.Errorf("archived remote session menu = %v, want Restore and Delete", got)
+	}
+	// The archived view deletes only a group's archived rows, which the
+	// host has no call for.
+	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Groups: []string{"ops"}, Sessions: []Session{{ID: "old", Name: "old", Tool: "claude", Group: "ops", Status: "dead", Archived: true}}}}})
+	if got := labels(Selection{Kind: GroupRow, Group: "ops", Host: "box"}); len(got) == 0 || slices.Contains(got, "Delete") {
+		t.Errorf("archived remote group menu = %v, want one without Delete", got)
 	}
 }
 

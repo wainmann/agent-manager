@@ -635,6 +635,25 @@ func (l *Lifecycle) DeleteForHuman(selection DeleteSelection) (DeleteResult, err
 	return result, err
 }
 
+// SameSessionIDs reports whether two selections hold the same sessions, so an
+// action refuses rows that changed after the user confirmed them.
+func SameSessionIDs(left, right []store.Session) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	ids := make(map[string]bool, len(left))
+	for _, sess := range left {
+		ids[sess.ID] = true
+	}
+	for _, sess := range right {
+		if !ids[sess.ID] {
+			return false
+		}
+		delete(ids, sess.ID)
+	}
+	return len(ids) == 0
+}
+
 func deleteChildrenFirst(sessions []store.Session) []store.Session {
 	ordered := make([]store.Session, 0, len(sessions))
 	for _, sess := range sessions {

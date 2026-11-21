@@ -61,7 +61,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		if m.showArchived {
 			create = []menuItem{{label: "New session", action: NewSession}}
 		}
-		return remoteMenuItems(row, create, connection)
+		return remoteMenuItems(row, create, connection, m.showArchived)
 	}
 	if m.showArchived {
 		return menuSections(manage, []menuItem{{label: "Restore", action: Restore}, remove})
@@ -104,7 +104,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 
 // remoteMenuItems offers on a connection's rows only what reaches the
 // remote host's CLI.
-func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menuItem {
+func remoteMenuItems(row treeRow, create []menuItem, connection menuItem, archived bool) []menuItem {
 	group := menuItem{label: "New group", action: NewGroup}
 	switch row.kind {
 	case ConnectionRow:
@@ -112,7 +112,10 @@ func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menu
 			[]menuItem{{label: "Edit connection", action: RenameAction}, connection},
 			[]menuItem{{label: "Remove connection", action: Delete, danger: true}})
 	case GroupRow:
-		return append(create, group)
+		if archived {
+			return append(create, group)
+		}
+		return menuSections(append(create, group), []menuItem{{label: "Delete", action: Delete, danger: true}})
 	}
 	remove := menuItem{label: "Delete", action: Delete, danger: true}
 	if row.sess.Archived {
