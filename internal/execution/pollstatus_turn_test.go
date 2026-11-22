@@ -1,7 +1,10 @@
 package execution
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,7 +14,8 @@ import (
 
 // A turn that starts and ends between two polls still reports working and
 // then finished, once each, whether the status comes from the tool's hooks
-// or from its pane rules.
+// or from its pane rules. A resting pane that only redraws (a hint row, a
+// draft in the composer, a resize) reports nothing.
 func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 	for _, hooked := range []bool{true, false} {
 		name := "pane rules"
@@ -20,11 +24,18 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			m := buildModel(t)
-			// Without the tty echo the pane holds only what the tool prints,
-			// so the summary row stays the last thing above the composer.
-			quiet := m.cfg.Tools["claude-hooked"]
-			quiet.Command = `sh -c 'stty -echo; exec cat' --`
-			m.cfg.Tools["claude-hooked"] = quiet
+			// Redraws the whole screen from the file named on each line, the
+			// way a full-screen CLI repaints, with nothing echoed.
+			drawer := m.cfg.Tools["claude-hooked"]
+			drawer.Command = `sh -c 'stty -echo; while IFS= read -r f; do printf "\033[H\033[2J"; cat "$f"; done' --`
+			drawer.UserEcho = "^❯ "
+			drawer.ChromeLine = `^\s+Tip: `
+			m.cfg.Tools["claude-hooked"] = drawer
+			engine, err := status.NewEngine(m.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.poller.engine = engine
 			createSessionOn(t, m, "quick", "claude-hooked", t.TempDir())
 			sess := m.sessionRows()[0]
 			waitForPane(t, m, sess.ID, "boot-marker")
@@ -36,16 +47,21 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 					writeHookStatus(t, m, sess.ID, state)
 				}
 			}
-			print := func(lines ...string) {
+			frames := t.TempDir()
+			drawn := 0
+			draw := func(rows ...string) {
 				t.Helper()
-				if err := m.tmux.Paste(sess.ID, strings.Join(lines, "\n")+"\n"); err != nil {
+				drawn++
+				marker := "frame " + strconv.Itoa(drawn)
+				path := filepath.Join(frames, strconv.Itoa(drawn))
+				body := strings.Join(append(rows, "  "+marker), "\n")
+				if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				settledPane(t, m, sess.ID, lines[len(lines)-1])
-			}
-			turn := func(prompt, summary string) {
-				t.Helper()
-				print("❯ "+prompt, "● "+prompt+" done", summary, "❯ ")
+				if err := m.tmux.Paste(sess.ID, path+"\n"); err != nil {
+					t.Fatal(err)
+				}
+				settledPane(t, m, sess.ID, marker)
 			}
 			rec := &lifecyclehook.Recorder{}
 			m.poller.events = rec
@@ -67,26 +83,44 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 					t.Fatalf("%s: events = %q, want %q", label, got, events)
 				}
 			}
+			rows := func(groups ...[]string) []string { return slices.Concat(groups...) }
 			finished := []string{"session_state:working>finished", "notification:working>finished"}
+			first := []string{"❯ first prompt", "● first reply"}
+			firstEnd := []string{"✻ Worked for 3s"}
+			composer := []string{"❯ "}
 
 			hookStatus(status.Finished)
-			turn("first", "✻ Worked for 3s")
+			draw(rows([]string{"● older reply"}, first, firstEnd, composer)...)
 			if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 				t.Fatal(err)
 			}
 			step()
 			want("a poll with nothing new", step())
 
-			turn("again", "✻ Worked for 1s")
+			draw(rows([]string{"● oldest reply", "● older reply"}, first, []string{"  Tip: name the tab with /title"}, firstEnd, []string{"❯ a draft never sent"})...)
+			want("a hint row, a moved top edge and a draft", step())
+			if err := m.tmux.Resize(sess.ID, 60, 20); err != nil {
+				t.Fatal(err)
+			}
+			draw(rows(first, firstEnd, composer)...)
+			want("a resize", step())
+			if err := m.tmux.Resize(sess.ID, 80, 24); err != nil {
+				t.Fatal(err)
+			}
+			draw(rows([]string{"● older reply"}, first, firstEnd, composer)...)
+			want("a resize back", step())
+
+			again := rows(first, firstEnd, []string{"❯ again", "● again reply", "✻ Worked for 1s"})
+			draw(rows(again, composer)...)
 			want("the poll after a turn it never saw run", step(), "session_state:finished>working")
 			want("the poll after that", step(), finished...)
 			want("a quiet poll after the turn", step())
 
 			hookStatus(status.Working)
-			print("❯ watched", "● reading")
+			draw(rows(again, []string{"❯ watched", "● reading"}, composer)...)
 			want("a turn a poll sees running", step(), "session_state:finished>working")
 			hookStatus(status.Finished)
-			turn("watched", "✻ Worked for 2s")
+			draw(rows(again, []string{"❯ watched", "● read it", "✻ Worked for 2s"}, composer)...)
 			want("the poll that sees it end", step(), finished...)
 			want("a quiet poll after the watched turn", step())
 		})

@@ -76,7 +76,7 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 				return "", err
 			}
 		} else if hookStatus, ok := p.hooks.Read(sess.ID); ok {
-			return p.unseenTurn(sess, p.applyHookStatus(sess, text, hookStatus), hasRegion, regionHash), nil
+			return p.applyHookStatus(sess, text, hookStatus), nil
 		}
 	}
 	newStatus, matched := p.engine.Match(sess.Tool, text)
@@ -126,26 +126,38 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 	} else {
 		delete(p.quietSince, sess.ID)
 	}
-	newStatus = p.unseenTurn(sess, newStatus, hasRegion, regionHash)
 	if newStatus == status.Finished && sess.Acked {
 		newStatus = status.Idle
 	}
 	return newStatus, nil
 }
 
-// unseenTurn reads a session as working when its content region moved
-// while it rested at both ends: a whole turn ran between two polls, so the
-// next poll reports its end as a stored change of its own.
-func (p *Runner) unseenTurn(sess store.Session, verdict string, hasRegion bool, regionHash uint64) string {
-	previous, seen := p.paneHashes[sess.ID]
-	if !hasRegion || !seen || previous == regionHash || !rested(sess.Status) || !rested(verdict) {
-		return verdict
+// turnMark is the newest prompt and reply a pane shows, as wrapped at its
+// width.
+type turnMark struct {
+	sum   uint64
+	width int
+}
+
+// unseenTurn reports a turn that ran between two polls: the newest prompt
+// or reply changed while the session rested at both. The region as a whole
+// is no signal at rest, because a tool redraws hint rows as the composer
+// changes and that moves the region's top edge.
+func (p *Runner) unseenTurn(sess store.Session, pane string, width int, verdict string, marks map[string]turnMark) bool {
+	text := p.engine.Plain(sess.Tool, pane)
+	echo, _ := p.engine.LastUserEcho(sess.Tool, text)
+	if echo == "" {
+		return false
 	}
-	return status.Working
+	prose, _, _ := p.engine.FullTurnText(sess.Tool, text)
+	mark := turnMark{sum: hashString(echo + "\x00" + prose), width: width}
+	marks[sess.ID] = mark
+	previous, seen := p.turnMarks[sess.ID]
+	return seen && previous.width == width && previous.sum != mark.sum && rested(sess.Status) && rested(verdict)
 }
 
 // rested is a status a turn leaves behind. Waiting is left out, because
-// working through a dialog moves the region without a new turn.
+// working through a dialog changes the screen without a new turn.
 func rested(current string) bool {
 	return current == status.Finished || current == status.Idle
 }

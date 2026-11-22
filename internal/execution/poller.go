@@ -73,6 +73,8 @@ type Runner struct {
 	// and one-off refresh commands
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
+	// turnMarks is the newest turn each pane showed on the last poll.
+	turnMarks map[string]turnMark
 	// conversations reads which conversation a running agent is on for the
 	// CLIs that report no switch themselves.
 	conversations conversation.Reader
@@ -368,6 +370,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	var agents AgentStats
 	var cpuSecDelta float64
 	paneHashes := make(map[string]uint64, len(sessions))
+	turnMarks := make(map[string]turnMark, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
 	followFailures := make(map[string]error, len(sessions))
@@ -468,6 +471,9 @@ func (p *Runner) step(ctx context.Context) Result {
 					return Result{Err: err}
 				}
 				newStatus = derived
+				if p.unseenTurn(sess, pane, panes[sess.ID].Width, derived, turnMarks) {
+					newStatus = status.Working
+				}
 				// Hold the launch state until the agent first paints its pane,
 				// so a just-created session reads "starting up" rather than
 				// flashing idle before it has booted. A grace cap keeps a tool
@@ -571,6 +577,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
+	p.turnMarks = turnMarks
 	followWarning := p.newFollowFailure(sessions, followFailures)
 
 	groups, err := p.store.Groups()
