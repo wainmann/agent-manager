@@ -1,7 +1,9 @@
 package sessioncmd
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -303,6 +305,162 @@ func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 		t.Fatalf("read status-left of %s: %v: %s", id, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// The user's delete key over SSH takes the group with what runs in it:
+// subgroups, agents, the terminals under them and archived rows, and a clean
+// worktree with its branch; a worktree with unsaved work stays and the
+// notice says so. Rows filed elsewhere stay.
+func TestDeleteGroupWithSessionsTakesTheSubtreeTheWayTheDeleteKeyDoes(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, path := range []string{"fleet", "fleet/backend"} {
+		if _, err := h.sessions.CreateGroup("", path, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", path, err)
+		}
+	}
+	fleet, nested := "fleet", "fleet/backend"
+	repo := newGitRepo(t)
+	wanted := true
+	clean, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "clean-worker", Group: &fleet, Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create clean-worker: %v", err)
+	}
+	busy, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "busy-worker", Group: &nested, Directory: repo, Worktree: &wanted})
+	if err != nil {
+		t.Fatalf("Create busy-worker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(busy.Directory, "work.txt"), []byte("draft"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "nested-worker", Group: &nested})
+	if err != nil {
+		t.Fatalf("Create nested-worker: %v", err)
+	}
+	terminal, err := h.terminals.Create(worker.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("terminal Create: %v", err)
+	}
+	shelved, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "shelved", Group: &fleet})
+	if err != nil {
+		t.Fatalf("Create shelved: %v", err)
+	}
+	if _, err := h.sessions.Archive("", shelved.ID, true); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	confirmed := []string{shelved.ID, terminal.ID, clean.ID, busy.ID, worker.ID}
+	deletion, err := h.sessions.DeleteGroupWithSessions("", "fleet", confirmed)
+	if err != nil {
+		t.Fatalf("DeleteGroupWithSessions: %v", err)
+	}
+	if want := "worktree kept (has work): " + busy.Directory; !slices.Equal(deletion.Removed, []string{"fleet", "fleet/backend"}) || deletion.Notice != want {
+		t.Fatalf("deletion = %+v, want both groups and the notice %q", deletion, want)
+	}
+	if got := slices.Sorted(slices.Values(deletion.Deleted)); !slices.Equal(got, slices.Sorted(slices.Values(confirmed))) {
+		t.Fatalf("deleted %q, want the confirmed %q", deletion.Deleted, confirmed)
+	}
+	for _, id := range confirmed {
+		if _, err := h.store.Get(id); err == nil {
+			t.Fatalf("%s still has a row", id)
+		}
+		if h.driver.Exists(id) {
+			t.Fatalf("%s still has a pane", id)
+		}
+	}
+	if _, err := os.Stat(clean.Directory); !os.IsNotExist(err) {
+		t.Fatalf("clean worktree still on disk: %v", err)
+	}
+	branch := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+clean.Branch)
+	branch.Dir = repo
+	if branch.Run() == nil {
+		t.Fatalf("branch %s should be deleted", clean.Branch)
+	}
+	if _, err := os.Stat(filepath.Join(busy.Directory, "work.txt")); err != nil {
+		t.Fatalf("the unsaved work must stay: %v", err)
+	}
+	if _, err := h.store.Get(h.caller.ID); err != nil || !h.driver.Exists(h.caller.ID) {
+		t.Fatalf("a session in another group went with it: %v", err)
+	}
+	groups, err := h.sessions.Groups("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range groups {
+		if strings.HasPrefix(group.Path, "fleet") {
+			t.Fatalf("group %s survived", group.Path)
+		}
+	}
+}
+
+// The ids are what the user saw in the question. A session that arrived,
+// left, or was swapped for another since then refuses the whole delete, as
+// the delete key does, and so does an id the host never had.
+func TestDeleteGroupWithSessionsRefusesSessionsThatChanged(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.CreateGroup("", "fleet", ""); err != nil {
+		t.Fatal(err)
+	}
+	fleet := "fleet"
+	gone, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "gone-worker", Group: &fleet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Delete("", gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	late, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "late-worker", Group: &fleet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, confirmed := range map[string][]string{
+		"added":       nil,
+		"removed":     {late.ID, gone.ID},
+		"swapped":     {gone.ID},
+		"unknown":     {"deadbeef"},
+		"malformed":   {late.ID + "; rm -rf ~"},
+		"empty":       {""},
+		"twice":       {late.ID, late.ID},
+		"wrong group": {h.caller.ID},
+	} {
+		if _, err := h.sessions.DeleteGroupWithSessions("", "fleet", confirmed); err == nil || err.Error() != "sessions in fleet changed since confirmation; review them and try again" {
+			t.Fatalf("%s %q = %v, want the refusal", name, confirmed, err)
+		}
+	}
+	if _, err := h.store.Get(late.ID); err != nil || !h.driver.Exists(late.ID) {
+		t.Fatalf("a refused delete must keep the session running: %v", err)
+	}
+	if groups, err := h.sessions.Groups(""); err != nil || !slices.ContainsFunc(groups, func(group Group) bool { return group.Path == "fleet" }) {
+		t.Fatalf("a refused delete must keep the group: %+v, %v", groups, err)
+	}
+	if _, err := h.sessions.DeleteGroupWithSessions("", "nowhere", nil); err == nil || !strings.Contains(err.Error(), `group "nowhere" does not exist`) {
+		t.Fatalf("a missing group = %v", err)
+	}
+}
+
+// An empty group the user confirmed as empty goes with nothing else.
+func TestDeleteGroupWithSessionsDeletesAnEmptyGroup(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.CreateGroup("", "idle", ""); err != nil {
+		t.Fatal(err)
+	}
+	deletion, err := h.sessions.DeleteGroupWithSessions("", "idle", nil)
+	if err != nil || !slices.Equal(deletion.Removed, []string{"idle"}) || len(deletion.Deleted) != 0 {
+		t.Fatalf("deletion = %+v, %v", deletion, err)
+	}
+	if _, err := h.store.Get(h.caller.ID); err != nil || !h.driver.Exists(h.caller.ID) {
+		t.Fatalf("a session outside the group went with it: %v", err)
+	}
+}
+
+// An agent tidying up deletes the group alone; what runs in it is the user's.
+func TestDeleteGroupWithSessionsRefusesACallingSession(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.DeleteGroupWithSessions(h.caller.ID, "backend", []string{h.caller.ID}); err == nil || !strings.Contains(err.Error(), "delete-group without --with-sessions") {
+		t.Fatalf("a session deleting its own group with it = %v, want a refusal", err)
+	}
+	if _, err := h.store.Get(h.caller.ID); err != nil || !h.driver.Exists(h.caller.ID) {
+		t.Fatalf("a refused delete must keep the caller running: %v", err)
+	}
 }
 
 // The user's rename key on another machine renames a group where it stands,

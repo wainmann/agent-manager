@@ -228,6 +228,24 @@ func TestDeadlineIsUnreachable(t *testing.T) {
 	}
 }
 
+func TestACallItsCallerGaveUpOnIsNotAnOutdatedHost(t *testing.T) {
+	started := make(chan struct{})
+	c := newTestClient(t, func(ctx context.Context, _ []string) ([]byte, []byte, error) {
+		close(started)
+		<-ctx.Done()
+		return []byte(`{"output":"ab`), nil, errors.New("signal: killed")
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+	_, err := c.ReadSession(ctx, Ref{Host: "gpu", ID: "a1"})
+	if !errors.Is(err, context.Canceled) || TroubleOf(err) == TroubleOutdated {
+		t.Fatalf("a call cut off mid-answer by its caller = %v, trouble %v", err, TroubleOf(err))
+	}
+}
+
 func TestEveryCallHasADeadline(t *testing.T) {
 	deadlines := map[string]time.Duration{}
 	c := newTestClient(t, func(ctx context.Context, argv []string) ([]byte, []byte, error) {

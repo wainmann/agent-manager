@@ -23,6 +23,7 @@ const (
 	Restore
 	CreateGroup
 	Delete
+	DeleteGroup
 	Rename
 	RenameGroup
 	Move
@@ -39,6 +40,9 @@ type Call struct {
 	// GroupDir is the directory a new group on the host defaults to; Name
 	// carries its path.
 	GroupDir string
+	// Sessions holds the ids of the sessions a group delete confirmed it
+	// takes.
+	Sessions []string
 	// Group is the host's group a move files the session under, empty for
 	// its root.
 	Group string
@@ -84,6 +88,10 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 		result.Session, err = client.Archive(ctx, call.Ref, call.Op == Restore)
 	case CreateGroup:
 		_, err = client.CreateGroup(ctx, call.Host, call.Name, call.GroupDir)
+	case DeleteGroup:
+		var deleted sessioncmd.GroupDeletion
+		deleted, err = client.DeleteGroupWithSessions(ctx, call.Host, call.Name, call.Sessions)
+		result.Notice = deleted.Notice
 	case Rename:
 		result.Session, err = client.Rename(ctx, call.Ref, call.Text)
 	case RenameGroup:
@@ -120,11 +128,15 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 		root.ReportDone("opened terminal " + result.Session.Name + on)
 	case Kill, CloseTerminal:
 		root.ReportDone("killed " + call.Name + on)
-	case Delete:
+	case Delete, DeleteGroup:
+		deleted := "deleted " + call.Name + on
+		if call.Op == DeleteGroup {
+			deleted = "deleted group " + call.Name + on
+		}
 		if result.Notice != "" {
-			root.ReportErr("deleted " + call.Name + on + "; " + result.Notice)
+			root.ReportErr(deleted + "; " + result.Notice)
 		} else {
-			root.ReportDone("deleted " + call.Name + on)
+			root.ReportDone(deleted)
 		}
 	case Revive:
 		root.ReportDone("revived " + call.Name + on)

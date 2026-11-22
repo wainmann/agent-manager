@@ -235,6 +235,16 @@ func FormatGroupRemoval(removal GroupRemoval) string {
 	return line
 }
 
+// FormatGroupDeletion names the groups a delete with their sessions removed
+// and how many sessions went with them.
+func FormatGroupDeletion(deletion GroupDeletion) string {
+	line := fmt.Sprintf("deleted %s and the %d session(s) in them", strings.Join(deletion.Removed, ", "), len(deletion.Deleted))
+	if deletion.Notice != "" {
+		line += "\n" + deletion.Notice
+	}
+	return line
+}
+
 func FormatGroupList(groups []Group) string {
 	if len(groups) == 0 {
 		return "no groups; sessions live in the root"

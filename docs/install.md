@@ -1,6 +1,6 @@
 # Install
 
-The quickest routes are in the [README](../README.md#install): Homebrew, Scoop, and the install script. Every other supported route is here.
+Every supported way to install agent-manager, then how to check a download, update, and uninstall it.
 
 ## Dependencies
 
@@ -13,13 +13,47 @@ The quickest routes are in the [README](../README.md#install): Homebrew, Scoop, 
 
 The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. When the manager starts without tmux, or the diff view cannot find git, it names the install command it detected, or tells you to use your package manager.
 
-## Homebrew cask
+## Homebrew
+
+```bash
+brew install agent-manager
+```
+
+The homebrew-core formula installs a prebuilt bottle where one matches your system, and tmux with it if missing. Homebrew runs on git, so both dependencies are covered.
+
+The cask installs the binary from the GitHub release, and pulls in tmux.
 
 ```bash
 brew install --cask yoanwai/tap/agent-manager
 ```
 
-Installs the released binary rather than building it, and pulls in tmux. The [README](../README.md#install) covers `brew install agent-manager`, the homebrew-core formula that builds from source.
+## Install script (macOS / Linux)
+
+Download the script:
+
+```bash
+curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh
+```
+
+With `gh` logged in, verify it:
+
+```bash
+gh attestation verify install.sh --repo wainmann/agent-manager
+```
+
+Run it only when the download succeeded, and the verify too if you ran it. Read `install.sh` first:
+
+```bash
+sh install.sh
+```
+
+Short form, with nothing saved to read:
+
+```bash
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh
+```
+
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` also verifies the downloaded archive, as described in [Checking a download](#checking-a-download).
 
 ## Arch Linux
 
@@ -70,7 +104,7 @@ microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
 microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
 Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
 and microsoft/winget-pkgs#469116 (0.47.1).
-When the package is published, add:
+When the package is published, add it here and to the README install block:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -132,10 +166,10 @@ The dependency versions and their purpose are listed below. Open a new terminal 
 
 ### Install script
 
-Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
+Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`.
 
 ```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
 if ($?) {
     Get-Content .\install.ps1
     Unblock-File .\install.ps1
@@ -143,7 +177,7 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
+Logged in to `gh`, verify it after the download and before the installer. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify.
 
 ```powershell
 irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
@@ -168,10 +202,8 @@ The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manage
 Short form. Piping into `iex` skips the download-and-read step and does not consult the execution policy.
 
 ```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 | iex
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 | iex
 ```
-
-On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -191,13 +223,13 @@ agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/
 
 ## Checking a download
 
-The release workflow attests every digest in `checksums.txt`. That covers the archives, and, from the release that attaches them, `install.ps1` and `install.sh`. `gh` must be logged in, and it has to be a build that provides `gh attestation`. The current upstream release does. An anonymous call stops at `gh auth login`, and the attestation API is rate-limited like the rest of GitHub's API.
+The release workflow attests every digest in `checksums.txt`. That covers the archives, `install.ps1` and `install.sh`. `gh` must be logged in, and it has to be a build that provides `gh attestation`. The current upstream release does. An anonymous call stops at `gh auth login`, and the attestation API is rate-limited like the rest of GitHub's API.
 
 ```bash
 gh attestation verify <archive> --repo wainmann/agent-manager
 ```
 
-`<archive>` is the file you downloaded, such as `agent-manager_0.47.1_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
+`<archive>` is the file you downloaded, such as `agent-manager_0.47.1_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh`. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
 The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They try `--repo wainmann/agent-manager` first, which releases from v0.47.1 on pass. When that fails they retry with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which earlier releases pass, and they stop only if both fail. They skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats a failure of both as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
 
@@ -216,14 +248,12 @@ brew upgrade agent-manager                                                      
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
 scoop update                                                                              # Scoop, after closing agent-manager
 scoop update agent-manager                                                                # Scoop, second step
-curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh   # install script
 mise upgrade --bump github:wainmann/agent-manager                                         # mise
 mise upgrade --bump ubi:wainmann/agent-manager                                            # mise, earlier installs
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise, earlier installs
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
-
-The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.
 

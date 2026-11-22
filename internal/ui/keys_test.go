@@ -208,3 +208,27 @@ func isCtrlC(expr ast.Expr) bool {
 	}
 	return false
 }
+
+// A held key that outruns the event loop arrives as one merged run of runes
+// (#797). Each rune is a press, so jjj moves three rows and kkk comes back,
+// while the search field still takes a run as the text typed.
+func TestMergedRunesPressEachKey(t *testing.T) {
+	m := buildModel(t)
+	for _, name := range []string{"a", "b", "c", "d"} {
+		createSession(t, m, name, t.TempDir(), "")
+	}
+	m.selectSessionRow(t, "a")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("jjj")})
+	if got := railSelectedSession(m).Name; got != "d" {
+		t.Fatalf("jjj selected %q, want d", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("kkk")})
+	if got := railSelectedSession(m).Name; got != "a" {
+		t.Fatalf("kkk selected %q, want a", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("jk")})
+	if !m.rail.Searching() || m.rail.Search() != "jk" {
+		t.Fatalf("search = %q searching=%t, want jk", m.rail.Search(), m.rail.Searching())
+	}
+}

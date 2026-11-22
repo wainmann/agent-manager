@@ -43,7 +43,6 @@ type Call struct {
 // status line words them.
 var Refusals = map[uirail.ActionKind]string{
 	uirail.MoveToGroup: "moving a group",
-	uirail.Delete:      "deleting a group",
 	uirail.Restart:     "restart",
 	uirail.Fork:        "fork",
 	uirail.OpenReview:  "review",

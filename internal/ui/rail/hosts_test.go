@@ -265,8 +265,8 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 	if got := labels(Selection{Kind: GroupRow}); !slices.Contains(got, "New connection") {
 		t.Errorf("root menu = %v, want New connection", got)
 	}
-	if got := labels(Selection{Kind: GroupRow, Group: "ops", Host: "box"}); !slices.Contains(got, "Rename") {
-		t.Errorf("remote group menu = %v, want Rename", got)
+	if got := labels(Selection{Kind: GroupRow, Group: "ops", Host: "box"}); !slices.Contains(got, "Rename") || !slices.Contains(got, "Delete") {
+		t.Errorf("remote group menu = %v, want Rename and Delete", got)
 	}
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "claude", Status: "dead"}}}}})
 	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Rename", "Move to group", "Revive", "Archive", "Delete"}) {
@@ -281,6 +281,13 @@ func TestConnectionMenusOfferOnlyRemoteActions(t *testing.T) {
 	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{{ID: "far", Name: "far", Tool: "terminal", IsShell: true, Status: "dead"}}}}})
 	if got := labels(Selection{Kind: SessionRow, SessionID: "far", Host: "box"}); !slices.Equal(got, []string{"Rename", "Kill"}) {
 		t.Errorf("dead remote terminal menu = %v, want Rename and Kill", got)
+	}
+	// The archived view deletes only a group's archived rows, which the
+	// host has no call for.
+	model.SetArchived(true)
+	model.Reconcile(Snapshot{Hosts: []Host{{Name: "box", State: HostOnline, Groups: []string{"ops"}, Sessions: []Session{{ID: "old", Name: "old", Tool: "claude", Group: "ops", Status: "dead", Archived: true}}}}})
+	if got := labels(Selection{Kind: GroupRow, Group: "ops", Host: "box"}); len(got) == 0 || slices.Contains(got, "Delete") {
+		t.Errorf("archived remote group menu = %v, want one without Delete", got)
 	}
 }
 

@@ -70,6 +70,9 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		group := row.Group
 		return m.queueRemote(newTerminalCall(row.Host, group)), true
 	}
+	if row.Kind == uiconnections.GroupRow && intent.Kind == uirail.Delete {
+		return m.confirmRemoteGroupDelete(row), true
+	}
 	if row.Kind == uiconnections.SessionRow {
 		call := uiconnections.SessionCall(row, intent.Kind, m.listKeyHint)
 		if cmd, ok := m.remoteSessionIntent(row, call); ok {
@@ -152,6 +155,30 @@ func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call, term
 	}
 	m.openConfirm(confirmTarget{
 		prompt: uidialogs.Confirm{Action: call.Action, Label: label},
+		remote: &request,
+	})
+	return nil
+}
+
+// confirmRemoteGroupDelete asks before a group goes on its host with every
+// session in it, counted from the snapshot the question shows; their ids go
+// with the call, so the host refuses if that snapshot was stale. The
+// archived view deletes only a group's archived rows, which the host has no
+// call for.
+func (m *Model) confirmRemoteGroupDelete(row uiconnections.Row) tea.Cmd {
+	if m.rail.ShowArchived() {
+		m.reportErr(uirail.RemoteRefusal("deleting a group from the archive"))
+		return nil
+	}
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return nil
+	}
+	subgroups, sessions := m.ssh.Subtree(row.Host, row.Group)
+	request := uilink.Call{Op: uilink.DeleteGroup, Host: row.Host, Name: row.Group, Sessions: sessions}
+	m.openConfirm(confirmTarget{
+		prompt: uidialogs.Confirm{Action: uidialogs.ConfirmDelete, Group: true,
+			Label: uisession.GroupDeleteLabel(presentation.EscapeControlsInline(row.Group+" on "+row.Host), subgroups, len(sessions), "kills their tmux sessions there.")},
 		remote: &request,
 	})
 	return nil

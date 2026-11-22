@@ -85,6 +85,20 @@ func TestRemoteLegendOffersDeleteOnAnAgentOnly(t *testing.T) {
 	}
 }
 
+// d on a remote group deletes it there in the active view only; the
+// archived view's delete has no host call.
+func TestRemoteGroupLegendOffersDeleteOutsideTheArchive(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}
+	group := rail.RemoteRow{Kind: rail.GroupRow, Host: "box"}
+	if legend := model.RemoteLegendInView(ctx, group, false, false); !slices.Contains(legend.Pairs, [2]string{"d", "delete"}) {
+		t.Fatalf("a remote group should offer delete, got %+v", legend.Pairs)
+	}
+	if legend := model.RemoteLegendInView(ctx, group, false, true); slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "delete" }) {
+		t.Fatalf("a remote group in the archived view should not offer delete, got %+v", legend.Pairs)
+	}
+}
+
 func TestRemoteLegendOffersRenameOnAgentsShellsAndGroups(t *testing.T) {
 	model := rail.New(nil)
 	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}

@@ -451,3 +451,28 @@ func TestUnbindableModifiedKeyLeavesTheListsResizeAlone(t *testing.T) {
 		t.Fatal("Shift+Enter ended the list's gesture; the list swallows it")
 	}
 }
+
+// A held nudge key reaches the armed gesture as one merged run (#797). Each
+// rune nudges, as each arrow does, and none of it is typed into the agent.
+func TestHeldNudgeKeyOverAFocusedResizeNudgesEachPress(t *testing.T) {
+	t.Parallel()
+	nudge := func(keys ...tea.KeyMsg) *Model {
+		m := focusedModel(t)
+		m.layout.width, m.layout.height = 100, 40
+		preparedView(m)
+		for _, key := range append([]tea.KeyMsg{{Type: tea.KeyCtrlCloseBracket}}, keys...) {
+			updated, _ := m.handleKey(key)
+			m = updated.(*Model)
+		}
+		return m
+	}
+	right := tea.KeyMsg{Type: tea.KeyRight}
+	arrows := nudge(right, right, right)
+	held := nudge(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("lll")})
+	if !held.layout.split.ResizeMode || wroteToFocus(held, "l") {
+		t.Fatalf("resize = %v, typed into the agent = %v", held.layout.split.ResizeMode, wroteToFocus(held, "l"))
+	}
+	if held.layout.split.Ratio != arrows.layout.split.Ratio {
+		t.Fatalf("lll left the divider at %v, three arrows at %v", held.layout.split.Ratio, arrows.layout.split.Ratio)
+	}
+}

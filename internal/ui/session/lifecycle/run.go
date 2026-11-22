@@ -247,7 +247,7 @@ func validateSelection(st *store.Store, target Target) (Target, error) {
 	if selection.Members != nil {
 		expected = selection.Members
 	}
-	if !sameSessionIDs(current, expected) {
+	if !sessioncmd.SameSessionIDs(current, expected) {
 		return target, errors.New("sessions changed since confirmation; review the selection and try again")
 	}
 	if selection.Members != nil {
@@ -276,23 +276,6 @@ func ActiveSessions(sessions []store.Session) []store.Session {
 		}
 	}
 	return active
-}
-
-func sameSessionIDs(left, right []store.Session) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	ids := make(map[string]bool, len(left))
-	for _, sess := range left {
-		ids[sess.ID] = true
-	}
-	for _, sess := range right {
-		if !ids[sess.ID] {
-			return false
-		}
-		delete(ids, sess.ID)
-	}
-	return len(ids) == 0
 }
 
 func archivedSessions(sessions []store.Session) []store.Session {

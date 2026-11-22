@@ -69,102 +69,33 @@ agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都�
 
 ## 安装
 
-支持 macOS 和 Linux，Windows 上可通过 [psmux](docs/install.md#windows) 原生运行，也可以在 WSL2 中运行。
-
-### Homebrew（macOS / Linux）
+支持 macOS、Linux、Windows（通过 [psmux](docs/install.md#windows)）和 WSL2。
 
 ```bash
-brew install agent-manager
+brew install agent-manager                         # Homebrew（macOS / Linux）
+brew install --cask yoanwai/tap/agent-manager      # Homebrew cask，预编译二进制
+yay -S agent-manager-bin                           # Arch Linux（AUR）
+mise use -g github:wainmann/agent-manager          # mise
+go install github.com/YoanWai/agent-manager@latest # Go
 ```
 
-缺少 tmux 时会一并安装，Homebrew 本身依赖 git，所以两个依赖都已满足。这是 homebrew-core 的 formula，从源码构建。想要预编译二进制，用 `brew install --cask yoanwai/tap/agent-manager`。
-
-### Scoop（Windows）
+```bash
+# 安装脚本（macOS / Linux / WSL2）
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh
+```
 
 ```powershell
+# 安装脚本（Windows）
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 | iex
+```
+
+```powershell
+# Scoop（Windows）
 scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是单独更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update`，然后运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中为第二条命令加上 `--global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
-
-<!--
-winget is not listed yet. Each release opens a manifest PR to
-microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
-microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
-Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
-and microsoft/winget-pkgs#469116 (0.47.1).
-When the package is published, add a winget section here with:
-winget install --id YoanWai.AgentManager -e
--->
-
-### 安装脚本（macOS / Linux）
-
-先下载脚本，阅读后再运行。只有下载成功后才会执行 `sh install.sh`。
-
-```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh &&
-sh install.sh
-```
-
-这份是 `main` 分支上的脚本，它不在 `checksums.txt` 中。第一个附带 `install.sh` 的发布版本会把该文件列入 `checksums.txt`。之后，请下载发布附带的文件，并在 `gh` 已登录时，在运行脚本前验证它：
-
-```bash
-curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo wainmann/agent-manager &&
-sh install.sh
-```
-
-在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。较早的版本请用 `--owner YoanWai --signer-repo YoanWai/agent-manager` 代替 `--repo wainmann/agent-manager` 来验证。
-
-脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。该检查失败时，脚本会用较早版本所需的 `--owner YoanWai --signer-repo YoanWai/agent-manager` 再试一次，两次都失败才会停止。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
-
-不先下载文件阅读，直接运行：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh
-```
-
-### 经过验证的 zip（Windows）
-
-从同一个 [发布页](https://github.com/wainmann/agent-manager/releases/latest) 下载对应架构的 Windows zip 和 `checksums.txt`。解压前，把 zip 的 SHA-256 与 `checksums.txt` 中对应的行进行比对。[手动安装 Windows 版](docs/install.md#download-and-verify-the-zip) 给出了 PowerShell 命令、可选的来源证明（provenance）验证和依赖安装方法。
-
-### 安装脚本（Windows）
-
-先下载脚本，阅读后再运行。只有下载成功后才会运行安装程序。Windows PowerShell 5.1 没有 `&&`，所以用 `if ($?)` 作为判断。在发布版本附带 `install.ps1` 之前，要阅读的是 `main` 分支上的那份。那份不在 `checksums.txt` 中。
-
-```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Content .\install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-}
-```
-
-一旦发布版本附带了 `install.ps1` 并把它列入 `checksums.txt`，请改为下载那个文件。登录 `gh` 后，在下载之后、运行安装程序之前验证它。较早的版本请用 `--owner YoanWai --signer-repo YoanWai/agent-manager` 代替 `--repo wainmann/agent-manager` 来验证。缺少 `gh` 时示例会停止：否则 PowerShell 会保留上一个 `$LASTEXITCODE`，之前某条命令返回的 `0` 会看起来像验证成功。在那个版本发布之前，该发布 URL 没有文件。
-
-```powershell
-irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Command gh -ErrorAction Stop | Out-Null
-    if ($?) {
-        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
-        if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
-        if ($LASTEXITCODE -eq 0) {
-            Get-Content .\install.ps1
-            Unblock-File .\install.ps1
-            powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-        }
-    }
-}
-```
-
-在没有设置执行策略的 Windows 客户端上，实际生效的策略是 Restricted，所以所有 `.ps1` 都会被拒绝。`-ExecutionPolicy Bypass` 只对这一个进程生效，而且是在你读过文件之后。如果策略已经是 RemoteSigned，先 `Unblock-File` 再 `.\install.ps1` 就够了。RemoteSigned 会拒绝仍带有 Mark of the Web 的未签名脚本。浏览器下载会设置这个标记。`irm -OutFile` 不会（Microsoft 文档说明 `Invoke-WebRequest` 不会标记为 Internet 区域）。这种情况下 `Unblock-File` 不起作用。
-
-脚本会把最新版本安装到 `%LOCALAPPDATA%\Programs\agent-manager`，加入你的用户 `Path`，并在缺少 psmux、git 或 PowerShell 7 时提议安装。`AGENT_MANAGER_INSTALL_DEPS=1` 表示同意，`AGENT_MANAGER_INSTALL_DEPS=0` 跳过提示。没有终端时会跳过提示，仍然安装二进制文件。`AGENT_MANAGER_VERIFY_ATTESTATION` 的行为和 shell 脚本中相同。
-
-Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖、更新和卸载方法：[docs/install.md](docs/install.md)。
+各平台的预编译二进制文件见 [Releases](https://github.com/wainmann/agent-manager/releases)。依赖、校验下载、更新和卸载见 [docs/install.md](docs/install.md)。
 
 ## 使用
 

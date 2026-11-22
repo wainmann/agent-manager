@@ -219,7 +219,7 @@ func (s *State) Read() tea.Cmd {
 	}
 	client := s.Client
 	return func() tea.Msg {
-		text, err := client.ReadScreen(context.Background(), read.Ref, read.Terminal)
+		text, err := client.ReadScreen(read.Ctx, read.Ref, read.Terminal)
 		return PreviewMsg{Read: read, Text: text, Err: err}
 	}
 }

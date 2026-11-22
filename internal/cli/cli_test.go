@@ -45,6 +45,7 @@ type fakeSessions struct {
 	ttl       time.Duration
 	deleted   bool
 	notice    string
+	confirmed []string
 
 	session   sessioncmd.Session
 	wait      sessioncmd.WaitResult
@@ -187,6 +188,11 @@ func (f *fakeSessions) DeleteGroup(sessionID, path string) (sessioncmd.GroupRemo
 	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"beef1234"}}, f.failWith
 }
 
+func (f *fakeSessions) DeleteGroupWithSessions(sessionID, path string, confirmed []string) (sessioncmd.GroupDeletion, error) {
+	f.callerID, f.groupPath, f.confirmed, f.deleted = sessionID, path, confirmed, true
+	return sessioncmd.GroupDeletion{Removed: []string{path, path + "/web"}, Deleted: confirmed, Notice: f.notice}, f.failWith
+}
+
 func (f *fakeSessions) Tasks(sessionID string) ([]sessioncmd.Task, error) {
 	f.callerID = sessionID
 	return []sessioncmd.Task{f.task}, f.failWith
@@ -318,6 +324,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
 		{"create-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runCreateGroup(out, sessions, args, "cafe0001") }},
 		{"delete-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runDeleteGroup(out, sessions, args, "cafe0001") }},
+		{"delete-group --with-sessions", []string{"api/web", "--with-sessions=a1,b2"}, func(out io.Writer, args []string) error { return runDeleteGroup(out, sessions, args, "") }},
 		{"task list", nil, func(out io.Writer, args []string) error { return runTaskList(out, sessions, args, "cafe0001") }},
 		{"task create", []string{"ship the api"}, func(out io.Writer, args []string) error { return runTaskCreate(out, sessions, args, "cafe0001") }},
 		{"task claim", nil, func(out io.Writer, args []string) error { return runTaskClaim(out, sessions, args, "cafe0001") }},

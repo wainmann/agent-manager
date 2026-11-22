@@ -27,7 +27,7 @@ The protocol is the remote host's own CLI, run over SSH as `agent-manager <comma
 | Answer an agent from the quick bar | `type --json -- <id> <text>` |
 | Spawn | `spawn --json ...`, `terminal create --json ...` |
 | Lifecycle | `kill`, `delete`, `revive`, `archive [--restore]`, `move`, `rename-session`, `terminal close` |
-| Groups | `create-group`, `delete-group`, `rename-group` |
+| Groups | `create-group`, `delete-group`, `rename-group`, and `delete-group --with-sessions=<id,...>` for `d` on a group |
 | Attach | `ssh -t <dest>` running `tmux -L agentmgr attach-session -t <session>`, then taking back any review or editor request the host's keys left on its tmux server |
 
 The snapshot envelope carries `version`. A remote that does not know `snapshot`, or answers with an older version, says to update agent-manager on that host. One that answers with a newer version says to update it on this machine.
@@ -38,6 +38,7 @@ Once a connection is saved, every agent on this machine can reach that host thro
 
 An SSH call has no calling session on the remote host. The commands it uses run without one:
 - `kill`, `delete`, `revive`, `archive`, `move`, `create-group` and `delete-group` act as the user would.
+- `delete-group --with-sessions=<id,...>` deletes the group with every session in it, the way `d` does on that host, and runs only with no calling session. The ids are the sessions the confirm counted from the last snapshot, none for an empty group, and the host refuses when the sessions it now holds there are not exactly those. A host too old to know the flag refuses it, and the status line says to update agent-manager there.
 - `rename-session` and `rename-group` rename a row the way the user's rename key does, and are refused from inside a session, which names itself with `rename` through its manager. They write the host's store directly, as `kill` and `move` do.
 - `terminal create` opens a terminal that belongs to no session. `terminal send`, `read` and `close` drive only such terminals. A terminal nested under a session stays that session's.
 - Every SSH call is the same caller there, so the local MCP server tells them apart: it records which session's `create_terminal` opened a remote terminal, and `send_terminal` and `close_terminal` on a `host::id` refuse any other session before calling ssh. A terminal opened with `T` on the connection row has no such record, so only the user drives it. The record goes when the terminal is closed through MCP or its session is deleted.
@@ -76,7 +77,7 @@ The local machine can be Linux, macOS or Windows. The remote host must be Linux 
 ## Not in scope
 
 These are refused on a remote row with a message naming the gap:
-- Moving or deleting a group, moving or nesting a terminal, restart and fork.
+- Moving a group, deleting a group in the archived view, moving or nesting a terminal, restart and fork.
 - Diff review.
 - The editor.
 - Copying a reply, marking idle, cancelling an after-turn end, reordering.

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
@@ -25,6 +26,11 @@ type ssh struct {
 	snapshot sessioncmd.Snapshot
 	screen   string
 	err      error
+	// stuck names the sessions whose read never answers: it ends only when
+	// its context does, as an ssh that is killed. holding hears each one
+	// start, which is when it has the host's one call.
+	stuck   []string
+	holding chan string
 }
 
 func (f *ssh) run(ctx context.Context, argv []string) ([]byte, []byte, error) {
@@ -39,6 +45,11 @@ func (f *ssh) run(ctx context.Context, argv []string) ([]byte, []byte, error) {
 	f.mu.Unlock()
 	if fail != nil {
 		return nil, nil, fail
+	}
+	if words[0] == "read" && slices.Contains(f.stuck, words[len(words)-1]) {
+		f.holding <- words[len(words)-1]
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
 	}
 	var reply any
 	switch {
@@ -188,6 +199,63 @@ func TestPreviewReadsTheTrackedRowAndDropsAStaleRead(t *testing.T) {
 	state.Route(root, PreviewMsg{Read: stale, Text: "old screen"})
 	if lines := state.Preview.Screen(40, 4, screenView()); slices.Contains(lines, "old screen") {
 		t.Fatalf("a read for the row before the selection moved landed: %q", lines)
+	}
+}
+
+func TestAReadForARowTheSelectionLeftStopsHoldingTheHost(t *testing.T) {
+	fake := &ssh{screen: "building api", stuck: []string{"s1", "s2", "s3"}, holding: make(chan string, 3)}
+	state := listedState(t, fake)
+	var sessions []sessioncmd.Session
+	for _, id := range []string{"s1", "s2", "s3", "s4"} {
+		sessions = append(sessions, sessioncmd.Session{ID: id, Name: id, Status: "idle"})
+	}
+	state.Refreshed("box", state.Gen(), Facts(remote.HostState{OK: true, Snapshot: sessioncmd.Snapshot{Sessions: sessions}}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The selection crosses three rows whose reads never answer and rests on
+	// the fourth, as a cursor on its way down a slow host's list. The first
+	// read has the host before the selection moves on, so the spawn below
+	// can only go out once that read gives the host back.
+	landed := make(chan tea.Msg, len(sessions))
+	for i, session := range sessions {
+		row, ok := state.Row(uirail.Selection{Kind: uirail.SessionRow, Host: "box", SessionID: session.ID})
+		if !ok {
+			t.Fatalf("%s has no row", session.ID)
+		}
+		cmd := state.Follow(row, true)
+		if cmd == nil {
+			t.Fatalf("%s got no read", session.ID)
+		}
+		go func() { landed <- cmd() }()
+		if i > 0 {
+			continue
+		}
+		select {
+		case <-fake.holding:
+		case <-ctx.Done():
+			t.Fatal("the first read never reached the host")
+		}
+	}
+	if _, err := Run(ctx, state.Client, nil, Call{Op: Spawn, Host: "box"}); err != nil {
+		t.Fatalf("a spawn behind the reads of rows the selection left = %v", err)
+	}
+	root := &recorder{}
+	for range sessions {
+		select {
+		case msg := <-landed:
+			state.Route(root, msg)
+		case <-ctx.Done():
+			t.Fatal("a read for a row the selection left is still out")
+		}
+	}
+	if len(root.errs) != 0 {
+		t.Fatalf("a dropped read reported %q", root.errs)
+	}
+	if lines := state.Preview.Screen(40, 4, screenView()); !slices.Equal(lines, []string{"building api"}) {
+		t.Fatalf("screen = %q, want the row the selection rests on", lines)
+	}
+	if refusal, offline := state.Offline("box"); offline {
+		t.Fatalf("a dropped read took the host offline: %s", refusal)
 	}
 }
 

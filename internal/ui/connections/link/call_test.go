@@ -35,6 +35,23 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 	}
 }
 
+// The deleted group's row stays until the next refresh, so a worktree the
+// host kept is reported with the delete it came from and the host it is on.
+func TestAGroupDeleteSaysWhatItDidAndWhatStayed(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: DeleteGroup, Host: "box", Name: "web", Sessions: []string{"s1", "t1"}}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{}, nil)
+	if want := []string{"deleted group web on box"}; !equal(root.done, want) || len(root.errs) != 0 {
+		t.Fatalf("done %q errors %q, want done %q", root.done, root.errs, want)
+	}
+	root = &recorder{}
+	state.ApplyCall(root, call, Result{Notice: "worktree kept (has work): /srv/wt/api"}, nil)
+	if want := []string{"deleted group web on box; worktree kept (has work): /srv/wt/api"}; !equal(root.errs, want) || len(root.done) != 0 {
+		t.Fatalf("done %q errors %q, want errors %q", root.done, root.errs, want)
+	}
+}
+
 func TestRunSpawnsAndOpensTerminals(t *testing.T) {
 	fake := &ssh{}
 	client := listedState(t, fake).Client

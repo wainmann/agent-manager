@@ -26,6 +26,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
@@ -2730,24 +2731,30 @@ func TestDividerDragInFocusCancelsOnEsc(t *testing.T) {
 	}
 }
 
-// wroteToFocus reports whether the focused pane's next queued write sends
-// text, and whether that write carries want. Typed runes travel as a hex
-// send-keys command, so this reads the write itself: a pane is not asked to
-// echo it back, which psmux does not always do by the time a test looks.
+// wroteToFocus reports whether the focused pane's queued writes send want,
+// in order, whether as one write or a write per key. Typed runes travel as a
+// hex send-keys command, so this reads the writes themselves: a pane is not
+// asked to echo them back, which psmux does not always do by the time a test
+// looks.
 func wroteToFocus(m *Model, want string) bool {
-	job := m.effects.Input.Active
-	if job == nil {
-		return false
-	}
-	request, ok := job.Request.(focusruntime.InputRequest)
-	if !ok || request.Value.Kind != focusruntime.Keys {
-		return false
+	var sent []string
+	for _, job := range append([]*uieffects.Job{m.effects.Input.Active}, m.effects.Input.Pending...) {
+		if job == nil {
+			continue
+		}
+		request, ok := job.Request.(focusruntime.InputRequest)
+		if !ok || request.Value.Kind != focusruntime.Keys {
+			continue
+		}
+		if _, bytes, ok := strings.Cut(request.Value.Command, "-H "); ok {
+			sent = append(sent, bytes)
+		}
 	}
 	var hex []string
 	for i := 0; i < len(want); i++ {
 		hex = append(hex, fmt.Sprintf("%02x", want[i]))
 	}
-	return strings.Contains(request.Value.Command, "-H "+strings.Join(hex, " "))
+	return strings.Contains(strings.Join(sent, " "), strings.Join(hex, " "))
 }
 
 // Ordinary typing reaches the agent while focused, the "|" the old split key

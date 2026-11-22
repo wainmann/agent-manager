@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
@@ -34,7 +35,7 @@ const (
 	usageKillSelf      = "kill-self [--cancel] [--json]"
 	usageGroups        = "groups [--json]"
 	usageCreateGroup   = "create-group <path> [--directory <path>] [--json]"
-	usageDeleteGroup   = "delete-group <path> [--json]"
+	usageDeleteGroup   = "delete-group <path> [--with-sessions=<id,...>] [--json]"
 	usageRenameGroup   = `rename-group <path> "<name>" [--json]`
 )
 
@@ -61,6 +62,7 @@ type sessionCommands interface {
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
+	DeleteGroupWithSessions(sessionID, path string, confirmed []string) (sessioncmd.GroupDeletion, error)
 	RenameGroup(sessionID, path, name string) (sessioncmd.Group, error)
 }
 
@@ -122,7 +124,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(open, runKillSelf)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
 			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(open, runCreateGroup)},
-			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(open, runDeleteGroup)},
+			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping, unless --with-sessions deletes them with it as the user's delete key does", run: bind(open, runDeleteGroup)},
 			{name: "rename-group", usage: usageRenameGroup, about: "rename a group where it stands, its subgroups and sessions moving with it, the way the edit card's name does; only for a caller with no session here", run: bind(open, runRenameGroup)},
 		},
 	}
@@ -485,10 +487,26 @@ func runCreateGroup(out io.Writer, sessions sessionCommands, args []string, sess
 
 func runDeleteGroup(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageDeleteGroup)
+	var withSessions bool
+	var confirmed []string
+	set.Func("with-sessions", "delete the sessions in the group too, as the delete key does; the ids are the ones the user confirmed, empty for none, and any other set there refuses", func(value string) error {
+		withSessions = true
+		if value != "" {
+			confirmed = strings.Split(value, ",")
+		}
+		return nil
+	})
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
 		return err
+	}
+	if withSessions {
+		deletion, err := sessions.DeleteGroupWithSessions(sessionID, operands[0], confirmed)
+		if err != nil {
+			return err
+		}
+		return emit(out, *asJSON, deletion, sessioncmd.FormatGroupDeletion(deletion))
 	}
 	removal, err := sessions.DeleteGroup(sessionID, operands[0])
 	if err != nil {

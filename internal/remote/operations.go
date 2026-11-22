@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
@@ -289,6 +290,26 @@ func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd
 	var removal sessioncmd.GroupRemoval
 	err := c.decode(ctx, host, hookCallTimeout, &removal, "delete-group", "--json", "--", path)
 	return cleanRemoval(removal), err
+}
+
+// DeleteGroupWithSessions deletes the group on its host with every session
+// filed in it, the way the delete key does there. confirmed holds the ids of
+// the sessions the user was asked about, and the host refuses when it holds
+// another set.
+func (c *Client) DeleteGroupWithSessions(ctx context.Context, host, path string, confirmed []string) (sessioncmd.GroupDeletion, error) {
+	for _, id := range confirmed {
+		if err := validID(id); err != nil {
+			return sessioncmd.GroupDeletion{}, &Error{Host: host, Err: err}
+		}
+	}
+	var deletion sessioncmd.GroupDeletion
+	// --json goes first: a host that predates --with-sessions then names the
+	// flag it does not know, which is the answer reworded below.
+	err := c.decode(ctx, host, callTimeout, &deletion, "delete-group", "--json", "--with-sessions="+strings.Join(confirmed, ","), "--", path)
+	if err != nil && strings.Contains(err.Error(), "flag provided but not defined: -with-sessions") {
+		return deletion, &Error{Host: host, Err: errors.New("agent-manager there is too old to delete a group with its sessions; update agent-manager on that host")}
+	}
+	return cleanDeletion(deletion), err
 }
 
 // RenameGroup renames the group at path where it stands on host; its

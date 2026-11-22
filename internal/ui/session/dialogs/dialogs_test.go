@@ -114,8 +114,8 @@ func TestDeleteOfAGroupCountsItsSubgroupsAndRows(t *testing.T) {
 	if len(intent.Card.Sessions) != 2 {
 		t.Fatalf("group delete covers %d rows, want the subtree only", len(intent.Card.Sessions))
 	}
-	if !strings.Contains(intent.Card.Label, "1 subgroups, 2 sessions") {
-		t.Fatalf("label = %q", intent.Card.Label)
+	if want := "delete group work (1 subgroups, 2 sessions incl. archived)? kills their tmux sessions."; intent.Card.Label != want {
+		t.Fatalf("label = %q, want %q", intent.Card.Label, want)
 	}
 }
 
