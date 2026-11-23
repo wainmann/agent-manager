@@ -198,6 +198,37 @@ func TestMigrateKeepsAFileThatAppearedBeforeItsWrite(t *testing.T) {
 	assertKeptWithNotice(t, st, path, theirs, command)
 }
 
+func TestMigrateFinishesWhenAnotherStartWroteTheFileFirst(t *testing.T) {
+	dir := t.TempDir()
+	st := openStore(t)
+	command := "echo twice"
+	if err := st.SetSetting(store.NotifyCommandKey, command); err != nil {
+		t.Fatal(err)
+	}
+	previous := writeHooksFile
+	writeHooksFile = func(target string, data []byte, perm os.FileMode) error {
+		// The other start creates the same file between the stat and this write.
+		if err := previous(target, data, perm); err != nil {
+			return err
+		}
+		return previous(target, data, perm)
+	}
+	t.Cleanup(func() { writeHooksFile = previous })
+	if err := MigrateNotifyCommand(dir, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.Setting(store.NotifyCommandMigratedKey)
+	if err != nil || marker != command {
+		t.Fatalf("marker = %q, %v", marker, err)
+	}
+	if notice, err := st.Setting(store.NotifyCommandNotCarriedKey); err != nil || notice != "" {
+		t.Fatalf("a file the other start wrote raised the not-carried notice: %q, %v", notice, err)
+	}
+}
+
 func TestMigrateKeepsAFileAPendingMigrationDidNotWrite(t *testing.T) {
 	dir := t.TempDir()
 	st := openStore(t)

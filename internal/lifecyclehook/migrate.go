@@ -99,7 +99,9 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 		return err
 	}
 	if err := writeHooksFile(hooksPath(dir), body, 0o600); errors.Is(err, fs.ErrExist) {
-		return noticeExisting(st, command, pending)
+		// Another start can write the same file first. finishPending keeps
+		// any other file and raises the paste notice for it.
+		return finishPending(dir, st, command)
 	} else if err != nil {
 		_, _ = st.SwapSetting(store.NotifyCommandMigratedKey, pending, "")
 		return err
