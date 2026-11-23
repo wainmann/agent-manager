@@ -26,7 +26,7 @@ func recordTiming(kind string, index, count int, begun time.Time, startLatency, 
 		failed = strings.NewReplacer("\t", " ", "\n", " ", "\r", " ").Replace(err.Error())
 	}
 	text := strings.NewReplacer("\t", " ", "\n", " ", "\r", " ").Replace(strings.Join(args, " "))
-	if len(text) > 200 {
+	if kind != "note" && len(text) > 200 {
 		text = text[:200]
 	}
 	line := fmt.Sprintf("%d\t%d\t%s\t%d\t%d\t%d\t%d\t%s\t%s\n",
@@ -39,10 +39,6 @@ func recordTiming(kind string, index, count int, begun time.Time, startLatency, 
 	}
 	defer file.Close()
 	_, _ = file.WriteString(line)
-}
-
-func recordNote(format string, a ...any) {
-	recordTiming("note", 0, 0, time.Now(), 0, 0, nil, []string{fmt.Sprintf(format, a...)})
 }
 
 // StartTimingProbes times a bare process start and a multiplexer start that
