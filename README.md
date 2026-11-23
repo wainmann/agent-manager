@@ -29,7 +29,7 @@
 
 <p align="center">
   <a href="https://github.com/wainmann/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/wainmann/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
-  <a href="https://github.com/wainmann/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwainmann%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
+  <a href="https://github.com/wainmann/agent-manager/releases"><img src="https://img.shields.io/github/downloads/wainmann/agent-manager/total?style=for-the-badge&label=downloads&labelColor=1f2328&color=6f42c1" alt="downloads"></a>
   <a href="https://github.com/wainmann/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/wainmann/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
   <a href="https://discord.gg/ecS88An7pF"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1f2328" alt="Discord"></a>
   <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/sponsor-github-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor on GitHub"></a>
