@@ -75,7 +75,7 @@ type Snapshot struct {
 	// follow, the first time it fails that way.
 	FollowWarning string
 	// HookFailures and HooksConfigError are the messages panel's hook
-	// notices for this pass. A read error leaves them empty.
+	// notices for this pass.
 	HookFailures     []store.HookFailure
 	HooksConfigError string
 	NotifyNotCarried string

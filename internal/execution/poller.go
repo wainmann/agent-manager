@@ -668,18 +668,17 @@ func (p *Runner) step(ctx context.Context) Result {
 			msg.FocusID = id
 		}
 	}
-	// A store that cannot answer leaves the hook notices out of this pass.
-	if failures, err := p.store.HookFailures(); err == nil {
-		msg.HookFailures = failures
+	if msg.HookFailures, err = p.store.HookFailures(); err != nil {
+		return Result{Err: err}
 	}
-	if text, err := p.store.HooksConfigError(); err == nil {
-		msg.HooksConfigError = text
+	if msg.HooksConfigError, err = p.store.HooksConfigError(); err != nil {
+		return Result{Err: err}
 	}
-	if text, err := p.store.Setting(store.NotifyCommandNotCarriedKey); err == nil {
-		msg.NotifyNotCarried = text
+	if msg.NotifyNotCarried, err = p.store.Setting(store.NotifyCommandNotCarriedKey); err != nil {
+		return Result{Err: err}
 	}
-	if text, err := p.store.Setting(store.NotifyCommandFailedKey); err == nil {
-		msg.NotifyFailed = text
+	if msg.NotifyFailed, err = p.store.Setting(store.NotifyCommandFailedKey); err != nil {
+		return Result{Err: err}
 	}
 	if sampleStats {
 		p.statsSampledAt = sampledAt
