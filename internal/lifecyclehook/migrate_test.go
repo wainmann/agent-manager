@@ -318,6 +318,36 @@ func TestMigrateFinishesAPendingWriteWithoutANotice(t *testing.T) {
 	}
 }
 
+func TestMigrateFinishingAPendingWriteKeepsTheCommandShown(t *testing.T) {
+	dir := t.TempDir()
+	st := openStore(t)
+	command := "echo acknowledged"
+	if err := st.SetSetting(store.NotifyCommandKey, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(store.NotifyCommandShownKey, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(store.NotifyCommandMigratedKey, pendingPrefix+command); err != nil {
+		t.Fatal(err)
+	}
+	// The earlier start wrote the file and stopped before it claimed the shown fingerprint.
+	body, argv, err := migratedDocument(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, HooksFile), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateNotifyCommand(dir, st); err != nil {
+		t.Fatal(err)
+	}
+	shown, err := st.HooksShown()
+	if err != nil || !slices.Contains(shown, Fingerprint(EventNotification, argv)) {
+		t.Fatalf("shown = %v, %v, want the acknowledged command kept shown", shown, err)
+	}
+}
+
 func TestTwoStoresMigrateOneFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.db")

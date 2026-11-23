@@ -106,16 +106,21 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 		_, _ = st.SwapSetting(store.NotifyCommandMigratedKey, pending, "")
 		return err
 	}
-	shown, err := st.Setting(store.NotifyCommandShownKey)
-	if err != nil {
+	if err := keepShown(st, command, argv); err != nil {
 		return err
 	}
-	if shown == command {
-		if _, err := st.ClaimHookShown(Fingerprint(EventNotification, argv)); err != nil {
-			return err
-		}
-	}
 	_, err = st.SwapSetting(store.NotifyCommandMigratedKey, pending, command)
+	return err
+}
+
+// keepShown marks the carried hook as already shown when the user saw the
+// old notify_command's first-run banner, so it is not announced again.
+func keepShown(st *store.Store, command string, argv []string) error {
+	shown, err := st.Setting(store.NotifyCommandShownKey)
+	if err != nil || shown != command {
+		return err
+	}
+	_, err = st.ClaimHookShown(Fingerprint(EventNotification, argv))
 	return err
 }
 
@@ -123,7 +128,7 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 // when the file there is the one it writes. Any other file is the user's.
 func finishPending(dir string, st *store.Store, command string) error {
 	pending := pendingPrefix + command
-	body, _, err := migratedDocument(command)
+	body, argv, err := migratedDocument(command)
 	if err != nil {
 		return err
 	}
@@ -133,6 +138,9 @@ func finishPending(dir string, st *store.Store, command string) error {
 	}
 	if !bytes.Equal(existing, body) {
 		return noticeExisting(st, command, pending)
+	}
+	if err := keepShown(st, command, argv); err != nil {
+		return err
 	}
 	_, err = st.SwapSetting(store.NotifyCommandMigratedKey, pending, command)
 	return err
