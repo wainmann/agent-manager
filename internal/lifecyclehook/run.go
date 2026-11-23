@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -37,7 +39,7 @@ func run(ctx context.Context, argv, env []string, stdin []byte) (string, error) 
 		return "", err
 	}
 	cmd := exec.CommandContext(ctx, path, argv[1:]...)
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(slices.DeleteFunc(os.Environ(), inheritedBanner), env...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	output := &cappedBuffer{limit: OutputLimit}
 	cmd.Stdout = output
@@ -46,4 +48,15 @@ func run(ctx context.Context, argv, env []string, stdin []byte) (string, error) 
 	cmd.WaitDelay = waitDelay
 	err = cmd.Run()
 	return output.String(), err
+}
+
+// inheritedBanner is a banner variable a manager started from a
+// notification hook inherited, which only that notification's hooks get.
+func inheritedBanner(kv string) bool {
+	for _, key := range []string{"AM_NOTIFY_KIND=", "AM_TITLE=", "AM_BODY="} {
+		if strings.HasPrefix(kv, key) {
+			return true
+		}
+	}
+	return false
 }

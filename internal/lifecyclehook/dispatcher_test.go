@@ -319,6 +319,10 @@ func TestDispatcherFiltersStatusAndRunsNotificationHooksOnlyOnNotifications(t *t
 }
 
 func TestDispatcherRunsAllHooksForEveryEventAfterTheEventHooks(t *testing.T) {
+	// A manager started from a notification hook inherits its banner text.
+	t.Setenv("AM_NOTIFY_KIND", "stale")
+	t.Setenv("AM_TITLE", "stale")
+	t.Setenv("AM_BODY", "stale")
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "log")
 	allHook := script(t, `event=$(sed -n 's/^{"v":1,"event":"\([a-z_]*\)".*/\1/p')
