@@ -108,7 +108,7 @@ func (d *Dispatcher) Emit(ev Event) {
 		d.mu.Unlock()
 		go func() {
 			defer d.failWG.Done()
-			d.writeFailure(ev, "", "queue full, dropped "+ev.Name, "")
+			d.writeAllowed(ev.Name, ev, "", "queue full, dropped "+ev.Name, "")
 		}()
 		return
 	}
@@ -171,7 +171,7 @@ func (d *Dispatcher) Close(ctx context.Context) {
 		d.wg.Wait()
 		for _, ev := range dropped {
 			if d.allow(ev.Name) {
-				d.writeFailure(ev, "", "dropped on close", "")
+				d.writeAllowed(ev.Name, ev, "", "dropped on close", "")
 			}
 		}
 	}

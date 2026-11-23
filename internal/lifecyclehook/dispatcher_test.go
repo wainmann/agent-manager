@@ -208,6 +208,40 @@ func TestDispatcherFailureIsOnceAndPrivate(t *testing.T) {
 	}
 }
 
+func TestDispatcherLogsAFailureTheStoreRefusedAndRecordsTheNextOne(t *testing.T) {
+	dir := t.TempDir()
+	hook := script(t, "exit 7\n")
+	writeHooks(t, dir, EventSessionState, []string{hook}, "")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER refuse_failures BEFORE INSERT ON settings WHEN NEW.key = 'hook_failures' BEGIN SELECT RAISE(ABORT, 'settings write refused'); END`); err != nil {
+		t.Fatal(err)
+	}
+	d := New(Options{ConfigDir: dir, Store: st, Version: "test"})
+	d.Emit(sessionEvent("s", status.Errored))
+	waitUntil(t, func() bool { return strings.Contains(readFile(t, filepath.Join(dir, LogFile)), "exit status 7") })
+	if _, err := db.Exec(`DROP TRIGGER refuse_failures`); err != nil {
+		t.Fatal(err)
+	}
+	d.Emit(sessionEvent("s", status.Errored))
+	closeDispatcher(d, 3*time.Second)
+	if log := readFile(t, filepath.Join(dir, LogFile)); !strings.Contains(log, "not saved to state.db: ") || strings.Count(log, "exit status 7") != 2 {
+		t.Fatalf("log = %q", log)
+	}
+	if failures, err := st.HookFailures(); err != nil || len(failures) != 1 {
+		t.Fatalf("failures = %+v, %v", failures, err)
+	}
+}
+
 func TestDispatcherRecordsEachCommandAndSessionFailure(t *testing.T) {
 	dir := t.TempDir()
 	first := script(t, "echo first-failure >&2\nexit 7\n")

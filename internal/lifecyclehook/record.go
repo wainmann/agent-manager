@@ -27,7 +27,17 @@ func (d *Dispatcher) record(ev Event, argv []string, reason, output string) {
 	if !d.allow(key) {
 		return
 	}
-	d.writeFailure(ev, argv[0], reason, output)
+	d.writeAllowed(key, ev, argv[0], reason, output)
+}
+
+// writeAllowed writes a failure allow let through. One that did not
+// reach both state.db and hooks.log leaves the window open for the next.
+func (d *Dispatcher) writeAllowed(key string, ev Event, command, reason, output string) {
+	if err := d.writeFailure(ev, command, reason, output); err != nil {
+		d.failMu.Lock()
+		delete(d.failAt, key)
+		d.failMu.Unlock()
+	}
 }
 
 func (d *Dispatcher) allow(key string) bool {
@@ -46,16 +56,19 @@ func (d *Dispatcher) allow(key string) bool {
 	return true
 }
 
-func (d *Dispatcher) writeFailure(ev Event, command, reason, output string) {
-	_ = d.db.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Session: ev.Session.ID, Command: command, Reason: reason})
+func (d *Dispatcher) writeFailure(ev Event, command, reason, output string) error {
+	stored := d.db.AddHookFailure(store.HookFailure{At: time.Now().UTC(), Event: ev.Name, Session: ev.Session.ID, Command: command, Reason: reason})
 	line := fmt.Sprintf("%s %s session=%s %s: %s\n", time.Now().UTC().Format(time.RFC3339), ev.Name, ev.Session.ID, command, reason)
+	if stored != nil {
+		line += "not saved to state.db: " + stored.Error() + "\n"
+	}
 	if output != "" {
 		line += output
 		if output[len(output)-1] != '\n' {
 			line += "\n"
 		}
 	}
-	_ = appendLog(filepath.Join(d.configDir, LogFile), line)
+	return errors.Join(stored, appendLog(filepath.Join(d.configDir, LogFile), line))
 }
 
 func (d *Dispatcher) noteConfig(msg string) {
