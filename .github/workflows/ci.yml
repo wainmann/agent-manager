@@ -346,10 +346,19 @@ jobs:
         env:
           SUITE: ${{ matrix.suite }}
           TESTS: ${{ matrix.tests }}
+          AM_PSMUX_TIMING: ${{ runner.temp }}\am-psmux-timing.tsv
         run: |
           $ui = 'github.com/YoanWai/agent-manager/internal/ui'
           $packages = if ($env:SUITE -eq 'ui') { $ui } else { go list ./... | Where-Object { $_ -ne $ui } }
           go test -p 2 -timeout 60m -run $env:TESTS $packages
+      - name: Retain psmux timing
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: psmux-timing-${{ matrix.suite }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}\am-psmux-timing.tsv
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Windows ssh.exe as the client, driving agent-manager on a POSIX host:
   # here an sshd in WSL. WSL 1 shares the Windows network stack, so the

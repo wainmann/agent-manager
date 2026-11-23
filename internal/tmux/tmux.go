@@ -203,18 +203,24 @@ func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...
 	// reads only one command, so there each runs on its own, stopping at the
 	// first that fails the way tmux does.
 	var out bytes.Buffer
-	for i, command := range splitCommandList(args) {
+	commands := splitCommandList(args)
+	for i, command := range commands {
 		cmd := d.commandContext(ctx, command...)
 		configureBoundedCommand(cmd)
 		cmd.Stdout = &out
 		cmd.Stderr = &out
+		begun := time.Now()
 		if err := cmd.Start(); err != nil {
+			recordTiming("command", i, len(commands), begun, time.Since(begun), time.Since(begun), err, command)
 			return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
 		}
+		startLatency := time.Since(begun)
 		if started != nil && i == 0 {
 			started()
 		}
-		if err := cmd.Wait(); err != nil {
+		err := cmd.Wait()
+		recordTiming("command", i, len(commands), begun, startLatency, time.Since(begun), err, command)
+		if err != nil {
 			if contextErr := ctx.Err(); contextErr != nil {
 				err = contextErr
 			}
