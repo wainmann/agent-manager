@@ -155,7 +155,7 @@ func TestActiveHookNoticesNameTheFailureAndANewOneChangesTheID(t *testing.T) {
 	for _, notice := range notices {
 		byID[notice.ID] = notice
 	}
-	failed, ok := byID["hook-failed-"+strconv.FormatInt(newer.Unix(), 10)]
+	failed, ok := byID["hook-failed-"+strconv.FormatInt(newer.UnixNano(), 10)]
 	if !ok || failed.Kind != KindHeadsUp || failed.Subtitle != "14:03 session_kill stop: killed" {
 		t.Fatalf("failure notice = %+v", failed)
 	}
@@ -193,11 +193,12 @@ func TestActiveHookNoticesNameTheFailureAndANewOneChangesTheID(t *testing.T) {
 			t.Fatal("a new refusal kept the old notice id")
 		}
 	}
-	src.HookFailures = append(src.HookFailures, HookFailure{At: newer.Add(time.Second), Event: "session_state", Command: "sh", Reason: "exit status 2"})
+	// Same second as the last one, so seen or dismissed does not carry over.
+	src.HookFailures = append(src.HookFailures, HookFailure{At: newer.Add(time.Millisecond), Event: "session_state", Command: "sh", Reason: "exit status 2"})
 	moved := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
 	found := false
 	for _, notice := range moved {
-		if notice.ID == "hook-failed-"+strconv.FormatInt(newer.Add(time.Second).Unix(), 10) {
+		if notice.ID == "hook-failed-"+strconv.FormatInt(newer.Add(time.Millisecond).UnixNano(), 10) {
 			found = true
 		}
 	}

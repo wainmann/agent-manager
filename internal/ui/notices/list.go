@@ -195,7 +195,7 @@ func hookNotices(src Sources) []Notice {
 			lines = append(lines, "", src.HooksLog)
 		}
 		notices = append(notices, Notice{
-			ID:       "hook-failed-" + strconv.FormatInt(newest.Unix(), 10),
+			ID:       "hook-failed-" + strconv.FormatInt(newest.UnixNano(), 10),
 			Kind:     KindHeadsUp,
 			Title:    "A hook command failed",
 			Subtitle: lines[0],
