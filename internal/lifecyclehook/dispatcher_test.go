@@ -2,6 +2,7 @@ package lifecyclehook
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -366,6 +367,39 @@ func TestDispatcherRereadsAChangedFile(t *testing.T) {
 	writeHooks(t, dir, EventSessionState, []string{second}, "# a longer file so the size changes\n")
 	d.Emit(sessionEvent("s", status.Idle))
 	waitUntil(t, func() bool { return strings.Contains(readFile(t, out), "two-and-more") })
+}
+
+func TestDispatcherReportsAConfigErrorTheStoreRefusedOnce(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, HooksFile), []byte("schema_version = 1\n[[hooks.nope]]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER refuse_config_error BEFORE INSERT ON settings WHEN NEW.key = 'hooks_config_error' BEGIN SELECT RAISE(ABORT, 'settings write refused'); END`); err != nil {
+		t.Fatal(err)
+	}
+	d := New(Options{ConfigDir: dir, Store: st, Version: "test"})
+	t.Cleanup(func() { closeDispatcher(d, 3*time.Second) })
+	if _, err := d.load(); err == nil {
+		t.Fatal("load accepted an unknown event")
+	}
+	if _, err := db.Exec(`DROP TRIGGER refuse_config_error`); err != nil {
+		t.Fatal(err)
+	}
+	_, loadErr := d.load()
+	if got, err := st.HooksConfigError(); err != nil || got == "" || got != loadErr.Error() {
+		t.Fatalf("config error = %q, %v, want %q", got, err, loadErr)
+	}
 }
 
 func TestDispatcherShowsAHookOnce(t *testing.T) {

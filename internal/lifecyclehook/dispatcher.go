@@ -51,6 +51,8 @@ type Dispatcher struct {
 	stopping bool
 	shutdown bool
 	wg       sync.WaitGroup
+
+	loadMu sync.Mutex
 	// cache serves the last load while size and mtime are unchanged. A
 	// rewrite in the same second that keeps the same size leaves both
 	// unchanged, so that rewrite is served on the next event. An atomic
@@ -253,6 +255,9 @@ func (d *Dispatcher) dispatch(ev Event) {
 }
 
 func (d *Dispatcher) load() (File, error) {
+	// Held through the report, so the notice always matches the cache.
+	d.loadMu.Lock()
+	defer d.loadMu.Unlock()
 	path := hooksPath(d.configDir)
 	info, statErr := os.Stat(path)
 	var mod time.Time
@@ -265,23 +270,17 @@ func (d *Dispatcher) load() (File, error) {
 	if statErr == nil {
 		mod, size = info.ModTime(), info.Size()
 	}
-	d.mu.Lock()
-	if d.cache.set && d.cache.mod.Equal(mod) && d.cache.size == size && d.cache.file.Found == !missing {
-		file, loadErr := d.cache.file, d.cache.err
-		d.mu.Unlock()
-		return file, loadErr
+	if !d.cache.set || !d.cache.mod.Equal(mod) || d.cache.size != size || d.cache.file.Found == missing {
+		file, loadErr := Load(d.configDir)
+		d.cache = hookCache{set: true, mod: mod, size: size, file: file, err: loadErr}
 	}
-	d.mu.Unlock()
-	file, loadErr := Load(d.configDir)
-	d.mu.Lock()
-	d.cache = hookCache{set: true, mod: mod, size: size, file: file, err: loadErr}
-	d.mu.Unlock()
-	if loadErr != nil {
-		d.noteConfig(loadErr.Error())
+	// A hit reports too, so a notice the store refused once is written later.
+	if d.cache.err != nil {
+		d.noteConfig(d.cache.err.Error())
 	} else {
 		d.noteConfig("")
 	}
-	return file, loadErr
+	return d.cache.file, d.cache.err
 }
 
 func (d *Dispatcher) announce(hook Hook) {
