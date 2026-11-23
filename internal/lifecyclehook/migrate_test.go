@@ -162,6 +162,77 @@ func TestMigrateNoticesAnExistingFile(t *testing.T) {
 	if err != nil || marker != command {
 		t.Fatalf("marker = %q, %v", marker, err)
 	}
+	pasted := append(append([]byte{}, original...), notice+"\n"...)
+	if err := os.WriteFile(path, pasted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Load(dir)
+	if err != nil {
+		t.Fatalf("the file with the block pasted at its end: %v\n%s", err, pasted)
+	}
+	if len(file.Hooks) != 1 || file.Hooks[0].Event != EventNotification {
+		t.Fatalf("hooks = %+v", file.Hooks)
+	}
+}
+
+func TestMigrateKeepsAFileThatAppearedBeforeItsWrite(t *testing.T) {
+	dir := t.TempDir()
+	st := openStore(t)
+	command := "echo raced"
+	if err := st.SetSetting(store.NotifyCommandKey, command); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, HooksFile)
+	theirs := []byte("schema_version = 1\n# written in the meantime\n")
+	previous := writeHooksFile
+	writeHooksFile = func(target string, data []byte, perm os.FileMode) error {
+		if err := os.WriteFile(target, theirs, 0o600); err != nil {
+			return err
+		}
+		return previous(target, data, perm)
+	}
+	t.Cleanup(func() { writeHooksFile = previous })
+	if err := MigrateNotifyCommand(dir, st); err != nil {
+		t.Fatal(err)
+	}
+	assertKeptWithNotice(t, st, path, theirs, command)
+}
+
+func TestMigrateKeepsAFileAPendingMigrationDidNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	st := openStore(t)
+	command := "echo interrupted"
+	if err := st.SetSetting(store.NotifyCommandKey, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(store.NotifyCommandMigratedKey, pendingPrefix+command); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, HooksFile)
+	theirs := []byte("schema_version = 1\n# the user's own\n")
+	if err := os.WriteFile(path, theirs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateNotifyCommand(dir, st); err != nil {
+		t.Fatal(err)
+	}
+	assertKeptWithNotice(t, st, path, theirs, command)
+}
+
+func assertKeptWithNotice(t *testing.T, st *store.Store, path string, theirs []byte, command string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(theirs) {
+		t.Fatalf("file = %q, %v, want it kept as %q", got, err, theirs)
+	}
+	notice, err := st.Setting(store.NotifyCommandNotCarriedKey)
+	if err != nil || !strings.Contains(notice, command) {
+		t.Fatalf("notice = %q, %v", notice, err)
+	}
+	marker, err := st.Setting(store.NotifyCommandMigratedKey)
+	if err != nil || marker != command {
+		t.Fatalf("marker = %q, %v", marker, err)
+	}
 }
 
 func TestMigrateResumeAfterAPendingMarker(t *testing.T) {

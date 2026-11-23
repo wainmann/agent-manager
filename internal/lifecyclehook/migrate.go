@@ -1,8 +1,10 @@
 package lifecyclehook
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,9 +20,9 @@ import (
 // after the write resumes instead of looking done.
 const pendingPrefix = "pending\x00"
 
-// writeHooksFile is the atomic write. Tests replace it to fail the write
+// writeHooksFile is the atomic create. Tests replace it to fail the write
 // before the migrated marker is set.
-var writeHooksFile = atomicfile.WriteFile
+var writeHooksFile = atomicfile.CreateFile
 
 type migratedFile struct {
 	SchemaVersion int           `toml:"schema_version"`
@@ -80,8 +82,7 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 		return fmt.Errorf("hooks.toml: %s is a directory", hooksPath(dir))
 	}
 	if exists && marker == pending {
-		_, err := st.SwapSetting(store.NotifyCommandMigratedKey, pending, command)
-		return err
+		return finishPending(dir, st, command)
 	}
 	if exists {
 		return noticeExisting(st, command, marker)
@@ -97,7 +98,9 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 		_, _ = st.SwapSetting(store.NotifyCommandMigratedKey, pending, "")
 		return err
 	}
-	if err := writeHooksFile(hooksPath(dir), body, 0o600); err != nil {
+	if err := writeHooksFile(hooksPath(dir), body, 0o600); errors.Is(err, fs.ErrExist) {
+		return noticeExisting(st, command, pending)
+	} else if err != nil {
 		_, _ = st.SwapSetting(store.NotifyCommandMigratedKey, pending, "")
 		return err
 	}
@@ -114,12 +117,36 @@ func MigrateNotifyCommand(dir string, st *store.Store) error {
 	return err
 }
 
-func noticeExisting(st *store.Store, command, marker string) error {
+// finishPending completes a migration a crash interrupted after its marker,
+// when the file there is the one it writes. Any other file is the user's.
+func finishPending(dir string, st *store.Store, command string) error {
+	pending := pendingPrefix + command
 	body, _, err := migratedDocument(command)
 	if err != nil {
 		return err
 	}
-	block := "# hooks.toml already exists, so this command was not written into it.\n# Paste the block below into it if you still want that command.\n" + string(body)
+	existing, err := os.ReadFile(hooksPath(dir))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(existing, body) {
+		return noticeExisting(st, command, pending)
+	}
+	_, err = st.SwapSetting(store.NotifyCommandMigratedKey, pending, command)
+	return err
+}
+
+func noticeExisting(st *store.Store, command, marker string) error {
+	argv, err := migratedArgv(command)
+	if err != nil {
+		return err
+	}
+	hook, err := toml.Marshal(migratedHook{Command: argv, Timeout: "15s"})
+	if err != nil {
+		return err
+	}
+	block := "# hooks.toml already exists, so this command was not written into it.\n# Paste the block below at the end of it if you still want that command.\n" +
+		commentLines(command) + "[[hooks.notification]]\n" + string(hook)
 	if err := st.SetSetting(store.NotifyCommandNotCarriedKey, block); err != nil {
 		return err
 	}
