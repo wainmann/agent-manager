@@ -131,11 +131,6 @@ func (d *Driver) eachServer(fn func(id string) error) error {
 	return fn("")
 }
 
-// splitCommandList leaves a command list whole: tmux runs it in one go.
-func splitCommandList(args []string) [][]string {
-	return [][]string{args}
-}
-
 // bindingArg is a bind-key argument as tmux takes it, verbatim.
 func bindingArg(s string) string {
 	return s

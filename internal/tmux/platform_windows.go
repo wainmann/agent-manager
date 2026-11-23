@@ -173,35 +173,6 @@ func sessionRoute(id string) []string {
 	return []string{"-t", sessionName(id)}
 }
 
-// splitCommandList breaks a command list into the separate invocations
-// psmux needs: its command line takes one command and reads a ";" as part
-// of it. A leading session route goes on every command, and a trailing \;
-// a value carries for tmux's sake is a plain ";" here.
-func splitCommandList(args []string) [][]string {
-	var route []string
-	if len(args) >= 2 && args[0] == "-t" {
-		route, args = args[:2], args[2:]
-	}
-	var commands [][]string
-	start := 0
-	for i := 0; i <= len(args); i++ {
-		if i < len(args) && args[i] != ";" {
-			continue
-		}
-		command := make([]string, 0, len(route)+i-start)
-		command = append(command, route...)
-		for _, arg := range args[start:i] {
-			if strings.HasSuffix(arg, `\;`) {
-				arg = strings.TrimSuffix(arg, `\;`) + ";"
-			}
-			command = append(command, arg)
-		}
-		commands = append(commands, command)
-		start = i + 1
-	}
-	return commands
-}
-
 const promptHeadHint = ""
 
 // AttachedPromptHead is false: psmux leaves an attached ← to the agent.

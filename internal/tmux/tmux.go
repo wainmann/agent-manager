@@ -199,33 +199,27 @@ func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...
 		return "", err
 	}
 	defer release()
-	// tmux takes a command list in one invocation; psmux's command line
-	// reads only one command, so there each runs on its own, stopping at the
-	// first that fails the way tmux does.
 	var out bytes.Buffer
-	commands := splitCommandList(args)
-	for i, command := range commands {
-		cmd := d.commandContext(ctx, command...)
-		configureBoundedCommand(cmd)
-		cmd.Stdout = &out
-		cmd.Stderr = &out
-		begun := time.Now()
-		if err := cmd.Start(); err != nil {
-			recordTiming("command", i, len(commands), begun, time.Since(begun), time.Since(begun), err, command)
-			return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
+	cmd := d.commandContext(ctx, args...)
+	configureBoundedCommand(cmd)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	begun := time.Now()
+	if err := cmd.Start(); err != nil {
+		recordTiming("command", 0, 1, begun, time.Since(begun), time.Since(begun), err, args)
+		return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
+	}
+	startLatency := time.Since(begun)
+	if started != nil {
+		started()
+	}
+	err = cmd.Wait()
+	recordTiming("command", 0, 1, begun, startLatency, time.Since(begun), err, args)
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			err = contextErr
 		}
-		startLatency := time.Since(begun)
-		if started != nil && i == 0 {
-			started()
-		}
-		err := cmd.Wait()
-		recordTiming("command", i, len(commands), begun, startLatency, time.Since(begun), err, command)
-		if err != nil {
-			if contextErr := ctx.Err(); contextErr != nil {
-				err = contextErr
-			}
-			return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
-		}
+		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
 	}
 	return out.String(), nil
 }
@@ -237,8 +231,7 @@ func (d *Driver) runIn(id string, args ...string) (string, error) {
 	return d.run(append(sessionRoute(id), args...)...)
 }
 
-// runInContext is runIn bounded by ctx, reporting when the first command
-// started.
+// runInContext is runIn bounded by ctx, reporting when the command started.
 func (d *Driver) runInContext(ctx context.Context, started func(), id string, args ...string) (string, error) {
 	return d.runContextStarted(ctx, started, append(sessionRoute(id), args...)...)
 }
