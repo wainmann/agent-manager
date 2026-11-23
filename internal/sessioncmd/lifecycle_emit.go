@@ -90,7 +90,7 @@ func (l *Lifecycle) emitGroupChange(path string, before []store.Session, beforeE
 		known[sess.ID] = true
 	}
 	for _, sess := range sessionsUnder(after, path) {
-		if !known[sess.ID] || was[sess.ID] == archived {
+		if !known[sess.ID] || was[sess.ID] == archived || sess.Archived != archived {
 			continue
 		}
 		l.emitArchived(sess, reason, archived)

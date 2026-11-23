@@ -1,7 +1,10 @@
 package sessioncmd
 
 import (
+	"database/sql"
 	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -215,6 +218,94 @@ func TestLifecycleHooksArchiveAGroup(t *testing.T) {
 	}
 	if archived != 2 {
 		t.Fatalf("archived %d sessions, want 2", archived)
+	}
+}
+
+func TestLifecycleHooksArchiveAGroupSkipsASessionRestoredBeforeTheRead(t *testing.T) {
+	h := newSessionHarness(t)
+	if err := h.store.CreateGroup("hooks", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, rec := recordingLifecycle(t, h)
+	var selected []store.Session
+	for _, id := range []string{"kept", "restored"} {
+		sess := store.Session{ID: id, Name: id, Tool: "echoer", Cwd: t.TempDir(), Status: status.Dead, Group: "hooks"}
+		if err := h.store.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+		selected = append(selected, sess)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// Stands in for another writer restoring the row before the list after the write.
+	if _, err := db.Exec("CREATE TRIGGER restore_again AFTER UPDATE OF archived ON sessions WHEN NEW.id = 'restored' AND NEW.archived = 1 BEGIN UPDATE sessions SET archived = 0 WHERE id = 'restored'; END"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.ArchiveForHuman(ArchiveSelection{Sessions: selected, GroupPath: "hooks", Reason: lifecyclehook.ReasonUser}); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, ev := range rec.Events() {
+		ids = append(ids, ev.Name+":"+ev.Session.ID)
+	}
+	if len(ids) != 1 || ids[0] != lifecyclehook.EventSessionArchive+":kept" {
+		t.Fatalf("events = %q, want only the archive of kept", ids)
+	}
+}
+
+func TestLifecycleHooksRollBackTheConversationTheStartAnnounced(t *testing.T) {
+	h := newSessionHarness(t)
+	lifecycle, rec := recordingLifecycle(t, h)
+	sess := store.Session{ID: "restarted", Name: "restarted", Tool: "echoer", Cwd: t.TempDir(), Status: status.Dead, AgentSessionID: "old-conversation"}
+	if err := h.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TRIGGER refuse_ack BEFORE UPDATE OF acked ON sessions WHEN NEW.id = 'restarted' BEGIN SELECT RAISE(ABORT, 'ack write refused'); END"); err != nil {
+		t.Fatal(err)
+	}
+	tool := lifecycle.runtime.Config.Tools[sess.Tool]
+	bind := func(time.Time) error { return nil }
+	if _, err := lifecycle.launchExisting(sess, tool, "sleep 30", PaneSize{Width: 80, Height: 24}, false, false, lifecyclehook.ReasonRestart, "new-conversation", bind); err == nil {
+		t.Fatal("a launch whose ack write failed succeeded")
+	}
+	var got []string
+	for _, ev := range rec.Events() {
+		got = append(got, ev.Name+":"+ev.Reason+":"+ev.Session.AgentSessionID)
+	}
+	want := []string{"session_start:restart:new-conversation", "session_kill:rollback:new-conversation"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("events = %q, want %q", got, want)
+	}
+}
+
+func TestLifecycleHooksKillReportsTheStoredPreviousStatus(t *testing.T) {
+	h := newSessionHarness(t)
+	lifecycle, rec := recordingLifecycle(t, h)
+	listed := store.Session{ID: "listed", Name: "listed", Tool: "echoer", Cwd: t.TempDir(), Status: status.Working}
+	if err := h.store.CreateSession(listed); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.UpdateStatus(listed.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.Kill(listed); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, ev := range rec.Events() {
+		got = append(got, ev.Name+":"+ev.PreviousStatus+">"+ev.Session.Status)
+	}
+	want := []string{"session_kill:finished>dead", "session_state:finished>dead"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("events = %q, want %q", got, want)
 	}
 }
 

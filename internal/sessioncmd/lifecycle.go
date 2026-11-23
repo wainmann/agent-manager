@@ -311,8 +311,8 @@ func (l *Lifecycle) kill(sess store.Session, reason string) (store.Session, erro
 	if err := l.runtime.Hooks.Remove(sess.ID); err != nil {
 		return store.Session{}, err
 	}
-	previous := sess.Status
-	if err := l.runtime.Store.UpdateStatus(sess.ID, status.Dead); err != nil {
+	previous, err := l.runtime.Store.SwapStatus(sess.ID, status.Dead)
+	if err != nil {
 		return store.Session{}, err
 	}
 	sess.Status = status.Dead
@@ -439,9 +439,10 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 		return RelaunchResult{}, err
 	}
 	var announced bool
+	stopped := sess
 	defer func() {
 		if launchErr != nil {
-			_, cleanupErr := l.stopFailedLaunch(sess, announced)
+			_, cleanupErr := l.stopFailedLaunch(stopped, announced)
 			if cleanupErr != nil {
 				launchErr = errors.Join(launchErr, fmt.Errorf("stop failed launch of %s: %w", sess.Name, cleanupErr))
 			}
@@ -462,7 +463,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 	started := sess
 	started.AgentSessionID = conversation
 	l.emitStart(started, reason)
-	announced = true
+	announced, stopped = true, started
 	if err := l.runtime.Store.SetAcked(sess.ID, false); err != nil {
 		return RelaunchResult{}, err
 	}

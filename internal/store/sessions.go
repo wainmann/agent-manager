@@ -331,6 +331,28 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 	return requireRow(res, id)
 }
 
+// SwapStatus writes a status and returns the stored one it replaced, which
+// a caller's listed copy of the row can trail.
+func (s *Store) SwapStatus(id, newStatus string) (previous string, err error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`SELECT status FROM sessions WHERE id = ?`, id).Scan(&previous)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("session %s: %w", id, ErrSessionGone)
+	}
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
+		newStatus, encodeTime(time.Now()), id); err != nil {
+		return "", err
+	}
+	return previous, tx.Commit()
+}
+
 // UpdateStatusOnSocket writes a status only while the row is still this
 // manager's to speak for: claimed by this tmux server, or claimed by none.
 // It reports whether the write landed, so a manager whose listing predates
