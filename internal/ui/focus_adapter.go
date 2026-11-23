@@ -429,7 +429,7 @@ func newFocusWatch(driver *tmux.Driver, send func(tea.Msg)) *focuswatch.Watcher 
 // captured pane owns the whole terminal body and the list waits behind it.
 func (m *Model) viewFullFocusFrame() string {
 	footer := m.footer()
-	bodyHeight := m.listBodyHeight()
+	bodyHeight := m.listBodyHeightForFooter(footer.Text)
 	// This frame paints no rail, so a click lands on no row: the list frame's
 	// hits would otherwise select a row nobody pointed at.
 	m.layout.displayedRail = uirail.Frame{}

@@ -5,6 +5,7 @@ import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // splitState is the horizontal sessions/sidebar split as the mouse, the
@@ -26,6 +27,12 @@ func (m *Model) paneTargetSize() (int, int) {
 func (m *Model) listChromeRows() int { return m.geometryLayout().ChromeRows() }
 
 func (m *Model) listBodyHeight() int { return m.geometryLayout().BodyHeight() }
+
+func (m *Model) listBodyHeightForFooter(footer string) int {
+	layout := m.geometryLayout()
+	layout.FooterRows = func() int { return lipgloss.Height(footer) }
+	return layout.BodyHeight()
+}
 
 func (m *Model) previewPaneHeight() int {
 	return m.geometryLayout().PreviewHeight(m.layout.split.Ratio)

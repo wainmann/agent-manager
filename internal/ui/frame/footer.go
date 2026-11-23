@@ -34,8 +34,10 @@ type Footer struct {
 	List        []Section
 	Measurement Measurement
 	Width       int
-	FullLayout  bool
-	ArrowStep   bool
+	// ListHeight is lazy: resting and full-layout footers need no padding.
+	ListHeight func() int
+	FullLayout bool
+	ArrowStep  bool
 }
 
 func (f Footer) Layout() (LegendMode, int) { return f.Measurement.Mode, f.Measurement.Rows }
@@ -69,7 +71,7 @@ func (f Footer) Transient(tier Section) Legend {
 	if f.FullLayout {
 		return painted
 	}
-	painted.Text = presentation.PadToHeight(painted.Text, lipgloss.Height(f.ListLegend().Text))
+	painted.Text = presentation.PadToHeight(painted.Text, f.ListHeight())
 	return painted
 }
 

@@ -43,3 +43,52 @@ env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh"
 ```
 
 Run the [real TUI harness](../e2e/README.md) for actual-binary UI and terminal wiring. Run the [compatibility gates](../compatibility/README.md) for released clients, mixed-version task mutations, and two real manager processes. Those suites retain their own isolated profiles and artifacts. Real provider installers and session stores, installed extensions, mutation families beyond the named contracts, human pane-input authority, remote or saved-connection authorization, crash recovery, and the supported platform matrix remain separate acceptance work.
+
+## Focused split rendering profiles
+
+`BenchmarkFocusedSplitFrame` reproduces the render path seen in live CPU
+profiles: the split layout, a focused pane, a populated rail, manager backdrop,
+and ANSI256 color conversion. Its matrix also covers truecolor, widths 80,
+130 and 200, the live 256×67 geometry, and stationary versus changing preview text. It needs no agent
+credentials and performs no model calls. It measures frame construction, not
+polling, terminal transport, sustained CPU percentage or input-to-echo latency.
+
+On Linux, macOS or WSL2, run the same benchmark fixture against each revision:
+
+```sh
+./tools/testing/profile-render.sh /tmp/render-before
+./tools/testing/profile-render.sh /tmp/render-after
+```
+
+Run each command in its respective checkout. For a change that adds the
+benchmark, copy only its benchmark file into the base checkout first, so both
+revisions execute the same fixture. The wrapper runs three one-second samples
+per case, records `ns/op`, `B/op`, and `allocs/op`, and keeps CPU and heap profiles,
+the test binary, compiler/target details, revision and diff summary. An optional
+second argument selects a Go benchmark regexp. Use one case for an attributable
+CPU profile; an entire matrix profile combines several workloads:
+
+```sh
+./tools/testing/profile-render.sh /tmp/render-focused-256 \
+  '^BenchmarkFocusedSplitFrame/ANSI256/width130/changing$'
+go tool pprof -http=127.0.0.1:0 /tmp/render-focused-256/ui.test /tmp/render-focused-256/cpu.pprof
+```
+
+The wrapper creates the short private socket directory before running tests,
+unsets inherited tmux identity, and never issues tmux commands or kills a
+server. The test suite owns its test server lifecycle. Private socket paths
+are recorded and retained for diagnosis. A failed or unmatched run fails the
+wrapper; it is not a passing measurement.
+
+On Windows, use the same Go benchmark directly with a short precreated test
+socket directory and an isolated manager config, as required by the Windows
+checks in CONTRIBUTING. Pass `-run '^$' -bench '^BenchmarkFocusedSplitFrame$'
+-benchtime 1s -count 3 -benchmem -cpuprofile cpu.pprof -memprofile heap.pprof
+-o ui.test.exe` to `go test ./internal/ui`; read the profiles with `go tool pprof`.
+
+Compare repeated samples on the same machine, Go version and benchmark case.
+Check allocations and raw profiles alongside timings; do not gate CI on a
+machine-specific elapsed-time threshold. Run correctness/race tests separately
+from profiling. This fixture complements the real-TUI harness: a claim that
+pauses or typing latency improved still needs a controlled live-pane replay
+with input-to-visible-echo measurements.
