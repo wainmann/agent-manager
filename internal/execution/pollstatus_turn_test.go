@@ -126,3 +126,81 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 		})
 	}
 }
+
+// A pass that ends on another session's failed write still keeps the turn
+// it announced for the sessions before it, so the next passes announce it
+// once and then go quiet instead of reporting it again.
+func TestATurnAnnouncedBeforeAFailedPassIsNotAnnouncedAgain(t *testing.T) {
+	m := buildModel(t)
+	drawer := m.cfg.Tools["claude-hooked"]
+	drawer.Command = `sh -c 'stty -echo; while IFS= read -r f; do printf "\033[H\033[2J"; cat "$f"; done' --`
+	drawer.StatusSource = ""
+	drawer.UserEcho = "^❯ "
+	m.cfg.Tools["claude-hooked"] = drawer
+	engine, err := status.NewEngine(m.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.poller.engine = engine
+	createSessionOn(t, m, "turns", "claude-hooked", t.TempDir())
+	createSessionOn(t, m, "failing", "claude", t.TempDir())
+	rows := m.sessionRows()
+	if len(rows) != 2 || rows[0].Name != "turns" {
+		t.Fatalf("sessions = %+v, want turns listed first", rows)
+	}
+	turns, failing := rows[0], rows[1]
+	waitForPane(t, m, turns.ID, "boot-marker")
+	frames := t.TempDir()
+	drawn := 0
+	draw := func(rows ...string) {
+		t.Helper()
+		drawn++
+		marker := "frame " + strconv.Itoa(drawn)
+		path := filepath.Join(frames, strconv.Itoa(drawn))
+		if err := os.WriteFile(path, []byte(strings.Join(append(rows, "  "+marker), "\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.tmux.Paste(turns.ID, path+"\n"); err != nil {
+			t.Fatal(err)
+		}
+		settledPane(t, m, turns.ID, marker)
+	}
+	rec := &lifecyclehook.Recorder{}
+	m.poller.events = rec
+	step := func() (events []string, failed bool) {
+		t.Helper()
+		rec.Reset()
+		_, failed = testPollMessage(m.poller.Step()).(errMsg)
+		for _, ev := range rec.Events() {
+			if ev.Session.ID == turns.ID {
+				events = append(events, ev.Name+":"+ev.PreviousStatus+">"+ev.Session.Status)
+			}
+		}
+		return events, failed
+	}
+
+	draw("❯ first prompt", "● first reply", "✻ Worked for 3s", "❯ ")
+	if err := m.store.UpdateStatus(turns.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, failed := step(); failed {
+		t.Fatal("the first pass failed")
+	}
+	if err := m.store.UpdateStatus(failing.ID, status.Errored); err != nil {
+		t.Fatal(err)
+	}
+	rawSQL(t, m.dbPath, "CREATE TRIGGER refuse_status BEFORE UPDATE OF status ON sessions WHEN NEW.id = '"+failing.ID+"' BEGIN SELECT RAISE(ABORT, 'status write refused'); END")
+	draw("❯ first prompt", "● first reply", "✻ Worked for 3s", "❯ again", "● again reply", "✻ Worked for 1s", "❯ ")
+	var got []string
+	for range 4 {
+		events, failed := step()
+		if !failed {
+			t.Fatal("a pass wrote the refused session's status")
+		}
+		got = append(got, events...)
+	}
+	want := []string{"session_state:finished>working", "session_state:working>finished"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("events = %q, want %q", got, want)
+	}
+}

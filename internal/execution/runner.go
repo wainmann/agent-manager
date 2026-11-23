@@ -105,7 +105,7 @@ func New(deps Dependencies, opts Options) *Runner {
 		gitDrv: deps.Git, inboxOwner: inbox, notifyFn: notifyFn, events: deps.Events, takeFocus: deps.TakeFocus,
 		statusSources: opts.StatusSources, sessionStores: opts.SessionStores,
 		mcpStyles: opts.MCPStyles, reportStyles: opts.ReportStyles, shellTools: opts.ShellTools, binaries: opts.Binaries,
-		interval: interval, poke: make(chan struct{}, 1), paneHashes: map[string]uint64{},
+		interval: interval, poke: make(chan struct{}, 1), paneHashes: map[string]uint64{}, turnMarks: map[string]turnMark{},
 		transcripts: map[string]transcriptTailCache{}, quietSince: map[string]quietTimer{}, waitingScreens: map[string]uint64{},
 		recaptureSeen: map[string]recaptureSighting{},
 	}

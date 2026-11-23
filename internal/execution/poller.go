@@ -553,6 +553,11 @@ func (p *Runner) step(ctx context.Context) Result {
 				p.emitSessionState(sess, newStatus, previous, banner, triggered)
 			}
 		}
+		// A later session's failed write ends the pass before the marks are
+		// swapped in, and the next pass must not announce this turn again.
+		if mark, ok := turnMarks[sess.ID]; ok {
+			p.turnMarks[sess.ID] = mark
+		}
 		if observed {
 			due, err := p.afterTurnDue(sess, newStatus)
 			if err != nil {
