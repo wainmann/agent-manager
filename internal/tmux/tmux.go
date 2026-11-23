@@ -200,7 +200,7 @@ func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...
 	}
 	defer release()
 	var out bytes.Buffer
-	cmd := d.commandContext(ctx, args...)
+	cmd := d.commandContext(ctx, listArgs(args)...)
 	configureBoundedCommand(cmd)
 	cmd.Stdout = &out
 	cmd.Stderr = &out

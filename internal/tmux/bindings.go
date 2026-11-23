@@ -201,7 +201,7 @@ func (d *Driver) ensureBindingsIn(id string) error {
 	commands = append(commands, promptHeadBinding(d.promptHeadCheck())...)
 	commands = append(commands, recordRootBindings(bound)...)
 	// Restore the standard fallback when the prefix shadows a direct binding.
-	commands = append(commands, []string{"bind-key", "-T", "prefix", "d", bindingArg("detach-client")})
+	commands = append(commands, append([]string{"bind-key", "-T", "prefix", "d"}, bindingAction("detach-client")...))
 	// list-keys starts a server that exits again straight away when it has
 	// no sessions, so the list can find none. Nothing needs the setup then:
 	// Create runs this again once a session brings the server up.

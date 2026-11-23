@@ -35,13 +35,20 @@ func TestDiagPsmuxNativeLists(t *testing.T) {
 		note("%s: %v err=%v took=%s out=%q", label, args, err, took, out)
 		return out
 	}
+	quote := func(word string) string {
+		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(word) + `"`
+	}
 	bindings := func(id string) [][]string {
 		keys := driver.currentSessionKeys()
 		commands := [][]string{{"set-window-option", "-g", "pane-base-index", "0"}}
 		var bound []string
 		bind := func(binding keybind.Binding, action []string) {
 			for _, key := range binding.Keys() {
-				commands = append(commands, rootBinding(key, action...))
+				command := []string{"bind-key", "-n", key.Tmux()}
+				for _, word := range action {
+					command = append(command, quote(word))
+				}
+				commands = append(commands, command)
 				bound = append(bound, key.Tmux())
 			}
 		}
@@ -49,7 +56,7 @@ func TestDiagPsmuxNativeLists(t *testing.T) {
 		bind(keys.Binding(keybind.Review), driver.requestAction(id, RequestReview))
 		bind(keys.Binding(keybind.Editor), driver.requestAction(id, RequestEditor))
 		commands = append(commands, recordRootBindings(bound)...)
-		return append(commands, []string{"bind-key", "-T", "prefix", "d", bindingArg("detach-client")})
+		return append(commands, []string{"bind-key", "-T", "prefix", "d", quote("detach-client")})
 	}
 	newServer := func(prefix string) string {
 		id := prefixedID(prefix)
@@ -79,12 +86,8 @@ func TestDiagPsmuxNativeLists(t *testing.T) {
 			note("bindings apart: %v err=%v out=%q", command, err, out)
 		}
 	}
-	wholeID := newServer("natw")
-	show("bindings whole", append(sessionRoute(wholeID), commandList(bindings(wholeID)...)...)...)
-	apart, whole := tables(apartID), tables(wholeID)
-	note("bindings tables equal=%v", apart == whole)
+	apart := tables(apartID)
 	note("bindings apart tables: %q", apart)
-	note("bindings whole tables: %q", whole)
 
 	driverID := psmuxSession(t, driver, "natd", "", "")
 	created := tables(driverID)
@@ -92,19 +95,12 @@ func TestDiagPsmuxNativeLists(t *testing.T) {
 	note("bindings created tables: %q", created)
 
 	name := sessionName(driverID)
-	show("escaped semicolon list", commandList(
+	if _, err := driver.run(commandList(
 		[]string{"set-option", "-t", name, "@first", `alpha\;`},
 		[]string{"set-option", "-t", name, "@second", "beta"},
-	)...)
+	)...); err != nil {
+		note("escaped semicolon list: %v", err)
+	}
 	show("escaped semicolon first", "show-options", "-v", "-t", name, "@first")
 	show("escaped semicolon second", "show-options", "-v", "-t", name, "@second")
-	show("escaped semicolon alone", "set-option", "-t", name, "@third", `alpha\;`)
-	show("escaped semicolon third", "show-options", "-v", "-t", name, "@third")
-
-	errorID := psmuxSession(t, driver, "nate", "Write-Output 'ERROR: boom'", "ERROR: boom")
-	show("capture list over an ERROR line", commandList(
-		[]string{"display-message", "-p", "-t", PaneTarget(errorID), "#{pane_id}"},
-		[]string{"capture-pane", "-p", "-t", PaneTarget(errorID)},
-	)...)
-	show("capture alone over an ERROR line", "capture-pane", "-p", "-t", PaneTarget(errorID))
 }

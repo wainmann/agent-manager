@@ -131,9 +131,23 @@ func (d *Driver) eachServer(fn func(id string) error) error {
 	return fn("")
 }
 
-// bindingArg is a bind-key argument as tmux takes it, verbatim.
-func bindingArg(s string) string {
-	return s
+// bindingAction is a binding's command as tmux takes it, verbatim.
+func bindingAction(action ...string) []string {
+	return action
+}
+
+// listArgs leaves a command list as it is: tmux reads it in one go.
+func listArgs(args []string) []string {
+	return args
+}
+
+// displayAndCapture runs both commands as one list, which tmux runs with no
+// pane output in between, so both describe the same frame.
+func (d *Driver) displayAndCapture(target, format string) (string, error) {
+	return d.run(commandList(
+		[]string{"display-message", "-p", "-t", target, format},
+		[]string{"capture-pane", "-p", "-e", "-t", target},
+	)...)
 }
 
 // SocketPath is the file the server this driver talks to listens on. The
