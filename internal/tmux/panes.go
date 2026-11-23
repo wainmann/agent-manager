@@ -43,7 +43,7 @@ func (d *Driver) Display(id, format string) (string, error) {
 }
 
 // DisplayAndCapture expands format against the agent's pane and captures
-// it.
+// it, as one frame where the multiplexer can run both in one go.
 func (d *Driver) DisplayAndCapture(id, format string) (expanded, pane string, err error) {
 	out, err := d.displayAndCapture(PaneTarget(id), format)
 	expanded, pane, _ = strings.Cut(out, "\n")

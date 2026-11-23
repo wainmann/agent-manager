@@ -26,8 +26,9 @@ import (
 const Binary = "psmux"
 
 // psmuxMinimum is the oldest psmux the manager works with: 3.4.0 carries
-// the behaviour the suite runs against and is the first tagged release with
-// one (earlier winget builds, 3.3.x, misbehave and print no psmux version).
+// the behaviour the suite runs against, a command list run in one
+// invocation among it, and is the first tagged release with one (earlier
+// winget builds, 3.3.x, misbehave and print no psmux version).
 const psmuxMinimum = "3.4.0"
 
 // checkVersion refuses a psmux older than the floor. A pass is cached, since
@@ -213,8 +214,8 @@ func (d *Driver) displayAndCapture(target, format string) (string, error) {
 
 // bindingAction is a binding's command as a psmux command list carries it.
 // A lone word goes as it is: psmux quotes each argument of a list itself,
-// and a second pair of quotes would be bound as part of the command, which
-// its client no longer reads as detach-client. An action of several words
+// and a second pair of quotes is bound as part of the command, leaving a
+// key that is no longer bound to detach-client. An action of several words
 // is wire-quoted word by word, since psmux's server splits the bound
 // command again and a word with spaces in it would fall apart.
 //

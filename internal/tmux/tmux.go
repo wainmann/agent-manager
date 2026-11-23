@@ -204,18 +204,13 @@ func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...
 	configureBoundedCommand(cmd)
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	begun := time.Now()
 	if err := cmd.Start(); err != nil {
-		recordTiming("command", 0, 1, begun, time.Since(begun), time.Since(begun), err, args)
 		return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
 	}
-	startLatency := time.Since(begun)
 	if started != nil {
 		started()
 	}
-	err = cmd.Wait()
-	recordTiming("command", 0, 1, begun, startLatency, time.Since(begun), err, args)
-	if err != nil {
+	if err := cmd.Wait(); err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = contextErr
 		}
