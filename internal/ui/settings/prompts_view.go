@@ -26,7 +26,7 @@ func (p *Prompts) view(ctx ViewContext) Frame {
 	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "select"}, {"n", "new"}, {"↵", "edit"}, {"d", "delete"}, {"esc", "back"}}
 	switch {
 	case p.editing:
-		p.name.Width = max(1, inner-3)
+		presentation.FitInput(&p.name, inner-3)
 		p.text.SetWidth(inner)
 		p.text.SetHeight(max(1, min(6, ctx.Height-14)))
 		show("name", promptNameField)

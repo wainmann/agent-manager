@@ -111,6 +111,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	label := func(field int) string { return byField[field].Row }
 	editorLine := row(FieldEditor, label(FieldEditor), s.Editor.Label())
 	if s.Editor.typing {
+		presentation.FitInput(&s.Editor.input, ctx.InnerWidth-21)
 		editorLine = lead(FieldEditor, label(FieldEditor)) + ctx.TextInput(s.Editor.input)
 	}
 	g := presentation.GlyphsFor(s.GlyphMode)

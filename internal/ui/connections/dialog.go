@@ -56,6 +56,13 @@ func field(placeholder string, limit int, value string) textinput.Model {
 
 func (d *Dialog) Gen() uint64 { return d.gen }
 
+// SyncWidths fits the fields to the card, so a long value scrolls.
+func (d *Dialog) SyncWidths(width int) {
+	presentation.FitInput(&d.name, width)
+	presentation.FitInput(&d.destination, width)
+	presentation.FitInput(&d.binary, width)
+}
+
 func (d *Dialog) Focus() int { return d.focus }
 
 // Editing is the name of the connection being edited; empty adds one.

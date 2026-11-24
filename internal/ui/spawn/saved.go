@@ -144,6 +144,7 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 		return note("no saved prompts match")
 	}
 	l.cursor = max(0, min(l.cursor, len(matches)-1))
+	presentation.FitInput(&l.filter, width-3)
 	lines := []string{st.Input(l.filter)}
 	l.lines.Skip(1)
 	visible = max(1, visible-1)

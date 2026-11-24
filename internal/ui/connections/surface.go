@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	remote "github.com/YoanWai/agent-manager/internal/remote/value"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -70,9 +71,11 @@ func (s *Surface) Click(_ surface.Host, line int) tea.Cmd {
 func (s *Surface) Wheel(surface.Host, tea.KeyMsg) tea.Cmd { return nil }
 
 func (s *Surface) View(h surface.Host, _ string) string {
-	card := s.dialog.View(s.root.Look())
 	cols, _ := h.Size()
-	return h.CardSized(s.root.CardWidth(cols), card.Title, card.Body, card.Hints)
+	width := s.root.CardWidth(cols)
+	s.dialog.SyncWidths(uidialogs.FieldWidth(width))
+	card := s.dialog.View(s.root.Look())
+	return h.CardSized(width, card.Title, card.Body, card.Hints)
 }
 
 // Footer is empty: the card paints its own hints.

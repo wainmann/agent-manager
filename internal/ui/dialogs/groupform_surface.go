@@ -99,11 +99,12 @@ func NewGroupFormSurface(root GroupFormRoot, opts FormOptions) *GroupFormSurface
 	if s.remote.on() {
 		s.AimRemote(s.remote.Host)
 	}
-	s.SyncWidths(groupFieldWidth(root.CardWidth(opts.Cols)))
+	s.SyncWidths(FieldWidth(root.CardWidth(opts.Cols)))
 	return s
 }
 
-func groupFieldWidth(cardWidth int) int {
+// FieldWidth is the columns a text field scrolls in on a card of cardWidth.
+func FieldWidth(cardWidth int) int {
 	return CardInnerWidth(cardWidth) - spawn.LabelColumn - 3
 }
 
@@ -215,7 +216,7 @@ func (s *GroupFormSurface) apply() tea.Cmd {
 
 func (s *GroupFormSurface) View(h surface.Host, _ string) string {
 	cols, _ := h.Size()
-	s.SyncWidths(groupFieldWidth(s.root.CardWidth(cols)))
+	s.SyncWidths(FieldWidth(s.root.CardWidth(cols)))
 	parent := s.ParentPath()
 	view := GroupFormView{
 		GlyphMode: s.styles.GlyphMode,

@@ -127,10 +127,8 @@ func (d GroupForm) Width() int { return d.name.Width }
 
 // SyncWidths sizes both text fields to the card, keeping their cursors.
 func (d *GroupForm) SyncWidths(width int) {
-	d.name.Width = width
-	d.path.Width = width
-	d.name.SetCursor(d.name.Position())
-	d.path.SetCursor(d.path.Position())
+	presentation.FitInput(&d.name, width)
+	presentation.FitInput(&d.path, width)
 }
 
 type PathSuggestions interface {

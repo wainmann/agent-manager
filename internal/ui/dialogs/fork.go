@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -38,12 +39,7 @@ func (d *Fork) SetName(name string) { d.name.SetValue(name) }
 
 // SetWidth fits the name field to the card, so a long name scrolls.
 func (d *Fork) SetWidth(width int) {
-	d.name.Width = width
-	// The cursor jumps to the end first: bubbles keeps the old viewport
-	// while the cursor stays inside it, however wide that is now.
-	pos := d.name.Position()
-	d.name.CursorEnd()
-	d.name.SetCursor(pos)
+	presentation.FitInput(&d.name, width)
 }
 
 type ForkAction uint8

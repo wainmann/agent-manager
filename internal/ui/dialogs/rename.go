@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -81,7 +82,7 @@ func (d Rename) Tools() []string { return d.tools }
 
 func (d *Rename) NameField(width int) textinput.Model {
 	if width >= 5 {
-		d.input.Width = width
+		presentation.FitInput(&d.input, width)
 	}
 	return d.input
 }
