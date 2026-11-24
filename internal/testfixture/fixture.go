@@ -227,6 +227,15 @@ func fixtureMode(mode string, args []string) int {
 		// sh -c 'exec cat' --: the terminal copied out, whatever the
 		// launch appended.
 		return fixtureCat(nil, nil)
+	case "cat-ready":
+		// cat, saying through FILE when its console is raw: a tool's
+		// command line has no environment of its own to carry ReadyEnv.
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, fixtureName+": cat-ready needs a file")
+			return 2
+		}
+		os.Setenv(ReadyEnv, args[0])
+		return fixtureCat(nil, args[1:])
 	case "capture-args":
 		// printf '%s\n' "$@" > FILE; cat
 		if len(args) == 0 {

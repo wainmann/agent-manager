@@ -694,20 +694,24 @@ func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
 	t.Fatalf("pane never ran %s; children = %v", name, children)
 }
 
-// fixtureReady has tool's Windows stand-in say when its console is raw, and
-// returns the wait for that. The stand-in's process exists before then, and
-// keys typed in between meet the console's own line editing, which drops
-// them. A POSIX pane has a tty from the start and nothing to wait for.
-func fixtureReady(t *testing.T, m *Model, tool string) (wait func()) {
+// readyCat returns the wait for tool's cat to read the pane. On Windows the
+// stand-in's process exists before its console is raw, and keys typed in
+// between meet the console's own line editing, which drops them, so there
+// the tool runs the stand-in in the mode that says when it is ready. A
+// POSIX pane has a tty from the start, and cat running is enough.
+func readyCat(t *testing.T, m *Model, tool string, catArgs ...string) (wait func(sessID string)) {
 	t.Helper()
 	if runtime.GOOS != "windows" {
-		return func() {}
+		return func(sessID string) {
+			t.Helper()
+			waitForPaneChild(t, m, sessID, "cat")
+		}
 	}
 	ready := filepath.Join(t.TempDir(), "ready")
 	definition := m.services.cfg.Tools[tool]
-	definition.Env = map[string]string{testfixture.ReadyEnv: ready}
+	definition.Command = strings.Join(append([]string{testfixture.ModeCommand("cat-ready"), tmux.ShellQuote(ready)}, catArgs...), " ")
 	m.services.cfg.Tools[tool] = definition
-	return func() {
+	return func(string) {
 		t.Helper()
 		testfixture.WaitForReady(t, ready)
 	}
