@@ -15,11 +15,29 @@ type Manager struct {
 	Name    string
 	Command []string
 	Advice  string
+	env     []string
+	channel channel
 }
 
 func (m Manager) Delegated() bool { return len(m.Command) > 0 }
 
 func (m Manager) String() string { return strings.Join(m.Command, " ") }
+
+// UpgradeCommand is Command ready to run, with the manager's environment.
+func (m Manager) UpgradeCommand() *exec.Cmd {
+	command := exec.Command(m.Command[0], m.Command[1:]...)
+	command.Env = append(os.Environ(), m.env...)
+	// mise --bump edits the config it resolves from here; the install is global.
+	if home, err := os.UserHomeDir(); err == nil && m.channel.miseSlug != "" {
+		command.Dir = home
+	}
+	return command
+}
+
+// brewRefreshEnv makes brew fetch before upgrading. Its auto-update is skipped
+// when another brew command ran recently or the user turned it off, and the
+// upgrade then exits 0 against a stale list.
+var brewRefreshEnv = []string{"HOMEBREW_NO_AUTO_UPDATE=", "HOMEBREW_AUTO_UPDATE_SECS=0"}
 
 // Test seams: lookPath finds upgrade helpers, pacmanOwns asks pacman
 // whether it installed the binary.
@@ -42,13 +60,13 @@ func DetectManager(execPath string) Manager {
 	switch {
 	case scoopManaged(slashPath):
 		// Scoop refuses to update an app while its binary is running.
-		return Manager{Name: "Scoop", Advice: "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell."}
+		return Manager{Name: "Scoop", channel: scoopChannel, Advice: "installed with Scoop. Close agent-manager, then run scoop update, then scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell."}
 	case homebrewTree(slashPath) == "Caskroom":
-		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
+		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}, env: brewRefreshEnv, channel: caskChannel}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
-		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}}
+		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}, env: brewRefreshEnv, channel: coreChannel}
 	case miseSlug != "":
-		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}}
+		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}, channel: channel{miseSlug: miseSlug}}
 	case strings.HasPrefix(slashPath, "/nix/store/"):
 		// The store is read-only, and the user's Nix profile or config owns the install.
 		return Manager{Name: "Nix", Advice: "installed with Nix; update it through Nix, for example: nix profile upgrade agent-manager"}
@@ -118,16 +136,19 @@ func homebrewTree(slashPath string) string {
 	return ""
 }
 
-// miseSlugs maps mise's install dir name to the ubi slug it was installed
-// as. mise keys an install by the slug it was first registered under, so
-// each dir upgrades through its own slug.
+// miseSlugs maps mise's install dir name to the slug it was installed as.
+// mise keys an install by the slug it was first registered under, so each
+// dir upgrades through its own slug. The docs install through the github
+// backend; the ubi dirs cover earlier installs.
 var miseSlugs = map[string]string{
-	"ubi-yoan-wai-agent-manager": "ubi:YoanWai/agent-manager",
-	"ubi-wainmann-agent-manager": "ubi:wainmann/agent-manager",
+	"github-wainmann-agent-manager": "github:wainmann/agent-manager",
+	"github-yoan-wai-agent-manager": "github:YoanWai/agent-manager",
+	"ubi-yoan-wai-agent-manager":    "ubi:YoanWai/agent-manager",
+	"ubi-wainmann-agent-manager":    "ubi:wainmann/agent-manager",
 }
 
 // miseManaged matches mise's install layout regardless of MISE_DATA_DIR,
-// .../installs/<dir>/<version>/agent-manager, and returns the ubi slug the
+// .../installs/<dir>/<version>/agent-manager, and returns the mise slug the
 // dir belongs to, or "" when the path is not a mise install.
 func miseManaged(slashPath string) string {
 	parts := strings.Split(slashPath, "/")
@@ -158,19 +179,21 @@ func pacmanOwnsPath(path string) bool {
 func archManager() Manager {
 	for _, helper := range []string{"yay", "paru"} {
 		if _, err := lookPath(helper); err == nil {
-			return Manager{Name: helper, Command: []string{helper, "-S", "agent-manager-bin"}}
+			return Manager{Name: helper, Command: []string{helper, "-S", "agent-manager-bin"}, channel: aurChannel}
 		}
 	}
-	return Manager{Name: "pacman", Advice: "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"}
+	return Manager{Name: "pacman", channel: aurChannel, Advice: "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"}
 }
 
-// RestartTarget is the path main should exec after a delegated upgrade.
-// The PATH entry wins over the resolved install dir: brew and mise may
-// delete the version directory the running image was loaded from, while
-// the PATH entry tracks the new install.
+// RestartTarget stays within the original install even when PATH names another copy.
 func RestartTarget(execPath string) string {
-	if found, err := lookPath(filepath.Base(execPath)); err == nil {
-		return found
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		execPath = resolved
+	}
+	path := filepath.ToSlash(execPath)
+	if tree := homebrewTree(path); tree != "" {
+		prefix, _, _ := strings.Cut(path, "/"+tree+"/agent-manager/")
+		return filepath.FromSlash(prefix + "/bin/agent-manager")
 	}
 	return execPath
 }

@@ -22,7 +22,7 @@ type Fork struct {
 }
 
 func (d *Fork) Open(sourceName, sourceGroup string) {
-	name := newField("fork name", 60)
+	name := newField("fork name", 0)
 	name.SetValue(sourceName + "-fork")
 	name.CursorEnd()
 	name.Focus()
@@ -35,6 +35,16 @@ func (d Fork) Gen() int { return d.gen }
 func (d Fork) Name() string { return cleanName(d.name.Value()) }
 
 func (d *Fork) SetName(name string) { d.name.SetValue(name) }
+
+// SetWidth fits the name field to the card, so a long name scrolls.
+func (d *Fork) SetWidth(width int) {
+	d.name.Width = width
+	// The cursor jumps to the end first: bubbles keeps the old viewport
+	// while the cursor stays inside it, however wide that is now.
+	pos := d.name.Position()
+	d.name.CursorEnd()
+	d.name.SetCursor(pos)
+}
 
 type ForkAction uint8
 

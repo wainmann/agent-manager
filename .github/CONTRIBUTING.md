@@ -12,6 +12,8 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 
 ## Picking up an issue
 
+Every issue has a type next to its labels. The bug form sets Bug, the feature form sets Feature, and anything else gets Task during triage. Search by type, such as `type:Bug`, to find something to pick up.
+
 If an issue is unassigned, it's free to take. Comment that you're on it and I'll assign you. If there's no update in 14 days, it's free again.
 
 ## Before you open a pull request
@@ -61,7 +63,7 @@ each of these with the reason behind it.
 
 ## Setup
 
-You need Go 1.27.3+ and tmux.
+You need Go 1.27.4+ and tmux.
 
 ```bash
 git clone https://github.com/wainmann/agent-manager.git
@@ -70,6 +72,8 @@ go run .
 ```
 
 The manager runs its sessions on a dedicated tmux socket (`-L`), so a development build stays clear of the tmux server your own shell is attached to.
+
+`make build` writes `./agent-manager` (`agent-manager.exe` on Windows) and `make install` puts it in your Go bin directory. Both stamp the commit from `git describe`, such as `0.47.1-10-g1656b508-dirty`, which Settings, `--version` and bug reports show. A build without the stamp, such as `go run .` or a plain `go build`, reports `dev`, except a plain `go build` on a clean checkout of a release tag: Go stamps that tag as the module version, so it reports the release. Add `-buildvcs=false` to keep it `dev`. Source outside its own git repository, such as an unpacked archive, reports `dev` from `make build` too. Neither kind is offered updates or the what's-new notice. Without `make`, pass the stamp yourself: `go build -ldflags "-X main.version=$(git describe --tags --always --dirty --long)" .`
 
 ## Checks
 

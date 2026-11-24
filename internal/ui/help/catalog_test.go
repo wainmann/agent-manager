@@ -186,6 +186,43 @@ func TestCatalogArrowRowsFollowTheSetting(t *testing.T) {
 	}
 }
 
+// The ← row names an attach only while the arrow step attaches on a host
+// that binds it, and the → row says which way it opens a session.
+func TestCatalogArrowRowsNameTheAttachStep(t *testing.T) {
+	does := func(ctx Context, title, key string) string {
+		for _, section := range helpSections(ctx) {
+			if section.title != title {
+				continue
+			}
+			for _, row := range section.rows {
+				if row[0] == key {
+					return row[1]
+				}
+			}
+		}
+		return ""
+	}
+	const inside = "inside a session (attached or focused)"
+	ctx := testContext(84)
+	if got := does(ctx, inside, "←"); got != "focused: back to the manager, at the prompt's start" {
+		t.Errorf("focus default ← = %q", got)
+	}
+	if got := does(ctx, "list", "→"); got != "step in: focus the session, open the group" {
+		t.Errorf("focus default → = %q", got)
+	}
+	ctx.ArrowAttach = true
+	if got := does(ctx, inside, "←"); got != "focused: back to the manager, at the prompt's start" {
+		t.Errorf("attach ← on a host that leaves it to the agent = %q", got)
+	}
+	if got := does(ctx, "list", "→"); got != "step in: attach to the session full screen, open the group" {
+		t.Errorf("attach → = %q", got)
+	}
+	ctx.AttachedBack = true
+	if got := does(ctx, inside, "←"); got != "focused or attached: back to the manager, at the prompt's start" {
+		t.Errorf("attach ← = %q", got)
+	}
+}
+
 func TestCatalogSessionRowsFollowCustomBindings(t *testing.T) {
 	rowFor := func(keys keybind.Table, key string) (string, bool) {
 		ctx := testContext(84)
@@ -245,7 +282,7 @@ func TestCatalogNamesTheSavedPromptKeys(t *testing.T) {
 	if rows["saved prompts/ctrl+s"] != "save" || rows["saved prompts/ctrl+o"] != "open the list" {
 		t.Fatalf("saved prompts section = %v", rows)
 	}
-	if rows["inside a session (attached or focused)/f6"] != "open saved prompts and paste the pick" {
+	if rows["inside a session (attached or focused)/f6"] != "focused: open saved prompts and paste the pick" {
 		t.Fatal("the session section does not follow the saved prompt binding")
 	}
 }
@@ -265,5 +302,46 @@ func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
 	}
 	if rows["setup step/click command"] != "copy it, the same as c" {
 		t.Fatalf("click row = %q", rows["setup step/click command"])
+	}
+}
+
+// A focused session's key map names the divider it can arm, with the
+// session's own binding rather than the list's.
+func TestSessionKeyMapNamesTheDivider(t *testing.T) {
+	ctx := testContext(84)
+	ctx.SessionKeys = ctx.SessionKeys.With(keybind.Resize, bindingOf(t, "ctrl+@"))
+	rows := map[string]string{}
+	for _, section := range helpSections(ctx) {
+		for _, row := range section.rows {
+			rows[section.title+"/"+row[0]] = row[1]
+		}
+	}
+	const title = "inside a session (attached or focused)"
+	if got := rows[title+"/ctrl+@"]; got != "focused: "+resizeHelp(ctx.Glyphs.Mode) {
+		t.Fatalf("session resize row = %q, want %q", got, resizeHelp(ctx.Glyphs.Mode))
+	}
+	if _, stale := rows[title+"/ctrl+]"]; stale {
+		t.Fatal("the default resize key remains after the session binding moved")
+	}
+}
+
+// A connection's agents move among that host's groups, under whatever key
+// move is bound to.
+func TestCatalogNamesTheMoveKeyOnAConnection(t *testing.T) {
+	for key, keys := range map[string]keybind.Table{
+		"m": keybind.DefaultList(),
+		"M": keybind.DefaultList().With(keybind.Move, bindingOf(t, "M")),
+	} {
+		ctx := testContext(84)
+		ctx.ListKeys = keys
+		found := false
+		for _, section := range helpSections(ctx) {
+			for _, row := range section.rows {
+				found = found || section.title == "SSH connection under the cursor" && row == [2]string{key, "move one of its agents to another group there"}
+			}
+		}
+		if !found {
+			t.Errorf("no move row on %s for a connection", key)
+		}
 	}
 }

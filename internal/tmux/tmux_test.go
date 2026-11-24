@@ -72,9 +72,10 @@ func runTests(m *testing.M) int {
 	return code
 }
 
-// tmuxCmd builds a raw tmux command aimed at the test socket.
+// tmuxCmd builds a raw tmux command aimed at the test socket. -u keeps
+// non-ASCII output intact when the test runs without a UTF-8 locale.
 func tmuxCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command(Binary, SocketArgs(testSocket, args...)...)
+	cmd := exec.Command(Binary, append([]string{"-u"}, SocketArgs(testSocket, args...)...)...)
 	cmd.Env = commandEnv()
 	return cmd
 }

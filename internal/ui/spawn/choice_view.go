@@ -104,10 +104,10 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 	highlight := -1
 	state, _ := choiceAnswer(h, toolName)
 	for i, entry := range list {
-		if i == 0 && entry.recent {
+		if entry.recent && (i == 0 || !list[i-1].recent) {
 			heading("recent")
 		}
-		if !entry.recent && (i == 0 || list[i-1].recent) {
+		if !entry.recent && !entry.isDefault() && (i == 0 || list[i-1].recent || list[i-1].isDefault()) {
 			source := fmt.Sprintf("from %s · %d models", toolName, len(ch.models(h, toolName)))
 			if state.Err != nil {
 				source += " · refresh failed: " + state.Err.Error()
@@ -120,7 +120,11 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 			style = lipgloss.NewStyle().Foreground(st.Accent2).Bold(true)
 			highlight = len(rows)
 		}
-		row := marker + style.Render(entry.model.ID)
+		name := entry.model.ID
+		if entry.isDefault() {
+			name = ch.filter.Placeholder
+		}
+		row := marker + style.Render(name)
 		if detail := modelDetail(entry.model); detail != "" {
 			row += "  " + st.Subtle.Render(detail)
 		}
@@ -137,7 +141,7 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 		}
 		return lines, entries
 	}
-	ch.sugg.offset = scrollToShow(ch.sugg.offset, highlight, len(rows), visible, entries)
+	ch.sugg.offset = scrollToShow(ch.sugg.offset, highlight, len(rows), visible, slices.Index(entries, firstModel(list)))
 	bar := scrollBar(ch.sugg.offset, len(rows), visible, st)
 	for i, row := range rows[ch.sugg.offset : ch.sugg.offset+visible] {
 		lines = append(lines, pad+presentation.PadRight(row, width-2)+" "+bar[i])
@@ -145,12 +149,13 @@ func (ch *Choice) ViewSuggestions(h ChoiceHost, toolName string, indent, width, 
 	return lines, entries[ch.sugg.offset : ch.sugg.offset+visible]
 }
 
-// scrollToShow returns to the top on the first entry, so the headings above
-// it show.
-func scrollToShow(offset, highlight, total, visible int, entries []int) int {
+// scrollToShow returns to the top on the first model, so the default row
+// and the headings above it show, unless the list is too short to hold
+// them and the highlight together.
+func scrollToShow(offset, highlight, total, visible, first int) int {
 	switch {
 	case highlight < 0:
-	case highlight == slices.IndexFunc(entries, func(entry int) bool { return entry >= 0 }):
+	case highlight <= first && highlight < visible:
 		offset = 0
 	case highlight < offset:
 		offset = highlight

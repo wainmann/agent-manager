@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
@@ -52,15 +53,25 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		case uirail.Delete:
 			m.confirmRemoveConnection(row.Host)
 			return nil, true
+		case uirail.MoveToGroup:
+			m.reportErr(row.Host + " is a connection, not a group to move")
+			return nil, true
 		}
 	}
 	if intent.Kind == uirail.NewGroup {
 		m.openGroupForm()
 		return nil, true
 	}
+	if intent.Kind == uirail.RenameAction {
+		m.openRemoteRename(row)
+		return nil, true
+	}
 	if intent.Kind == uirail.NewTerminal {
 		group := row.Group
 		return m.queueRemote(newTerminalCall(row.Host, group)), true
+	}
+	if row.Kind == uiconnections.GroupRow && intent.Kind == uirail.Delete {
+		return m.confirmRemoteGroupDelete(row), true
 	}
 	if row.Kind == uiconnections.SessionRow {
 		call := uiconnections.SessionCall(row, intent.Kind, m.listKeyHint)
@@ -87,13 +98,36 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	if call.Op == uiconnections.OpAttach {
 		return m.attachRemote(row), true
 	}
+	if call.Op == uiconnections.OpMove {
+		m.openRemoteMove(row)
+		return nil, true
+	}
 	if call.Op == uiconnections.OpNone {
 		return nil, true
 	}
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
-	return m.confirmRemote(request, call), true
+	return m.confirmRemote(request, call, row.Terminals), true
+}
+
+// openRemoteRename types a remote agent's, terminal's or group's new name
+// into its row, as r does here; an offline host refuses first.
+func (m *Model) openRemoteRename(row uiconnections.Row) {
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return
+	}
+	m.gens.dialog++
+	call := remoteCall(row.Host, row.Ref, row.Name)
+	call.Op, call.ComposerGen = uilink.Rename, int(m.gens.dialog)
+	rename := uidialogs.RenameRemote(row.Host, row.Ref.ID, row.Name)
+	if row.Kind == uiconnections.GroupRow {
+		call.Op, call.Name = uilink.RenameGroup, row.Group
+		rename = uidialogs.RenameRemoteGroup(row.Host, row.Group)
+	}
+	m.push(uidialogs.NewRenameSurface(remoteRenameRoot{m, call}, rename))
+	m.clearErr()
 }
 
 // remoteOp is the call a remote row's lifecycle op makes.
@@ -103,20 +137,98 @@ var remoteOp = map[uiconnections.Op]uilink.Op{
 	uiconnections.OpRevive:        uilink.Revive,
 	uiconnections.OpArchive:       uilink.Archive,
 	uiconnections.OpRestore:       uilink.Restore,
+	uiconnections.OpDelete:        uilink.Delete,
 }
 
 // confirmRemote asks before a lifecycle call goes to the host; an offline
-// host refuses before the question.
-func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call) tea.Cmd {
+// host refuses before the question. A delete there takes the terminals under
+// the agent, and names them as a local delete does.
+func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call, terminals int) tea.Cmd {
 	if refusal, offline := m.ssh.Offline(request.Host); offline {
 		m.reportErr(refusal)
 		return nil
 	}
+	subject := presentation.EscapeControlsInline(request.Name + " on " + request.Host)
+	label := call.Verb + " " + subject + "?" + call.Consequence
+	if call.Op == uiconnections.OpDelete {
+		label = uisession.FollowConfirmLabel(call.Verb, subject, terminals, "kills its tmux session there.", "kills their tmux sessions there.")
+	}
 	m.openConfirm(confirmTarget{
-		prompt: uidialogs.Confirm{Action: call.Action, Label: call.Verb + " " + presentation.EscapeControlsInline(request.Name+" on "+request.Host+"?") + call.Consequence},
+		prompt: uidialogs.Confirm{Action: call.Action, Label: label},
 		remote: &request,
 	})
 	return nil
+}
+
+// confirmRemoteGroupDelete asks before a group goes on its host with every
+// session in it, counted from the snapshot the question shows; their ids go
+// with the call, so the host refuses if that snapshot was stale. The
+// archived view deletes only a group's archived rows, which the host has no
+// call for.
+func (m *Model) confirmRemoteGroupDelete(row uiconnections.Row) tea.Cmd {
+	if m.rail.ShowArchived() {
+		m.reportErr(uirail.RemoteRefusal("deleting a group from the archive"))
+		return nil
+	}
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return nil
+	}
+	subgroups, sessions := m.ssh.Subtree(row.Host, row.Group)
+	request := uilink.Call{Op: uilink.DeleteGroup, Host: row.Host, Name: row.Group, Sessions: sessions}
+	m.openConfirm(confirmTarget{
+		prompt: uidialogs.Confirm{Action: uidialogs.ConfirmDelete, Group: true,
+			Label: uisession.GroupDeleteLabel(presentation.EscapeControlsInline(row.Group+" on "+row.Host), subgroups, len(sessions), "kills their tmux sessions there.")},
+		remote: &request,
+	})
+	return nil
+}
+
+// openRemoteMove opens the move card on a remote agent with the groups of
+// its own host, since a move never crosses machines. The host refuses an
+// archived group, so the card leaves those out but the agent's own, where
+// enter leaves it in place as it does here.
+func (m *Model) openRemoteMove(row uiconnections.Row) {
+	if refusal, offline := m.ssh.Offline(row.Host); offline {
+		m.reportErr(refusal)
+		return
+	}
+	host, _ := m.ssh.Host(row.Host)
+	var groups []string
+	archived := map[string]bool{}
+	for _, group := range host.Groups {
+		groups = append(groups, group.Path)
+		archived[group.Path] = group.Archived
+	}
+	hidden := func(path string) bool {
+		return store.EffectivelyArchived(archived, path) && !uirail.InGroupSubtree(row.Group, path)
+	}
+	options, index := spawn.Options(groups, nil, hidden, row.Group)
+	m.gens.dialog++
+	m.push(uidialogs.NewMoveSurface(remoteMoveRoot{moveRoot{m}, row}, uidialogs.MoveSession(row.Ref.ID), spawn.Picker{Groups: options, GroupIndex: index}, m.prefs.glyphMode))
+	m.clearErr()
+}
+
+// remoteMoveRoot is the root as the move card on a remote agent reaches it:
+// the pick goes to the host, and the card closes as it does.
+type remoteMoveRoot struct {
+	moveRoot
+	row uiconnections.Row
+}
+
+func (r remoteMoveRoot) PlaceMove(_ uidialogs.Move, picker *spawn.Picker) tea.Cmd {
+	r.Pop()
+	group := picker.GroupPath()
+	current := r.row.Group
+	if now, ok := r.ssh.Row(uirail.Selection{Kind: uirail.SessionRow, SessionID: r.row.Ref.ID, Host: r.row.Host}); ok {
+		current = now.Group
+	}
+	if group == current {
+		return nil
+	}
+	request := remoteCall(r.row.Host, r.row.Ref, r.row.Name)
+	request.Op, request.Group = uilink.Move, group
+	return r.queueRemote(request)
 }
 
 // queueRemote puts a call on the remote lane, unless the host's last
@@ -135,12 +247,15 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-// remoteRepeat refuses a second enter on a composer whose prompt or spawn
-// is still on its way to the host, as the local lane refuses one.
+// remoteRepeat refuses a second enter on a composer or a name field whose
+// prompt, spawn or rename is still on its way to the host, as the local lane
+// refuses one.
 func (m *Model) remoteRepeat(request uilink.Call) (string, bool) {
 	refusal, guarded := map[uilink.Op]string{
-		uilink.Type:  "this prompt is already being sent",
-		uilink.Spawn: "this spawn is already in progress",
+		uilink.Type:        "this prompt is already being sent",
+		uilink.Spawn:       "this spawn is already in progress",
+		uilink.Rename:      "this rename is already on its way",
+		uilink.RenameGroup: "this rename is already on its way",
 	}[request.Op]
 	if !guarded {
 		return "", false

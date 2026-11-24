@@ -159,6 +159,9 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN released_agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN released_launch INTEGER NOT NULL DEFAULT 0`,
 		`CREATE INDEX IF NOT EXISTS sessions_conversation ON sessions (tool, agent_session_id) WHERE agent_session_id != ''`,
+		// One statement so a database that already has the column skips it
+		// through the duplicate-column swallow below.
+		`ALTER TABLE sessions ADD COLUMN spawned_by TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

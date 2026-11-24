@@ -1,0 +1,40 @@
+  Current  [Sessions]  Issues   Pull requests   Gists
+
+ Source: [All]  Local   Remote
+
+       Session                           Status            Last updated Created       Location
+   ❯ ○ Confirm Acknowledgment (main)     —                 just now     just now    ● /private/tmp/cpl/work
+     ○ Run Shell Command Date (main)     —                 1m ago       3m ago      ● /private/tmp/cpl/work
+     ○ reply with just the word pong (…  —                 3m ago       4m ago      ● /private/tmp/cpl/work
+     ○ reply with just the word pong (…  —                 4m ago       4m ago      ● /private/tmp/cpl/work
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ / search · ↑/↓ navigate · enter select · ←/→ change source · r refresh · x delete · s sort:relevance · n new session ·
+ e environments · esc cancel

@@ -49,6 +49,10 @@ func (g Gesture) Nudged(delta, width int) Gesture {
 	return g
 }
 
+// Changed reports a gesture that has moved the divider from where it started,
+// by drag or by nudge. Nudges do not set Moved, which marks a drag in flight.
+func (g Gesture) Changed() bool { return g.Ratio != g.RatioBefore }
+
 // Divider is the column of the sessions/sidebar junction: the first column of
 // the right panel.
 func (g Gesture) Divider(width int) int {

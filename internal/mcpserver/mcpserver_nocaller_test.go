@@ -32,6 +32,8 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 		{"revive_session", map[string]any{"session_id": "box::a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "box::a1"}},
+		{"delete_session", map[string]any{"session_id": "a1"}},
+		{"delete_session", map[string]any{"session_id": "box::a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "box::a1"}},
 		{"move_session", map[string]any{"session_id": "a1", "group": "work"}},

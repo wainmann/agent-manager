@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -68,5 +71,22 @@ func TestSecondQuitBindingAbandonsDrain(t *testing.T) {
 				t.Fatalf("abandoned = %v", m.AbandonedEffects())
 			}
 		})
+	}
+}
+
+// A capture tick that captures nothing leaves the drawn frame standing, and
+// the next message renders again.
+func TestCaptureTickThatCapturesNothingKeepsTheFrame(t *testing.T) {
+	rows := []treeRow{{sess: store.Session{ID: "a", Status: status.Working}}}
+	m := &Model{layout: layoutState{width: 120, height: 40}, rail: railModelFromRows(rows, 0), base: baseReview}
+	m.workspace.sessions = []store.Session{rows[0].sess}
+	m.layout.frame = "drawn"
+	m.Update(uicapture.TickMsg{})
+	if m.layout.frame != "drawn" {
+		t.Fatal("a tick that captured nothing rendered a new frame")
+	}
+	m.Update(struct{}{})
+	if m.layout.frame == "drawn" {
+		t.Fatal("the message after a kept frame did not render")
 	}
 }

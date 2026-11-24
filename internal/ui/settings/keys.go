@@ -167,6 +167,9 @@ func (s *State) Cycle(step int) Result {
 		count := len(ReviewScopes)
 		at := max(slices.Index(ReviewScopes, s.ReviewScope), 0)
 		s.ReviewScope = ReviewScopes[(at+step+count)%count]
+	case FieldArrowStep:
+		count := len(arrowSteps)
+		s.ArrowStep = arrowSteps[(slices.Index(arrowSteps, s.ArrowStep)+step+count)%count]
 	case FieldEditor:
 		s.Editor.cycle(step)
 	default:

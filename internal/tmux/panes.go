@@ -42,6 +42,14 @@ func (d *Driver) Display(id, format string) (string, error) {
 	return d.run("display-message", "-p", "-t", PaneTarget(id), format)
 }
 
+// DisplayAndCapture expands format against the agent's pane and captures
+// it, as one frame where the multiplexer can run both in one go.
+func (d *Driver) DisplayAndCapture(id, format string) (expanded, pane string, err error) {
+	out, err := d.displayAndCapture(PaneTarget(id), format)
+	expanded, pane, _ = strings.Cut(out, "\n")
+	return expanded, pane, err
+}
+
 // DisplayContext is Display bounded by ctx.
 func (d *Driver) DisplayContext(ctx context.Context, id, format string) (string, error) {
 	return d.runContext(ctx, "display-message", "-p", "-t", PaneTarget(id), format)
@@ -134,10 +142,14 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
+	return parsePanes(string(out)), nil
+}
+
+func parsePanes(out string) map[string]Pane {
 	panes := map[string]Pane{}
 	// Only the final line break is trimmed: the last line may end in a
 	// space that is its path, or the separator before an empty one.
-	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
 		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
@@ -150,14 +162,14 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		if len(fields) < 8 {
 			continue
 		}
-		pane := Pane{TTY: fields[6], Path: fields[7]}
+		pane := Pane{TTY: fields[6], Path: strings.TrimSuffix(fields[7], "\r")}
 		var index, altScreen int
 		if _, err := fmt.Sscanf(geometry, "%d %d %d %d %d %d", &index, &pane.PID, &pane.Width, &pane.Height, &pane.Panes, &altScreen); err == nil && index == 0 {
 			pane.AltScreen = altScreen == 1
 			panes[id] = pane
 		}
 	}
-	return panes, nil
+	return panes
 }
 
 var paneIDPattern = regexp.MustCompile(`^%[0-9]+$`)

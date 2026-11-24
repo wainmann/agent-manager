@@ -61,7 +61,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		if m.showArchived {
 			create = []menuItem{{label: "New session", action: NewSession}}
 		}
-		return remoteMenuItems(row, create, connection)
+		return remoteMenuItems(row, create, connection, m.showArchived)
 	}
 	if m.showArchived {
 		return menuSections(manage, []menuItem{{label: "Restore", action: Restore}, remove})
@@ -104,39 +104,46 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 
 // remoteMenuItems offers on a connection's rows only what reaches the
 // remote host's CLI.
-func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menuItem {
+func remoteMenuItems(row treeRow, create []menuItem, connection menuItem, archived bool) []menuItem {
 	group := menuItem{label: "New group", action: NewGroup}
+	rename := []menuItem{{label: "Rename", action: RenameAction}}
 	switch row.kind {
 	case ConnectionRow:
 		return menuSections(append(create, group),
 			[]menuItem{{label: "Edit connection", action: RenameAction}, connection},
 			[]menuItem{{label: "Remove connection", action: Delete, danger: true}})
 	case GroupRow:
-		return append(create, group)
+		if archived {
+			return menuSections(append(create, group), rename)
+		}
+		return menuSections(append(create, group), rename, []menuItem{{label: "Delete", action: Delete, danger: true}})
 	}
+	remove := menuItem{label: "Delete", action: Delete, danger: true}
+	var move []menuItem
+	if !row.sess.IsShell {
+		move = []menuItem{{label: "Move to group", action: MoveToGroup}}
+	}
+	manage := append(rename, move...)
 	if row.sess.Archived {
-		return []menuItem{{label: "Restore", action: Restore}}
+		return menuSections(manage, []menuItem{{label: "Restore", action: Restore}, remove})
 	}
 	kill := menuItem{label: "Kill", action: Kill, danger: true}
 	if row.sess.IsShell {
-		// The host archives and revives agents only.
+		// The host archives, revives and moves agents only.
 		if row.sess.Status == "dead" {
-			return []menuItem{kill}
+			return menuSections(rename, []menuItem{kill})
 		}
-		return menuSections([]menuItem{{label: "Attach", action: Attach}}, []menuItem{kill})
+		return menuSections([]menuItem{{label: "Attach", action: Attach}}, rename, []menuItem{kill})
 	}
 	archive := menuItem{label: "Archive", action: Archive}
 	if row.sess.Status == "dead" {
-		return menuSections([]menuItem{{label: "Revive", action: Revive}}, []menuItem{archive})
-	}
-	var agent []menuItem
-	if !row.sess.IsShell {
-		agent = []menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}}
+		return menuSections(manage, []menuItem{{label: "Revive", action: Revive}}, []menuItem{archive, remove})
 	}
 	return menuSections(
 		[]menuItem{{label: "Attach", action: Attach}},
-		agent,
-		[]menuItem{archive, kill},
+		[]menuItem{{label: "Quick prompt mode", action: Prompt}, {label: "New terminal", action: NewTerminal}},
+		manage,
+		[]menuItem{archive, kill, remove},
 	)
 }
 

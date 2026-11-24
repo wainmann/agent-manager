@@ -12,7 +12,6 @@ type BaseTarget uint8
 
 const (
 	BaseForm BaseTarget = iota
-	BaseRename
 )
 
 // BaseRefsTTL bounds how long a repo's branch list steps a base picker

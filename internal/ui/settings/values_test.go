@@ -4,9 +4,10 @@ import "testing"
 
 func TestRestoreUsesTheSameDefaultsAsOpening(t *testing.T) {
 	for name, values := range map[string]map[string]string{
-		"unset":    {DiffLayoutSetting: "", FocusKeySetting: "", ArrowStepSetting: "", NotificationsSetting: ""},
-		"enabled":  {DiffLayoutSetting: "split", FocusKeySetting: "focus", ArrowStepSetting: "on", NotificationsSetting: "on"},
-		"disabled": {DiffLayoutSetting: "unified", FocusKeySetting: "attach", ArrowStepSetting: "off", NotificationsSetting: "off"},
+		"unset":     {DiffLayoutSetting: "", FocusKeySetting: "", ArrowStepSetting: "", NotificationsSetting: ""},
+		"enabled":   {DiffLayoutSetting: "split", FocusKeySetting: "focus", ArrowStepSetting: "on", NotificationsSetting: "on"},
+		"attaching": {DiffLayoutSetting: "split", FocusKeySetting: "focus", ArrowStepSetting: "attach", NotificationsSetting: "on"},
+		"disabled":  {DiffLayoutSetting: "unified", FocusKeySetting: "attach", ArrowStepSetting: "off", NotificationsSetting: "off"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			want := FromSnapshot(Snapshot{Values: values})

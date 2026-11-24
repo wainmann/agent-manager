@@ -105,11 +105,7 @@ func (r renderer) prepareCursorVisible(fd *diff.FileDiff, hl *Highlight, width, 
 		}
 	}
 
-	spans := make([]int, total)
-	for i := range spans {
-		spans[i] = span(i)
-	}
-	r.m.PrepareViewport(spans, height)
+	r.m.PrepareViewport(total, span, height)
 }
 
 // highlightedLine returns the highlighted text for a diff line, falling back

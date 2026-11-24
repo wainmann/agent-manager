@@ -169,13 +169,15 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, ctaRow(FieldFeatureRequest, "suggest a change", "open the feature request form"))
 		case FieldUpdate:
 			lines = append(lines, versionRow(ctx, lead, actionRow))
-		default:
-			setting := byField[field]
-			name := setting.Row
-			if field == FieldArrowStep && ctx.GlyphMode.Effective() == presentation.GlyphModeBasic {
+		case FieldArrowStep:
+			name := label(FieldArrowStep)
+			if ctx.GlyphMode.Effective() == presentation.GlyphModeBasic {
 				name = "arrow step in/out"
 			}
-			lines = append(lines, row(field, name, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
+			lines = append(lines, row(FieldArrowStep, name, presentation.NavigationLabel(ctx.GlyphMode, arrowStepLabel(s.ArrowStep))))
+		default:
+			setting := byField[field]
+			lines = append(lines, row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
 		}
 	}
 	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {presentation.NavigationLabel(ctx.GlyphMode, "←→"), "change"}, {"↵/esc", "save and close"}}

@@ -126,3 +126,18 @@ func cleanRemoval(removal sessioncmd.GroupRemoval) sessioncmd.GroupRemoval {
 	removal.Moved = moved
 	return removal
 }
+
+func cleanDeletion(deletion sessioncmd.GroupDeletion) sessioncmd.GroupDeletion {
+	for i, path := range deletion.Removed {
+		deletion.Removed[i] = cleanText(path)
+	}
+	deleted := deletion.Deleted[:0]
+	for _, id := range deletion.Deleted {
+		if validID(id) == nil {
+			deleted = append(deleted, id)
+		}
+	}
+	deletion.Deleted = deleted
+	deletion.Notice = cleanText(deletion.Notice)
+	return deletion
+}

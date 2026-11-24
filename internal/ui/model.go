@@ -10,11 +10,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uicomposer "github.com/YoanWai/agent-manager/internal/ui/composer"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
@@ -89,6 +91,8 @@ type layoutState struct {
 	// reviewFilesTop is the frame row Review's file list first painted on,
 	// under the commit rail when the commit scope shows one, for clicks.
 	reviewFilesTop int
+	// keepFrame skips the next render: the message left the frame as drawn.
+	keepFrame bool
 }
 
 type focusState struct {
@@ -117,6 +121,9 @@ type mouseCapture struct {
 type environment struct {
 	workDir string
 	homeDir string
+	// scheme is the light or dark side the terminal last reported, unknown
+	// until a report arrives.
+	scheme systheme.Scheme
 }
 
 type Dependencies struct {
@@ -128,24 +135,27 @@ type Dependencies struct {
 	Git        *git.Driver
 	Lifecycle  *sessioncmd.Lifecycle
 	Execution  *execution.Runner
+	Events     lifecyclehook.Emitter
 	ProfileDir string
 }
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) (*Model, error) {
 	gitDriver, _ := git.New()
 	dir, _ := config.Dir()
-	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, ShowCommand: showCommand,
+	// Tests build the model through New, so no hooks.toml of the user's runs.
+	events := lifecyclehook.Nop{}
+	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, Events: events,
 		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }}
 	opts := execution.OptionsFromConfig(cfg)
 	var model *Model
 	lifecycle, err := sessioncmd.NewLifecycle(sessioncmd.Runtime{
 		Config: cfg, Store: st, Driver: driver, Hooks: hookManager, Git: gitDriver,
-		Snapshot: st.SetSnapshot,
+		Snapshot: st.SetSnapshot, Events: events,
 	})
 	if err != nil {
 		return nil, err
 	}
-	model, err = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), ProfileDir: dir}, version)
+	model, err = newView(Dependencies{Config: cfg, Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Lifecycle: lifecycle, Execution: execution.New(deps, opts), Events: events, ProfileDir: dir}, version)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +164,8 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 }
 
 func NewWithServices(deps Dependencies, version string) (*Model, error) {
-	if deps.Execution == nil || deps.Lifecycle == nil {
-		panic("execution and lifecycle services are required")
+	if deps.Execution == nil || deps.Lifecycle == nil || deps.Events == nil {
+		panic("execution, lifecycle and events services are required")
 	}
 	return newView(deps, version)
 }
@@ -183,7 +193,9 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		return nil, err
 	}
 	applyTheme(uitheme.Palettes[uitheme.Index(uitheme.ResolveStartup(st))])
-	driver.SetSessionKeys(sessionKeys)
+	if err := sessioncmd.ApplyBindingSettings(st, driver); err != nil {
+		return nil, err
+	}
 	model := &Model{
 		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
 		poller:  &poller{runner: deps.Execution},
@@ -206,6 +218,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			gitDrv:      gitDriver,
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
+			events:      deps.Events,
 		},
 		rail:      uirailpersist.Load(st),
 		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),

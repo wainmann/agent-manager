@@ -98,8 +98,8 @@ func (d *Driver) styleStatusBar(name string) error {
 		{"set-option", "-t", name, "status", "on"},
 		// The default status-right-length of 40 truncates the hints, so widen it
 		// to fit the whole footer, including the configured-prefix fallback.
-		{"set-option", "-t", name, "status-right-length", "100"},
-		{"set-option", "-t", name, "status-right", attachStatusRight(primary, secondary, d.currentSessionKeys())},
+		{"set-option", "-t", name, "status-right-length", "120"},
+		{"set-option", "-t", name, "status-right", attachStatusRight(primary, secondary, d.currentSessionKeys()) + promptHeadHint},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", hiddenWindowStatus},
@@ -198,9 +198,10 @@ func (d *Driver) ensureBindingsIn(id string) error {
 	bind(keys.Binding(keybind.Detach), []string{"detach-client"})
 	bind(keys.Binding(keybind.Review), d.requestAction(id, RequestReview))
 	bind(keys.Binding(keybind.Editor), d.requestAction(id, RequestEditor))
+	commands = append(commands, promptHeadBinding(d.promptHeadCheck())...)
 	commands = append(commands, recordRootBindings(bound)...)
 	// Restore the standard fallback when the prefix shadows a direct binding.
-	commands = append(commands, []string{"bind-key", "-T", "prefix", "d", bindingArg("detach-client")})
+	commands = append(commands, append([]string{"bind-key", "-T", "prefix", "d"}, bindingAction("detach-client")...))
 	// list-keys starts a server that exits again straight away when it has
 	// no sessions, so the list can find none. Nothing needs the setup then:
 	// Create runs this again once a session brings the server up.
@@ -229,10 +230,10 @@ func (d *Driver) RefreshChrome(id string) error {
 // left side, replacing the hidden window list.
 func (d *Driver) SetLabel(id, label string) error {
 	name := sessionName(id)
-	if _, err := d.run("set-option", "-t", name, "status-left-length", "80"); err != nil {
-		return err
-	}
-	_, err := d.run("set-option", "-t", name, "status-left", " "+sanitizeFormat(label)+" ")
+	_, err := d.run(commandList(
+		[]string{"set-option", "-t", name, "status-left-length", "80"},
+		[]string{"set-option", "-t", name, "status-left", " " + sanitizeFormat(label) + " "},
+	)...)
 	return err
 }
 

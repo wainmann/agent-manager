@@ -207,9 +207,15 @@ func (m *Model) prepareRailFrame(width, height int) {
 	}
 	rename := uirail.Rename{}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
-		if s.IsGroup() {
-			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: s.Path()}
-		} else {
+		switch {
+		case s.Group() != "":
+			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: s.Group(), Host: s.Host()}
+		case s.Host() != "":
+			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID(), Host: s.Host()}
+			if row, ok := m.ssh.Row(rename.Target); ok {
+				rename.Target.Group = row.Group
+			}
+		default:
 			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: s.SessionID()}
 			if session, ok := m.sessionByID(s.SessionID()); ok {
 				rename.Target.Group = session.Group
@@ -256,12 +262,13 @@ func (m *Model) railLines(width, height int) []contentLine {
 
 func (m *Model) railLegendContext() uirail.LegendContext {
 	return uirail.LegendContext{
-		GlyphMode:     m.prefs.glyphMode,
-		ListKeys:      m.services.listKeys,
-		EnterFocuses:  m.enterFocuses(),
-		MouseDisabled: m.prefs.mouseDisabled,
-		ArrowStep:     m.prefs.arrowStep,
-		FullLayout:    m.prefs.fullLayout,
+		GlyphMode:      m.prefs.glyphMode,
+		ListKeys:       m.services.listKeys,
+		EnterFocuses:   m.enterFocuses(),
+		MouseDisabled:  m.prefs.mouseDisabled,
+		ArrowStep:      m.prefs.arrowStep,
+		StepInAttaches: m.prefs.arrowAttach,
+		FullLayout:     m.prefs.fullLayout,
 	}
 }
 

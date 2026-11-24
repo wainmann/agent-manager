@@ -51,3 +51,21 @@ func TestGestureNudgeClamps(t *testing.T) {
 		t.Fatalf("a nudge with no width moved the divider to %v", narrow.Ratio)
 	}
 }
+
+// Changed tells a gesture that moved the divider from one that did not, by
+// either route: Moved only marks a drag in flight.
+func TestGestureChangedTracksNudgesAndDrags(t *testing.T) {
+	armed := Gesture{Ratio: 0.3, RatioBefore: 0.3}
+	if armed.Changed() {
+		t.Fatal("an untouched gesture reports a change")
+	}
+	if nudged := armed.Nudged(4, 100); !nudged.Changed() {
+		t.Fatal("a nudge does not report a change")
+	}
+	if dragged := armed.Pressed().Drag(50, 100); !dragged.Changed() {
+		t.Fatal("a drag does not report a change")
+	}
+	if pressed := armed.Pressed(); pressed.Changed() {
+		t.Fatal("a press that never moved reports a change")
+	}
+}

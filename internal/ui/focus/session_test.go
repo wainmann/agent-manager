@@ -12,12 +12,14 @@ type fakeKeyHost struct {
 	id       string
 	selected bool
 	keys     Bindings
+	pressed  []string
 	writes   []Write
 	copied   []CopyRequest
 	reports  []string
 	left     bool
 	mode     bool
 	editor   bool
+	resize   bool
 	review   string
 	saved    bool
 	openURL  string
@@ -27,7 +29,10 @@ func (h *fakeKeyHost) Session() (string, bool) { return h.id, h.selected }
 
 func (h *fakeKeyHost) PaneRows() int { return 10 }
 
-func (h *fakeKeyHost) Bindings(string) Bindings { return h.keys }
+func (h *fakeKeyHost) Bindings(pressed string) Bindings {
+	h.pressed = append(h.pressed, pressed)
+	return h.keys
+}
 
 func (h *fakeKeyHost) Queued(id string, write Write) tea.Cmd {
 	h.writes = append(h.writes, write)
@@ -37,6 +42,11 @@ func (h *fakeKeyHost) Queued(id string, write Write) tea.Cmd {
 func (h *fakeKeyHost) Region(*RegionRequest) tea.Cmd { return nil }
 
 func (h *fakeKeyHost) Reported(report string, echo bool) { h.reports = append(h.reports, report) }
+
+func (h *fakeKeyHost) Resize() tea.Cmd {
+	h.resize = true
+	return nil
+}
 
 func (h *fakeKeyHost) Editor() (tea.Model, tea.Cmd) {
 	h.editor = true
@@ -218,5 +228,64 @@ func TestApplyFrameDropsAnotherSessionsFrame(t *testing.T) {
 	focused.ApplyFrame(FrameMessage{SessionID: "s2", Preview: "not ours"}, host)
 	if host.preview != "" {
 		t.Fatalf("another session's frame was painted: %q", host.preview)
+	}
+}
+
+// A modified key the terminal sent as CSI u reaches the pane by its tmux name,
+// held back from a pane that would read it as another key.
+func TestExtendedKeyPressForwardsTheKeyName(t *testing.T) {
+	for name, extendedOnly := range map[string]bool{
+		"S-Enter":  true,
+		"C-Enter":  true,
+		"M-Enter":  false,
+		"C-BSpace": true,
+		"S-Tab":    true,
+	} {
+		host := &fakeKeyHost{id: "s1", selected: true}
+		focused := &Model{}
+		focused.Enter(EnterContext{SessionID: "s1"})
+		focused.ExtendedKeyPress(host, ExtendedKeyMsg{Name: name})
+		if len(host.writes) != 1 {
+			t.Fatalf("%s: writes = %+v", name, host.writes)
+		}
+		write := host.writes[0]
+		if write.Kind != WriteKeys || write.Name != name || write.Submit || write.ExtendedOnly != extendedOnly {
+			t.Errorf("%s: write = %+v, want ExtendedOnly %t and no submit", name, write, extendedOnly)
+		}
+	}
+}
+
+// Shift+Tab and Ctrl+Space are keys a manager binding can take, so the
+// binding fires whichever form the terminal sends.
+func TestExtendedKeyPressRunsABoundManagerKey(t *testing.T) {
+	for name, pressed := range map[string]string{"S-Tab": "shift+tab", "C-Space": "ctrl+@"} {
+		host := &fakeKeyHost{id: "s1", selected: true}
+		host.keys.Saved = true
+		focused := &Model{}
+		focused.Enter(EnterContext{SessionID: "s1"})
+		focused.ExtendedKeyPress(host, ExtendedKeyMsg{Name: name})
+		if !host.saved || len(host.writes) != 0 {
+			t.Errorf("%s: saved = %t, writes = %+v", name, host.saved, host.writes)
+		}
+		if len(host.pressed) == 0 || host.pressed[0] != pressed {
+			t.Errorf("%s: bindings read %q, want %q", name, host.pressed, pressed)
+		}
+	}
+}
+
+// A resize binding on the session table arms the divider from the focus
+// layer instead of forwarding the key.
+func TestKeyPressArmsTheDividerOnTheSessionBinding(t *testing.T) {
+	host := &fakeKeyHost{id: "s", selected: true, keys: Bindings{Resize: true}}
+	focused := &Model{}
+	focused.Enter(EnterContext{SessionID: "s"})
+	if _, cmd := focused.KeyPress(host, tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}); cmd != nil {
+		t.Fatal("arming the divider returned a command")
+	}
+	if !host.resize {
+		t.Fatal("the resize binding did not reach the root")
+	}
+	if len(host.writes) != 0 {
+		t.Fatalf("the resize key was written to the pane: %#v", host.writes)
 	}
 }

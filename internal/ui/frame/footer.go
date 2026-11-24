@@ -9,6 +9,7 @@ import (
 
 type FocusKeys struct {
 	Detach      string
+	Resize      string
 	Review      string
 	Editor      string
 	SavedPrompt string
@@ -95,6 +96,10 @@ func (f Footer) Focused(focus Focus) Section {
 	}
 	if focus.Keys.Editor != "" {
 		pairs = append(pairs, [2]string{focus.Keys.Editor, "editor"})
+	}
+	// Full screen has no divider to move, and its footer keeps one row.
+	if focus.Keys.Resize != "" && !f.FullLayout {
+		pairs = append(pairs, [2]string{focus.Keys.Resize, "resize"})
 	}
 	saved := focus.Keys.SavedPrompt
 	if !focus.Bare {

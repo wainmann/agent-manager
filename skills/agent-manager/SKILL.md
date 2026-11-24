@@ -39,7 +39,7 @@ brew install agent-manager
 ```
 
 Other routes: the install script, the AUR (`yay -S agent-manager-bin`), `mise use -g
-ubi:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
+github:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
 prebuilt binary from the releases page.
 
 ## The keys that matter
@@ -59,9 +59,9 @@ prebuilt binary from the releases page.
 ## Status colours
 
 A row is coloured `working`, `waiting`, `finished`, `idle` or `errored`. Claude Code
-reports through hook events; every other CLI is read from its pane with regexes. Twelve
+reports through hook events; every other CLI is read from its pane with regexes. Fourteen
 CLIs ship with working profiles: Claude Code, OpenCode, Codex, Grok Build, Gemini CLI,
-Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi and Cursor CLI. Every profile
+Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, Cursor CLI, Kiro CLI and GitHub Copilot CLI. Every profile
 ships in the binary, so an upgrade brings the current rules for all of them. A CLI
 outside that list is a feature request, and the `CLIs` row in Settings ends with
 `request CLI support`, which opens one prefilled.
@@ -70,7 +70,10 @@ outside that list is a feature request, and the `CLIs` row in Settings ends with
 
 Sessions of MCP-capable CLIs carry agent-manager's own MCP server over stdio, so an agent can
 `create_session` to spawn a peer, `send_session` to message one, `wait_for_session` to block
-on one, `task` to claim shared work, and `reserve_files` to declare what it is editing.
+on one, `task` to claim shared work, and `reserve_files` to declare what it is editing. Once a
+peer's work is saved, `delete_session` (or `agent-manager delete <id>`) removes it with its
+worktree and branch. A worktree with uncommitted or unpushed work, or one another session
+still uses, stays with its branch, and the result's notice says so.
 
 ## Reference
 

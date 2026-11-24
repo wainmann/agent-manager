@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func testContext() Context {
@@ -200,5 +201,35 @@ func TestReviewScopeRowStepsBothWays(t *testing.T) {
 	}
 	if !slices.Contains(s.Values(), Value{Key: ReviewScopeSetting, Value: "staged"}) {
 		t.Fatalf("a save writes %v, want review_scope staged", s.Values())
+	}
+}
+
+// The ←→ row steps focus, attach and off both ways, names what → does,
+// and a save writes the value it lands on.
+func TestArrowStepRowStepsThroughAttach(t *testing.T) {
+	s := openState(testContext())
+	s.Field = FieldArrowStep
+	view := viewContext()
+	view.Height = 100
+	shown := func() string { return ansi.Strip(s.View(view).Body) }
+	if s.ArrowStep != ArrowStepFocus || !strings.Contains(shown(), "→ focus") {
+		t.Fatalf("an unset row should open on the focus default, got %q: %s", s.ArrowStep, shown())
+	}
+	var steps []string
+	for range 3 {
+		s.Cycle(1)
+		steps = append(steps, s.ArrowStep)
+	}
+	s.Cycle(-1)
+	s.Cycle(-1)
+	steps = append(steps, s.ArrowStep)
+	if want := []string{"attach", "off", "on", "attach"}; !slices.Equal(steps, want) {
+		t.Fatalf("steps = %v, want %v", steps, want)
+	}
+	if !strings.Contains(shown(), "→ attach") {
+		t.Fatalf("the row should name the attach step: %s", shown())
+	}
+	if !slices.Contains(s.ChangedValues(), Value{Key: ArrowStepSetting, Value: "attach"}) {
+		t.Fatalf("a save writes %v, want arrow_step_keys attach", s.ChangedValues())
 	}
 }

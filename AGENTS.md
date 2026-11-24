@@ -52,7 +52,8 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   alone, so the modal does not grow a row per knob. A new per-user file,
   environment variable, or hand-edited block is the wrong shape; put the
   choice on a Settings row, behind `agent-manager settings`, or pick a
-  default in code.
+  default in code. `hooks.toml` is the exception, because a hook is a
+  command the user writes, not a value the modal can step through.
 - **Every tool.** New shared behavior covers every applicable tool in the
   same PR. A field, status rule, or command added to one `[tools.*]` block
   is added to every tool it applies to. A fix to one tool's adapter or support
@@ -87,6 +88,7 @@ in code or in a user's file stops receiving fixes the day it is written.
 ```bash
 go run .                                        # run the TUI
 go build ./...
+make build                                      # ./agent-manager stamped with git describe
 mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 ```
 
@@ -161,8 +163,8 @@ release or a user's sessions before.
   bindings, so a table read from anywhere else gives a session the wrong
   keys. A `config.toml` from an earlier release is read once, by the import
   in `internal/store`.
-- **`internal/update` verifies the checksum before anything is renamed over
-  the running binary.** No redirect to another host, no wider permissions on
+- **`internal/update` verifies the checksum and the build provenance before
+  anything is renamed over the running binary.** No redirect to another host, no wider permissions on
   the staged file, no write outside the staging directory.
 - **Workflow actions are pinned to a release tag** and bumped by dependabot.
   A branch ref or a missing ref is a defect.

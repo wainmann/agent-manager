@@ -1875,6 +1875,7 @@ func TestSettingKeysMatchTheStore(t *testing.T) {
 		uisettings.CoordinationSetting: store.CoordinationSetting,
 		uisettings.EditorSetting:       store.EditorSetting,
 		uisettings.HiddenToolsSetting:  store.HiddenToolsSetting,
+		uisettings.ArrowStepSetting:    store.ArrowStepSetting,
 	} {
 		if got != want {
 			t.Errorf("settings key %q, store reads %q", got, want)
@@ -2083,8 +2084,11 @@ func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
 	}
 }
 
-// The key picker spends every row the terminal has on its list, short of
-// the one a table heading can push past the window.
+// The key picker spends every row the terminal has on its list. It can fall
+// short by two when the next row would open a new table, since that costs a
+// blank line and a heading before the row itself. TestKeyWindowFitsAndShowsTheCursor
+// in the settings package pins what is left: the window fits its room and
+// keeps the cursor's row visible at every cursor position.
 func TestKeyPickerFillsTheTerminal(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width = 160
@@ -2094,7 +2098,7 @@ func TestKeyPickerFillsTheTerminal(t *testing.T) {
 		m.settingsCard().State().Field = uisettings.FieldKeybindings
 		m.handleSettingsKey(key("enter"))
 		m.viewSettings()
-		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-1 {
+		if rows := m.layout.card.bottom - m.layout.card.top; rows > height || rows < height-2 {
 			t.Fatalf("height %d: the key picker card is %d rows tall", height, rows)
 		}
 	}

@@ -1,0 +1,40 @@
+ [Current]  Sessions   Issues   Pull requests   Gists
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                    │
+│  ╭─╮╭─╮                             │  Getting started                                                             │
+│  ╰─╯╰─╯  Copilot v1.0.114 uses AI.  │  Use the tabs above to explore your sessions and pull requests               │
+│  █ ▘▝ █  Check for mistakes.        │  /init — Initialize Copilot instructions for this repository                 │
+│   ▔▔▔▔                              │  /model — Switch models across providers, or use Copilot Fusion              │
+│                                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ● No Copilot instructions found for this repository. Run /init to generate them.
+
+ ● MCP Servers reloaded: 1 server connected
+
+ ❯ Run the shell command `date` and tell me the output.                                                          14:20
+
+ ● Copilot Fusion selected MAI Code 2 Flash because it was the best choice out of the models available in your plan.
+
+ $ Shell Print the current date and time 1 line…
+   date
+
+ ● Fri Nov 20 14:20:57 IST 2026
+
+ ❯ Create a file named hello.txt containing the word hi.                                                         14:21
+
+ ❯ Thought for 1s
+
+ ● Edit  Create hello.txt (+1)
+
+ ● Created  hello.txt  containing  hi .
+
+
+
+
+ /private/tmp/cpl/work [⎇ main%]                                                                 Session: 0.19 AIC used
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab  Copilot Fusion → mai-code-2-flash

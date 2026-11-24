@@ -1,5 +1,6 @@
 name: Bug report
 description: Something in the manager behaves differently than documented
+type: Bug
 body:
   - type: markdown
     attributes:
@@ -62,6 +63,8 @@ body:
         - Muse Code
         - Oh My Pi
         - Cursor CLI
+        - Kiro CLI
+        - GitHub Copilot CLI
         - Not tool specific
 
   - type: input

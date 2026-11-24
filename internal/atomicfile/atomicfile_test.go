@@ -1,6 +1,8 @@
 package atomicfile
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,7 +105,7 @@ func TestWriteFileRemovesAStagingFileAfterFailure(t *testing.T) {
 				}
 				return file, nil
 			}
-			if err := writeFile(path, []byte("content"), 0o600, createTemp); err == nil {
+			if err := writeFile(path, []byte("content"), 0o600, createTemp, os.Rename); err == nil {
 				t.Fatal("writeFile succeeded after the staging operation failed")
 			}
 			entries, err := os.ReadDir(dir)
@@ -123,6 +125,25 @@ func TestWriteFileRemovesAStagingFileAfterFailure(t *testing.T) {
 
 // WriteIfChanged is what keeps concurrent launches from rewriting a generated
 // file a reader is looking at, so an unchanged write must not touch the file.
+func TestCreateFileKeepsAFileAlreadyThere(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hooks.toml")
+	if err := CreateFile(path, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateFile(path, []byte("second"), 0o600); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("second create = %v, want fs.ErrExist", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != "first" {
+		t.Fatalf("content = %q, %v", raw, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, %v, want only the file", entries, err)
+	}
+}
+
 func TestWriteIfChangedLeavesAnIdenticalFileAlone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "cache.json")
 	if err := WriteIfChanged(path, []byte("same"), 0o640); err != nil {

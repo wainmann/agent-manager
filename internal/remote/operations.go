@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
@@ -225,6 +226,21 @@ func (c *Client) Kill(ctx context.Context, ref Ref) (sessioncmd.Session, error) 
 	return c.lifecycle(ctx, ref, []string{"kill", "--json"})
 }
 
+// Delete removes the session and the terminals under it on its host. A
+// worktree with unsaved work stays there, and the notice says so.
+func (c *Client) Delete(ctx context.Context, ref Ref) (sessioncmd.Deletion, error) {
+	var deleted sessioncmd.Deletion
+	if err := validRef(ref); err != nil {
+		return deleted, err
+	}
+	if err := c.decode(ctx, ref.Host, hookCallTimeout, &deleted, "delete", "--json", "--", ref.ID); err != nil {
+		return deleted, err
+	}
+	session, err := cleanSession(deleted.Session)
+	deleted.Session, deleted.Notice = session, cleanText(deleted.Notice)
+	return deleted, unreadable(ref.Host, "delete", err)
+}
+
 func (c *Client) Revive(ctx context.Context, ref Ref) (sessioncmd.Session, error) {
 	return c.lifecycle(ctx, ref, []string{"revive", "--json"})
 }
@@ -242,12 +258,18 @@ func (c *Client) Move(ctx context.Context, ref Ref, group string) (sessioncmd.Se
 	return c.lifecycle(ctx, ref, []string{"move", "--json"}, group)
 }
 
+// Rename names an agent or a terminal on its host, its managed branch
+// included.
+func (c *Client) Rename(ctx context.Context, ref Ref, name string) (sessioncmd.Session, error) {
+	return c.lifecycle(ctx, ref, []string{"rename-session", "--json"}, name)
+}
+
 func (c *Client) lifecycle(ctx context.Context, ref Ref, args []string, operands ...string) (sessioncmd.Session, error) {
 	var session sessioncmd.Session
 	if err := validRef(ref); err != nil {
 		return session, err
 	}
-	if err := c.decode(ctx, ref.Host, callTimeout, &session, append(append(args, "--", ref.ID), operands...)...); err != nil {
+	if err := c.decode(ctx, ref.Host, hookCallTimeout, &session, append(append(args, "--", ref.ID), operands...)...); err != nil {
 		return session, err
 	}
 	session, err := cleanSession(session)
@@ -266,8 +288,36 @@ func (c *Client) CreateGroup(ctx context.Context, host, path, directory string) 
 
 func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd.GroupRemoval, error) {
 	var removal sessioncmd.GroupRemoval
-	err := c.decode(ctx, host, callTimeout, &removal, "delete-group", "--json", "--", path)
+	err := c.decode(ctx, host, hookCallTimeout, &removal, "delete-group", "--json", "--", path)
 	return cleanRemoval(removal), err
+}
+
+// DeleteGroupWithSessions deletes the group on its host with every session
+// filed in it, the way the delete key does there. confirmed holds the ids of
+// the sessions the user was asked about, and the host refuses when it holds
+// another set.
+func (c *Client) DeleteGroupWithSessions(ctx context.Context, host, path string, confirmed []string) (sessioncmd.GroupDeletion, error) {
+	for _, id := range confirmed {
+		if err := validID(id); err != nil {
+			return sessioncmd.GroupDeletion{}, &Error{Host: host, Err: err}
+		}
+	}
+	var deletion sessioncmd.GroupDeletion
+	// --json goes first: a host that predates --with-sessions then names the
+	// flag it does not know, which is the answer reworded below.
+	err := c.decode(ctx, host, callTimeout, &deletion, "delete-group", "--json", "--with-sessions="+strings.Join(confirmed, ","), "--", path)
+	if err != nil && strings.Contains(err.Error(), "flag provided but not defined: -with-sessions") {
+		return deletion, &Error{Host: host, Err: errors.New("agent-manager there is too old to delete a group with its sessions; update agent-manager on that host")}
+	}
+	return cleanDeletion(deletion), err
+}
+
+// RenameGroup renames the group at path where it stands on host; its
+// subgroups and sessions move with it.
+func (c *Client) RenameGroup(ctx context.Context, host, path, name string) (sessioncmd.Group, error) {
+	var renamed sessioncmd.Group
+	err := c.decode(ctx, host, callTimeout, &renamed, "rename-group", "--json", "--", path, name)
+	return cleanGroup(renamed), err
 }
 
 func validRef(ref Ref) error {

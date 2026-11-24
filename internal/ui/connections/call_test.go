@@ -26,6 +26,10 @@ func TestSessionCallAnswersEveryRemoteAction(t *testing.T) {
 			Call{Op: OpKill, Dead: true, Answered: true, Action: uidialogs.ConfirmKill, Verb: "kill"}},
 		{"a terminal kill closes it", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.Kill,
 			Call{Op: OpCloseTerminal, Answered: true, Action: uidialogs.ConfirmKill, Verb: "close terminal"}},
+		{"delete asks without a revive", row, uirail.Delete,
+			Call{Op: OpDelete, Answered: true, Action: uidialogs.ConfirmDelete, Verb: "delete"}},
+		{"a terminal delete closes it", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.Delete,
+			Call{Op: OpCloseTerminal, Answered: true, Action: uidialogs.ConfirmKill, Verb: "close terminal"}},
 		{"revive", row, uirail.Revive,
 			Call{Op: OpRevive, Answered: true, Action: uidialogs.ConfirmRevive, Verb: "revive"}},
 		{"archive an unarchived row", row, uirail.Archive,
@@ -40,6 +44,9 @@ func TestSessionCallAnswersEveryRemoteAction(t *testing.T) {
 			Call{Answered: true, Refusal: "terminal sh has exited on box - x closes it"}},
 		{"a terminal is not archived", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.Archive,
 			Call{Answered: true, Refusal: "a terminal on box is not archived or revived - x closes it"}},
+		{"move picks a group on the host", row, uirail.MoveToGroup, Call{Op: OpMove, Answered: true}},
+		{"a terminal is not moved or nested", Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}, uirail.MoveToGroup,
+			Call{Answered: true, Refusal: "moving or nesting a terminal isn't available on SSH connections yet"}},
 		{"a local action stays local", row, uirail.OpenReview, Call{}},
 	}
 	for _, tc := range cases {

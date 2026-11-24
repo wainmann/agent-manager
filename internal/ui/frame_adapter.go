@@ -102,18 +102,28 @@ func (m *Model) viewHeaderRows() []string {
 		return nil
 	}
 	header := uiframe.Header{
-		Left:   m.viewBanner()[0],
-		Scope:  m.headerScope(),
-		Agents: m.headerAgents(),
-		Rollup: []string{m.viewStatusCounts(false), m.viewStatusCounts(true)},
-		Sep:    uitheme.SubtleStyle().Render("   "),
-		Width:  m.layout.width,
-		Gutter: uiframe.RailGutter,
+		Left:    m.viewBanner()[0],
+		Version: uitheme.SubtleStyle().Render(" " + displayVersion(m.release.Version)),
+		Scope:   m.headerScope(),
+		Agents:  m.headerAgents(),
+		Rollup:  []string{m.viewStatusCounts(false), m.viewStatusCounts(true)},
+		Sep:     uitheme.SubtleStyle().Render("   "),
+		Width:   m.layout.width,
+		Gutter:  uiframe.RailGutter,
 	}
 	if tag := m.updateTag(); tag != "" {
-		header.Left += uitheme.SubtleStyle().Render("  ") + tag
+		header.Tag = uitheme.SubtleStyle().Render("  ") + tag
 	}
 	return []string{header.Row()}
+}
+
+// displayVersion tags a release build's bare version the way release tags
+// read; a dev build stays "dev".
+func displayVersion(version string) string {
+	if version == "dev" {
+		return version
+	}
+	return "v" + version
 }
 
 func (m *Model) updateTag() string {
@@ -299,7 +309,7 @@ func (m *Model) footer() legend {
 		return m.quickFooter(m.quick())
 	}
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
-		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "))})
+		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.resizeGlyph()+" / release", " / "))})
 	}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
 		return m.transientFooter(legendSection{Title: "Rename", Pairs: s.Footer()})
@@ -333,6 +343,7 @@ func (m *Model) focusFooter() uiframe.Focus {
 	focus := uiframe.Focus{
 		Keys: uiframe.FocusKeys{
 			Detach:      m.services.keys.Binding(keybind.Detach).Label(),
+			Resize:      m.services.keys.Binding(keybind.Resize).Label(),
 			Review:      m.services.keys.Binding(keybind.Review).Label(),
 			Editor:      m.services.keys.Binding(keybind.Editor).Label(),
 			SavedPrompt: m.services.keys.Binding(keybind.SavedPrompt).Label(),

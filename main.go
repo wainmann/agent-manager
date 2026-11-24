@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,9 +20,12 @@ import (
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/systheme"
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -47,21 +49,15 @@ var buildSource = ""
 // against release tags.
 func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
 	if embedded != devVersion {
-		return embedded
+		return strings.TrimPrefix(embedded, "v")
 	}
 	if !ok || info == nil {
 		return devVersion
 	}
-	moduleVersion := strings.TrimPrefix(info.Main.Version, "v")
-	if strings.ContainsAny(moduleVersion, "-+") || strings.Count(moduleVersion, ".") != 2 {
+	if !update.IsRelease(info.Main.Version) {
 		return devVersion
 	}
-	for _, field := range strings.Split(moduleVersion, ".") {
-		if _, err := strconv.Atoi(field); err != nil {
-			return devVersion
-		}
-	}
-	return moduleVersion
+	return strings.TrimPrefix(info.Main.Version, "v")
 }
 
 func main() {
@@ -145,7 +141,7 @@ func printHelp(w io.Writer, configDir string) error {
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+			return withBackend(configDir, "mcp", func(backend *sessioncmd.Backend) error {
 				return mcpserver.RunWithBackend(configDir, caller(), version, backend)
 			})
 		}),
@@ -162,10 +158,18 @@ func subcommands() map[string]func(args []string) error {
 		"follow-telemetry": withConfigDir(func(args []string, _ func() string, configDir string) error {
 			return sessioncmd.FollowTelemetry(configDir, args)
 		}),
+		// An attached ← runs this on every press and reads its exit status.
+		sessioncmd.PromptHeadCommand: withConfigDir(func(args []string, _ func() string, configDir string) error {
+			driver, err := tmux.New()
+			if err != nil {
+				return err
+			}
+			return app.PromptHead(configDir, driver, args)
+		}),
 	}
 	for name := range cli.Commands(version, ui.SettingSpecs) {
 		table[name] = withConfigDir(func(args []string, caller func() string, configDir string) error {
-			return withBackend(configDir, func(backend *sessioncmd.Backend) error {
+			return withBackend(configDir, name, func(backend *sessioncmd.Backend) error {
 				return cli.CommandsWithBackend(version, ui.SettingSpecs, backend)[name](args, caller, configDir)
 			})
 		})
@@ -201,6 +205,7 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 		}
 		return json.NewEncoder(out).Encode(started)
 	}
+	termseq.Out = errs
 	release, acquired, err := app.LockServe(dir)
 	if err != nil {
 		return err
@@ -214,7 +219,7 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 	if err != nil {
 		return err
 	}
-	local, err := app.OpenLocal(dir, driver)
+	local, err := app.OpenLocal(dir, version, driver)
 	if err != nil {
 		return err
 	}
@@ -224,8 +229,19 @@ func runServe(out, errs io.Writer, args []string, dir string, start app.Starter)
 	return local.Close()
 }
 
-func withBackend(configDir string, command func(*sessioncmd.Backend) error) (err error) {
+func withBackend(configDir, commandName string, command func(*sessioncmd.Backend) error) (err error) {
 	backend := sessioncmd.OpenBackend(configDir)
+	backend.SetVersion(version)
+	// A command's stdout is its answer, read as JSON over SSH and as the MCP
+	// stream, so the first-run hook banner's terminal fallback uses stderr.
+	termseq.Out = os.Stderr
+	backend.SetShow(notify.ShowCommand)
+	switch commandName {
+	case "spawn":
+		backend.SetDrain(lifecyclehook.DrainCreate)
+	case "mcp":
+		backend.SetDrain(lifecyclehook.DrainQuit)
+	}
 	defer func() { err = errors.Join(err, backend.Close()) }()
 	return command(backend)
 }
@@ -320,6 +336,18 @@ func sessionFromAncestry() (id string, seen bool) {
 	return id, seen
 }
 
+// programFilter resets the pointer while the screen that showed the hand is
+// still up, since kitty keeps one per screen and an interrupt skips Update,
+// and reads the modified keys and scheme reports Bubble Tea leaves
+// undecoded.
+func programFilter(_ tea.Model, msg tea.Msg) tea.Msg {
+	switch msg.(type) {
+	case tea.QuitMsg, tea.InterruptMsg:
+		ui.ResetPointer()
+	}
+	return ui.ReadColorScheme(ui.ReadExtendedKey(msg))
+}
+
 func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
@@ -329,7 +357,7 @@ func run() (resultErr error) {
 	if err != nil {
 		return err
 	}
-	local, err := app.OpenLocal(dir, driver)
+	local, err := app.OpenLocal(dir, version, driver)
 	if err != nil {
 		return err
 	}
@@ -342,7 +370,7 @@ func run() (resultErr error) {
 	rt := local.Runtime
 	model, err := ui.NewWithServices(ui.Dependencies{
 		Config: rt.Config, Store: rt.Store, TMux: rt.Driver, Engine: local.Engine, Hooks: rt.Hooks,
-		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, ProfileDir: dir,
+		Git: rt.Git, Lifecycle: local.Lifecycle, Execution: local.Execution, Events: rt.Events, ProfileDir: dir,
 	}, version)
 	if err != nil {
 		return err
@@ -357,17 +385,14 @@ func run() (resultErr error) {
 		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
-		// The pointer resets while the screen that showed the hand is still
-		// up, since kitty keeps one per screen and an interrupt skips Update.
-		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
-			switch msg.(type) {
-			case tea.QuitMsg, tea.InterruptMsg:
-				ui.ResetPointer()
-			}
-			return msg
-		}),
+		tea.WithFilter(programFilter),
+		inputOption(),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
+		return err
+	}
+	ui.SetHostPalette(systheme.QueryPalette())
+	if err := ui.EnableColorSchemeReports(); err != nil {
 		return err
 	}
 	// The terminal's own text and background colors follow the theme while
@@ -386,6 +411,7 @@ func run() (resultErr error) {
 			if len(model.AbandonedEffects()) > 0 {
 				// Abandoned workers keep their resources until the process exits.
 				closeLocal = false
+				local.StopHooks()
 				return
 			}
 			<-done
@@ -396,6 +422,7 @@ func run() (resultErr error) {
 	catalog.StopAll()
 	ui.ResetTerminalColors()
 	ui.ResetPointer()
+	runErr = errors.Join(runErr, ui.DisableColorSchemeReports())
 	stopRuntime()
 	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
 		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))

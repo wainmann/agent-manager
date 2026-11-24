@@ -5,6 +5,8 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -20,6 +22,11 @@ const (
 	Archive
 	Restore
 	CreateGroup
+	Delete
+	DeleteGroup
+	Rename
+	RenameGroup
+	Move
 )
 
 type Call struct {
@@ -33,6 +40,12 @@ type Call struct {
 	// GroupDir is the directory a new group on the host defaults to; Name
 	// carries its path.
 	GroupDir string
+	// Sessions holds the ids of the sessions a group delete confirmed it
+	// takes.
+	Sessions []string
+	// Group is the host's group a move files the session under, empty for
+	// its root.
+	Group string
 	// Draft and ComposerGen let a send or spawn from the quick bar, or a
 	// spawn from the New Session form, clear what asked for it.
 	Draft          string
@@ -43,9 +56,10 @@ type Call struct {
 }
 
 // Result is what a call returned: the session or terminal it made or
-// changed.
+// changed, and why a deleted session's worktree stayed on the host.
 type Result struct {
 	Session sessioncmd.Session
+	Notice  string
 }
 
 func Run(ctx context.Context, client *remote.Client, openers remote.Openers, call Call) (Result, error) {
@@ -64,12 +78,26 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 		result.Session, err = client.Kill(ctx, call.Ref)
 	case CloseTerminal:
 		err = client.Terminals(openers).CloseForUser(ctx, call.Ref)
+	case Delete:
+		var deleted sessioncmd.Deletion
+		deleted, err = client.Delete(ctx, call.Ref)
+		result.Session, result.Notice = deleted.Session, deleted.Notice
 	case Revive:
 		result.Session, err = client.Revive(ctx, call.Ref)
 	case Archive, Restore:
 		result.Session, err = client.Archive(ctx, call.Ref, call.Op == Restore)
 	case CreateGroup:
 		_, err = client.CreateGroup(ctx, call.Host, call.Name, call.GroupDir)
+	case DeleteGroup:
+		var deleted sessioncmd.GroupDeletion
+		deleted, err = client.DeleteGroupWithSessions(ctx, call.Host, call.Name, call.Sessions)
+		result.Notice = deleted.Notice
+	case Rename:
+		result.Session, err = client.Rename(ctx, call.Ref, call.Text)
+	case RenameGroup:
+		_, err = client.RenameGroup(ctx, call.Host, call.Name, call.Text)
+	case Move:
+		result.Session, err = client.Move(ctx, call.Ref, call.Group)
 	}
 	return result, err
 }
@@ -100,6 +128,16 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 		root.ReportDone("opened terminal " + result.Session.Name + on)
 	case Kill, CloseTerminal:
 		root.ReportDone("killed " + call.Name + on)
+	case Delete, DeleteGroup:
+		deleted := "deleted " + call.Name + on
+		if call.Op == DeleteGroup {
+			deleted = "deleted group " + call.Name + on
+		}
+		if result.Notice != "" {
+			root.ReportErr(deleted + "; " + result.Notice)
+		} else {
+			root.ReportDone(deleted)
+		}
 	case Revive:
 		root.ReportDone("revived " + call.Name + on)
 	case Archive:
@@ -109,6 +147,19 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 	case CreateGroup:
 		root.CloseAsker(call.ComposerGen, GroupFormAsker)
 		root.ReportDone("created group " + call.Name + on)
+	case Rename:
+		root.CloseRename(call.ComposerGen, call.Text)
+		root.ReportDone("renamed " + call.Name + " to " + call.Text + on)
+	case RenameGroup:
+		root.CloseRename(call.ComposerGen, call.Text)
+		renamed := call.Text
+		if parent := uirail.ParentGroup(call.Name); parent != "" {
+			renamed = parent + "/" + call.Text
+		}
+		root.RailConnection(RailChange{GroupHost: call.Host, Group: call.Name, ToGroup: renamed})
+		root.ReportDone("renamed group " + call.Name + " to " + renamed + on)
+	case Move:
+		root.ReportDone("moved " + call.Name + " to " + uiframe.DisplayGroup(call.Group) + on)
 	}
 	return s.PollHost(call.Host)
 }

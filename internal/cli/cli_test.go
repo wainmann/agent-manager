@@ -44,6 +44,8 @@ type fakeSessions struct {
 	note      string
 	ttl       time.Duration
 	deleted   bool
+	notice    string
+	confirmed []string
 
 	session   sessioncmd.Session
 	wait      sessioncmd.WaitResult
@@ -123,6 +125,11 @@ func (f *fakeSessions) Kill(sessionID, targetID string) (sessioncmd.Session, err
 	return f.session, f.failWith
 }
 
+func (f *fakeSessions) Delete(sessionID, targetID string) (sessioncmd.Deletion, error) {
+	f.callerID, f.targetID = sessionID, targetID
+	return sessioncmd.Deletion{Session: f.session, Notice: f.notice}, f.failWith
+}
+
 func (f *fakeSessions) Revive(sessionID, targetID string) (sessioncmd.Session, error) {
 	f.callerID, f.targetID = sessionID, targetID
 	return f.session, f.failWith
@@ -142,6 +149,18 @@ func (f *fakeSessions) Move(sessionID, targetID, group string) (sessioncmd.Sessi
 	moved := f.session
 	moved.Group = group
 	return moved, f.failWith
+}
+
+func (f *fakeSessions) RenameGroup(sessionID, path, name string) (sessioncmd.Group, error) {
+	f.callerID, f.groupPath, f.message = sessionID, path, name
+	return sessioncmd.Group{Path: "renamed"}, f.failWith
+}
+
+func (f *fakeSessions) RenameSession(sessionID, targetID, name string) (sessioncmd.Session, error) {
+	f.callerID, f.targetID, f.message = sessionID, targetID, name
+	renamed := f.session
+	renamed.Name = name
+	return renamed, f.failWith
 }
 
 func (f *fakeSessions) EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error) {
@@ -167,6 +186,11 @@ func (f *fakeSessions) CreateGroup(sessionID, path, directory string) (sessioncm
 func (f *fakeSessions) DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error) {
 	f.callerID, f.groupPath = sessionID, path
 	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"beef1234"}}, f.failWith
+}
+
+func (f *fakeSessions) DeleteGroupWithSessions(sessionID, path string, confirmed []string) (sessioncmd.GroupDeletion, error) {
+	f.callerID, f.groupPath, f.confirmed, f.deleted = sessionID, path, confirmed, true
+	return sessioncmd.GroupDeletion{Removed: []string{path, path + "/web"}, Deleted: confirmed, Notice: f.notice}, f.failWith
 }
 
 func (f *fakeSessions) Tasks(sessionID string) ([]sessioncmd.Task, error) {
@@ -289,6 +313,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
+		{"delete", []string{"beef1234"}, func(out io.Writer, args []string) error { return runDelete(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
 		{"move", []string{"beef1234", "api/web"}, func(out io.Writer, args []string) error {
@@ -299,6 +324,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
 		{"create-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runCreateGroup(out, sessions, args, "cafe0001") }},
 		{"delete-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runDeleteGroup(out, sessions, args, "cafe0001") }},
+		{"delete-group --with-sessions", []string{"api/web", "--with-sessions=a1,b2"}, func(out io.Writer, args []string) error { return runDeleteGroup(out, sessions, args, "") }},
 		{"task list", nil, func(out io.Writer, args []string) error { return runTaskList(out, sessions, args, "cafe0001") }},
 		{"task create", []string{"ship the api"}, func(out io.Writer, args []string) error { return runTaskCreate(out, sessions, args, "cafe0001") }},
 		{"task claim", nil, func(out io.Writer, args []string) error { return runTaskClaim(out, sessions, args, "cafe0001") }},
@@ -362,6 +388,9 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 		},
 		"kill": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runKill(out, f, args, "cafe0001")
+		},
+		"delete": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runDelete(out, f, args, "cafe0001")
 		},
 		"revive": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runRevive(out, f, args, "cafe0001")
@@ -548,7 +577,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 		t.Fatal("the caller was resolved")
 		return ""
 	}
-	for _, name := range []string{"update", "issue", "feature", "settings", "prompts", "env"} {
+	for _, name := range []string{"update", "issue", "feature", "settings", "hooks", "prompts", "env"} {
 		if err := table[name]([]string{"-h"}, resolve, t.TempDir()); !errors.Is(err, ErrUsageShown) {
 			t.Fatalf("%s -h: %v", name, err)
 		}
@@ -558,9 +587,9 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
-		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
-		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "delete", "revive", "archive", "move", "rename-session", "archive-self", "kill-self", "prompts", "env",
+		"groups", "create-group", "delete-group", "rename-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "hooks", "export", "import", "update",
 	}
 	for _, name := range registered {
 		if table[name] == nil {
@@ -572,7 +601,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 
 	help := Help("dev", false)
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, usagePromptsAdd, usageEnvSet, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>", "prompts <list|add|rm>", "env <list|show|set|unset|rm>"} {
+	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, usageHooks, usagePromptsAdd, usageEnvSet, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>", "prompts <list|add|rm>", "env <list|show|set|unset|rm>", "update, settings and hooks need no caller"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}

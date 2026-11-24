@@ -21,6 +21,7 @@ import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestExpandForkCommandQuotesPlaceholders(t *testing.T) {
@@ -1545,5 +1546,50 @@ func TestForkRefusesSourceMovedIntoArchivedGroupAfterDispatch(t *testing.T) {
 	m.applyCmd(t, cmd)
 	if _, found := forkRow(m, "child"); found {
 		t.Fatal("queued fork launched from an archived source")
+	}
+}
+
+func TestForkCardScrollsALongNameToItsCursor(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	tool := m.services.cfg.Tools["claude"]
+	tool.ForkCommand = "true {id}"
+	m.services.cfg.Tools["claude"] = tool
+	long := strings.Repeat("long-name-", 15)
+	if err := m.spawnSession("claude", long, t.TempDir(), "", "", false, false, config.Choice{}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	for i := range m.workspace.sessions {
+		m.workspace.sessions[i].AgentSessionID = "source-conversation"
+	}
+	m.rebuildRows()
+	m.selectSessionRow(t, long)
+	m.openFork()
+	if _, ok := surfaceOf[*uidialogs.ForkSurface](m); !ok {
+		t.Fatalf("fork card did not open: %q", m.errBar.text)
+	}
+	if view := preparedView(m); !strings.Contains(view, "-fork") {
+		t.Fatalf("the name's tail under the cursor is cut from the card:\n%s", view)
+	}
+	height := m.layout.height
+	m.Update(tea.WindowSizeMsg{Width: 44, Height: height})
+	if view := preparedView(m); !strings.Contains(view, "-fork") {
+		t.Fatalf("after a resize the name's tail is cut from the card:\n%s", view)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: height})
+	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m.Update(tea.WindowSizeMsg{Width: 44, Height: height})
+	row := ""
+	for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
+		if strings.Contains(line, "❯ name") {
+			row = line
+		}
+	}
+	if row == "" || strings.Contains(row, "…") {
+		t.Fatalf("with the cursor inside the name a resize left the field wider than the card: %q", row)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if name := openFork(m).Name(); !strings.HasPrefix(name, "xlong-name-") {
+		t.Fatalf("the resize moved the cursor off the start: %q", name)
 	}
 }

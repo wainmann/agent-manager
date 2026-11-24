@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -127,7 +128,11 @@ func (r *runtime) unnestedTerminal(terminalID string) (store.Session, error) {
 	return terminal, nil
 }
 
-func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
+func (r *runtime) liveTerminalInfo(sess store.Session) (Terminal, error) {
+	return r.info(sess, true, r.currentPath(sess, true))
+}
+
+func (r *runtime) info(sess store.Session, running bool, path string) (Terminal, error) {
 	parentName := ""
 	if sess.ParentID != "" {
 		// A parent row that is gone leaves the terminal orphaned, which the
@@ -141,21 +146,15 @@ func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 			parentName = parent.Name
 		}
 	}
-	return r.terminalInfo(sess, running, parentName), nil
+	return terminalRow(sess, running, parentName, path), nil
 }
 
-func (r *runtime) terminalInfo(sess store.Session, running bool, parentName string) Terminal {
-	dir := sess.Cwd
-	if running {
-		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
-			dir = current
-		}
-	}
+func terminalRow(sess store.Session, running bool, parentName, path string) Terminal {
 	return Terminal{
 		ID:         sess.ID,
 		Name:       sess.Name,
 		Group:      sess.Group,
-		Directory:  dir,
+		Directory:  cmp.Or(path, sess.Cwd),
 		Status:     sess.Status,
 		Running:    running,
 		ParentID:   sess.ParentID,
@@ -186,8 +185,8 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 		if !runtime.cfg.Tools[sess.Tool].Shell {
 			continue
 		}
-		_, running := panes[sess.ID]
-		info, err := runtime.info(sess, running)
+		pane, running := panes[sess.ID]
+		info, err := runtime.info(sess, running, pane.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +275,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	return runtime.info(launched.Session, true)
+	return runtime.liveTerminalInfo(launched.Session)
 }
 
 func (t *Terminals) Close(sessionID, terminalID string) error {
@@ -394,7 +393,7 @@ func (t *Terminals) read(sessionID, terminalID string, styled bool) (TerminalScr
 	if err != nil {
 		return TerminalScreen{}, err
 	}
-	info, err := runtime.info(terminal, true)
+	info, err := runtime.liveTerminalInfo(terminal)
 	if err != nil {
 		return TerminalScreen{}, err
 	}

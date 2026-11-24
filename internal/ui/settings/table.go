@@ -44,6 +44,33 @@ func reviewScopeLabel(name string) string {
 	return name
 }
 
+// The ←→ row's stored values, in the order the row steps them.
+const (
+	ArrowStepFocus  = "on"
+	ArrowStepAttach = "attach"
+	ArrowStepOff    = "off"
+)
+
+var arrowSteps = []string{ArrowStepFocus, ArrowStepAttach, ArrowStepOff}
+
+// ArrowStep reads a stored ←→ value, falling back to the first.
+func ArrowStep(stored string) string {
+	if slices.Contains(arrowSteps, stored) {
+		return stored
+	}
+	return arrowSteps[0]
+}
+
+func arrowStepLabel(step string) string {
+	switch step {
+	case ArrowStepFocus:
+		return "→ focus"
+	case ArrowStepAttach:
+		return "→ attach"
+	}
+	return step
+}
+
 // table is every key Settings keeps, in the order settings list prints them.
 var table = []Setting{
 	{Spec: Spec{Key: DefaultToolSetting, Row: "default tool"}, Field: FieldTool},
@@ -68,8 +95,7 @@ var table = []Setting{
 		Flag: func(s *State) *bool { return &s.QuickCloseSend }, True: "close", False: "stay", FalseLabel: "stay open"},
 	{Spec: Spec{Key: FocusKeySetting, Values: []string{"focus", "attach"}, Default: "focus", Row: "session keys"}, Field: FieldFocusKey,
 		Flag: func(s *State) *bool { return &s.EnterFocuses }, True: "focus", False: "attach", TrueLabel: "↵ focus · A attach", FalseLabel: "↵ attach · A focus"},
-	{Spec: Spec{Key: ArrowStepSetting, Values: onOff, Default: "on", Row: "←→ step in/out"}, Field: FieldArrowStep,
-		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off"},
+	{Spec: Spec{Key: ArrowStepSetting, Values: arrowSteps, Default: arrowSteps[0], Row: "←→ step in/out"}, Field: FieldArrowStep},
 	{Spec: Spec{Key: MouseSetting, Values: onOff, Default: "on", Row: "mouse"}, Field: FieldMouse,
 		Flag: func(s *State) *bool { return &s.MouseDisabled }, True: "off", False: "on"},
 	{Spec: Spec{Key: WorktreeSetting, Values: onOff, Default: "off", Row: "spawn in worktree"}, Field: FieldWorktree,

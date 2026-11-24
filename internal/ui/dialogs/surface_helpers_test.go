@@ -16,32 +16,14 @@ func (h *stubHost) Pop()                                              { h.popped
 // renameStub is the root as the rename row reaches it: what a key asked for,
 // recorded instead of run.
 type renameStub struct {
-	errs        []string
-	suggestions int
-	steps       int
-	requests    []RenameRequest
-	bases       []string
-	base        string
+	errs     []string
+	requests []RenameRequest
 }
 
 func (r *renameStub) ReportErr(text string) { r.errs = append(r.errs, text) }
 
-func (r *renameStub) ApplyPathSuggestion() tea.Cmd { r.suggestions++; return nil }
-
-func (r *renameStub) StepBase(*RenameSurface, int) (string, tea.Cmd) {
-	r.steps++
-	return r.base, nil
-}
-
-func (r *renameStub) WorktreeCount() int { return 3 }
-
-func (r *renameStub) EnvProfiles() []string { return nil }
-
-func (r *renameStub) FieldsLine(int, int) (int, bool) { return 0, false }
-
-func (r *renameStub) QueueRename(request RenameRequest, base, _ string) tea.Cmd {
+func (r *renameStub) QueueRename(request RenameRequest) tea.Cmd {
 	r.requests = append(r.requests, request)
-	r.bases = append(r.bases, base)
 	return nil
 }
 

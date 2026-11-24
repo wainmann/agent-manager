@@ -26,7 +26,7 @@ const (
 )
 
 // Styles lists every value session_report accepts.
-var Styles = []string{StyleClaude, "pi", "omp", "opencode", "command-code", "codex", "gemini", "muse", "grok", "antigravity", "hermes", StyleNone}
+var Styles = []string{StyleClaude, "pi", "omp", "opencode", "command-code", "codex", "gemini", "muse", "grok", "antigravity", "hermes", "copilot", StyleNone}
 
 // HookCommand is the command a hook-config CLI runs: it reads the hook's JSON
 // input on stdin and reports the string field key. exec makes the CLI that
@@ -68,6 +68,8 @@ func Apply(style string, target Target, command string, env map[string]string) (
 		return withMod(target.HooksDir, fmt.Appendf(nil, commandCodeModTemplate, jsString(target.Exe), jsString(spawnedFlag)), command)
 	case "codex":
 		return command + codexHooks(target.Exe), nil
+	case "copilot":
+		return withCopilotPlugin(target.Exe, target.HooksDir, command)
 	case "gemini":
 		return wireGemini(target, command, env)
 	default:
@@ -157,6 +159,26 @@ func codexHooks(exe string) string {
 		flags += " -c " + tmux.ShellQuote("hooks."+event+"="+handler)
 	}
 	return flags
+}
+
+// withCopilotPlugin loads a plugin of the manager's own for this launch only,
+// beside the plugins the user installed. sessionStart fires at the first
+// prompt of a new conversation; a /fork or /resume fires nothing, so the
+// next prompt names the conversation the agent switched to.
+func withCopilotPlugin(exe, hooksDir, command string) (string, error) {
+	dir := filepath.Join(hooksDir, "agent-manager-copilot")
+	manifest, _ := json.Marshal(map[string]string{"name": "agent-manager", "description": "Reports the conversation this session is on to Agent Manager.", "version": "1.0.0"})
+	if err := atomicfile.WriteIfChanged(filepath.Join(dir, "plugin.json"), manifest, 0o644); err != nil {
+		return "", err
+	}
+	// A subagent fires the same hooks under its own id, with an agentId the
+	// main agent's input never carries.
+	handler := []map[string]any{{"type": "command", "bash": HookCommand(exe, "copilot", "sessionId") + " --unless agentId", "timeoutSec": 10}}
+	config, _ := json.MarshalIndent(map[string]any{"version": 1, "hooks": map[string]any{"sessionStart": handler, "userPromptSubmitted": handler}}, "", "  ")
+	if err := atomicfile.WriteIfChanged(filepath.Join(dir, "hooks", "hooks.json"), config, 0o644); err != nil {
+		return "", err
+	}
+	return command + " --plugin-dir " + tmux.ShellQuote(dir), nil
 }
 
 const opencodePluginTemplate = `import { Plugin } from "@opencode/plugin/tui";

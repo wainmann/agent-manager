@@ -26,6 +26,8 @@ type KeyHost interface {
 	// the saved prompts list over it.
 	Editor() (tea.Model, tea.Cmd)
 	Review(id string) (tea.Model, tea.Cmd)
+	// Resize arms the split's divider gesture over the focused pane.
+	Resize() tea.Cmd
 	Saved() tea.Cmd
 	Leave() tea.Cmd
 	LeaveMode() tea.Cmd
@@ -43,6 +45,7 @@ type MouseHost interface {
 
 type Bindings struct {
 	Detach      bool
+	Resize      bool
 	Editor      bool
 	Review      bool
 	Saved       bool
@@ -73,6 +76,8 @@ type Write struct {
 	Text    string
 	Submit  bool
 	Echo    bool
+	// ExtendedOnly drops a key name unless the pane asked for extended keys.
+	ExtendedOnly bool
 }
 
 // Key is one key press: the pane's, or one of the manager's. The host
@@ -91,6 +96,7 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		SessionID:   id,
 		Rows:        h.PaneRows(),
 		Detach:      keys.Detach,
+		Resize:      keys.Resize,
 		Editor:      keys.Editor,
 		Review:      keys.Review,
 		ArrowStep:   keys.ArrowStep,
@@ -108,6 +114,8 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h.Editor()
 	case OpenReview:
 		return h.Review(id)
+	case OpenResize:
+		return nil, h.Resize()
 	}
 	var resume tea.Cmd
 	if result.Region != nil {
@@ -121,6 +129,24 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return nil, resume
 	}
 	return nil, tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Raw: raw, Name: name, Submit: result.Submit, Echo: true}))
+}
+
+// ExtendedKeyPress forwards a modified key to the pane. It never submits:
+// Shift+Enter is the agent's newline. A key a manager binding takes runs the
+// binding instead, as it does when the terminal sends its legacy form.
+func (s *Model) ExtendedKeyPress(h KeyHost, msg ExtendedKeyMsg) tea.Cmd {
+	id, ok := h.Session()
+	if !ok {
+		return h.Leave()
+	}
+	if key, ok := BindableKey(msg.Name); ok {
+		if keys := h.Bindings(key.String()); keys.Saved || keys.Detach || keys.Editor || keys.Review || keys.Resize {
+			_, cmd := s.KeyPress(h, key)
+			return cmd
+		}
+	}
+	resume := h.Region(s.resumeLive(id, h.PaneRows()))
+	return tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Name: msg.Name, Echo: true, ExtendedOnly: !reachesLegacyPane(msg.Name)}))
 }
 
 func (s *Model) MouseUnder(h MouseHost, msg tea.MouseMsg) (tea.Model, tea.Cmd) {

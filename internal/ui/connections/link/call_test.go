@@ -15,19 +15,40 @@ func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
 	}{
 		{Type, []string{"type", "--json", "--", "s1", "hello"}},
 		{Kill, []string{"kill", "--json", "--", "s1"}},
+		{Delete, []string{"delete", "--json", "--", "s1"}},
 		{Revive, []string{"revive", "--json", "--", "s1"}},
 		{Archive, []string{"archive", "--json", "--", "s1"}},
 		{Restore, []string{"archive", "--restore", "--json", "--", "s1"}},
+		{Rename, []string{"rename-session", "--json", "--", "s1", "hello"}},
+		{RenameGroup, []string{"rename-group", "--json", "--", "api", "hello"}},
+		{Move, []string{"move", "--json", "--", "s1", "ops"}},
 	} {
 		fake := &ssh{}
 		client := listedState(t, fake).Client
-		call := Call{Op: tc.op, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "hello"}
+		call := Call{Op: tc.op, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "hello", Group: "ops"}
 		if _, err := Run(context.Background(), client, nil, call); err != nil {
 			t.Fatalf("%v: %v", tc.op, err)
 		}
 		if calls := fake.taken(); len(calls) != 1 || !equal(calls[0], tc.want) {
 			t.Fatalf("%v: calls %q, want %q", tc.op, calls, tc.want)
 		}
+	}
+}
+
+// The deleted group's row stays until the next refresh, so a worktree the
+// host kept is reported with the delete it came from and the host it is on.
+func TestAGroupDeleteSaysWhatItDidAndWhatStayed(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: DeleteGroup, Host: "box", Name: "web", Sessions: []string{"s1", "t1"}}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{}, nil)
+	if want := []string{"deleted group web on box"}; !equal(root.done, want) || len(root.errs) != 0 {
+		t.Fatalf("done %q errors %q, want done %q", root.done, root.errs, want)
+	}
+	root = &recorder{}
+	state.ApplyCall(root, call, Result{Notice: "worktree kept (has work): /srv/wt/api"}, nil)
+	if want := []string{"deleted group web on box; worktree kept (has work): /srv/wt/api"}; !equal(root.errs, want) || len(root.done) != 0 {
+		t.Fatalf("done %q errors %q, want errors %q", root.done, root.errs, want)
 	}
 }
 
@@ -83,6 +104,41 @@ func TestASpawnFromTheFormClosesItAndAQuickSpawnClearsTheBar(t *testing.T) {
 	}
 	if want := "started fresh on box"; len(root.done) != 1 || root.done[0] != want {
 		t.Fatalf("status = %q, want %q", root.done, want)
+	}
+}
+
+// A delete whose worktree stayed on the host says so with the delete, on
+// the host it happened, since the row stays until the next refresh.
+func TestADeleteReportsTheHostsNotice(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: Delete, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api"}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{Notice: "worktree kept (has work): /srv/wt/api"}, nil)
+	if want := []string{"deleted api on box; worktree kept (has work): /srv/wt/api"}; !equal(root.errs, want) || len(root.done) != 0 {
+		t.Fatalf("done %q errors %q, want errors %q", root.done, root.errs, want)
+	}
+}
+
+// A rename closes the name field it was typed in once the host took it, and
+// a group's folds here follow it to its new path.
+func TestARenameClosesItsField(t *testing.T) {
+	state := listedState(t, &ssh{})
+	call := Call{Op: Rename, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Text: "gateway", ComposerGen: 6}
+	root := &recorder{}
+	state.ApplyCall(root, call, Result{}, nil)
+	if !equal(root.renamed, []string{"gateway"}) || len(root.rail) != 0 {
+		t.Fatalf("closed %q, rail %+v; want the field that sent gateway", root.renamed, root.rail)
+	}
+	if want := []string{"renamed api to gateway on box"}; !equal(root.done, want) {
+		t.Fatalf("status = %q, want %q", root.done, want)
+	}
+	root = &recorder{}
+	state.ApplyCall(root, Call{Op: RenameGroup, Host: "box", Name: "apps/web", Text: "frontend", ComposerGen: 7}, Result{}, nil)
+	if !equal(root.renamed, []string{"frontend"}) || !equal(root.done, []string{"renamed group apps/web to apps/frontend on box"}) {
+		t.Fatalf("group rename: closed %q status %q", root.renamed, root.done)
+	}
+	if want := (RailChange{GroupHost: "box", Group: "apps/web", ToGroup: "apps/frontend"}); len(root.rail) != 1 || root.rail[0] != want {
+		t.Fatalf("rail = %+v, want the folds carried %+v", root.rail, want)
 	}
 }
 

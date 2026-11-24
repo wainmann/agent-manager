@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -96,18 +97,24 @@ func (r *runtime) agent(id string) (store.Session, error) {
 }
 
 func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
-	dir := sess.Cwd
-	if running {
-		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
-			dir = current
-		}
+	return sessionRow(sess, running, self, r.currentPath(sess, running))
+}
+
+func (r *runtime) currentPath(sess store.Session, running bool) string {
+	if !running {
+		return ""
 	}
+	path, _ := r.driver.PaneCurrentPath(sess.ID)
+	return path
+}
+
+func sessionRow(sess store.Session, running, self bool, path string) Session {
 	return Session{
 		ID:             sess.ID,
 		Name:           sess.Name,
 		Tool:           sess.Tool,
 		Group:          sess.Group,
-		Directory:      dir,
+		Directory:      cmp.Or(path, sess.Cwd),
 		Status:         sess.Status,
 		Running:        running,
 		Archived:       sess.Archived,
@@ -140,8 +147,8 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 		if runtime.cfg.Tools[sess.Tool].Shell {
 			continue
 		}
-		_, running := panes[sess.ID]
-		sessions = append(sessions, runtime.sessionInfo(sess, running, sess.ID == sessionID))
+		pane, running := panes[sess.ID]
+		sessions = append(sessions, sessionRow(sess, running, sess.ID == sessionID, pane.Path))
 	}
 	return sessions, nil
 }

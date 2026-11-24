@@ -12,7 +12,14 @@ import (
 // WriteFile writes data to a temporary sibling, syncs it, then renames it over
 // path. The destination directory is created when needed.
 func WriteFile(path string, data []byte, perm fs.FileMode) error {
-	return writeFile(path, data, perm, os.CreateTemp)
+	return writeFile(path, data, perm, os.CreateTemp, os.Rename)
+}
+
+// CreateFile is WriteFile for a path that must not exist yet. It links the
+// synced temporary file into place, so a file that appeared since the
+// caller checked is kept and the error matches fs.ErrExist.
+func CreateFile(path string, data []byte, perm fs.FileMode) error {
+	return writeFile(path, data, perm, os.CreateTemp, os.Link)
 }
 
 // WriteIfChanged writes a generated file only when its content changed, so
@@ -24,7 +31,7 @@ func WriteIfChanged(path string, data []byte, perm fs.FileMode) error {
 	return WriteFile(path, data, perm)
 }
 
-func writeFile(path string, data []byte, perm fs.FileMode, createTemp func(string, string) (*os.File, error)) error {
+func writeFile(path string, data []byte, perm fs.FileMode, createTemp func(string, string) (*os.File, error), publish func(string, string) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -50,5 +57,5 @@ func writeFile(path string, data []byte, perm fs.FileMode, createTemp func(strin
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	return publish(tmpPath, path)
 }

@@ -15,6 +15,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
@@ -54,8 +55,72 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case focusruntime.ClipboardMsg:
 		return routed(m, m.passFocusedClipboard(msg))
+
+	case uifocus.ExtendedKeyMsg:
+		if model, cmd, ok := m.routeExtendedOnTheList(msg); ok {
+			return routed(model, cmd)
+		}
+		return routed(m, m.forwardExtendedKey(msg))
 	}
 	return nil, nil, false
+}
+
+// ReadExtendedKey is the program filter that lets a modified key such as
+// Shift+Enter reach Update, where Bubble Tea would hand over an unknown CSI
+// sequence.
+func ReadExtendedKey(msg tea.Msg) tea.Msg { return uifocus.ExtendedKey(msg) }
+
+// routeExtendedOnTheList sends a modified key the list's own table names
+// through the list, for a terminal that reads it as a CSI sequence: a resize
+// key set to ctrl+@ arrives that way, and the list would drop it.
+func (m *Model) routeExtendedOnTheList(msg uifocus.ExtendedKeyMsg) (tea.Model, tea.Cmd, bool) {
+	key, ok := uifocus.BindableKey(msg.Name)
+	if !ok || m.effects.Quitting || m.base != baseList {
+		return nil, nil, false
+	}
+	if !m.services.listKeys.Binding(keybind.Resize).Has(key.String()) {
+		return nil, nil, false
+	}
+	top, _ := m.top()
+	switch top.(type) {
+	case *uifocus.Surface, *uigeometry.Surface:
+		return nil, nil, false
+	}
+	model, cmd := m.handleKey(key)
+	return model, cmd, true
+}
+
+// forwardExtendedKey sends a modified key to the focused pane while focus
+// holds the keyboard. Anywhere else it is dropped, as Bubble Tea drops it.
+func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
+	// A gesture holds the keyboard only for the keys it names: those commit
+	// it here, where the focus check below would drop them. Every other key
+	// ends it where it stands and travels on, as a plain key does, so a
+	// focused agent keeps Shift+Enter and the rest.
+	if top, on := m.top(); on {
+		if s, resize := top.(*uigeometry.Surface); resize {
+			if key, ok := uifocus.BindableKey(msg.Name); ok {
+				if handled, cmd := s.Key(m, key); handled {
+					return cmd
+				}
+			} else if m.focused() && (m.layout.split.ResizeMode || m.layout.split.Dragging) {
+				// Over a focused pane the keyboard is the agent's, so a key the
+				// surface cannot even name ends the gesture and travels on.
+				m.exitResizeMode(m.layout.split.Changed())
+			}
+		}
+	}
+	// A drag the mouse started without arming the keyboard ends on the first
+	// key, whatever it is.
+	if m.layout.split.Dragging && !m.layout.split.ResizeMode {
+		m.exitResizeMode(m.layout.split.Moved)
+	}
+	top, _ := m.top()
+	if _, focusOnTop := top.(*uifocus.Surface); !focusOnTop || m.effects.Quitting {
+		return nil
+	}
+	m.takeForeground()
+	return m.focus.pane.ExtendedKeyPress(focusHost{m}, msg)
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
@@ -88,33 +153,9 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 		SessionID: sessID,
 		Preview:   m.workspace.preview,
 		CaughtUp:  m.focus.runtime.CaughtUp(m.focus.pane.Pane().Writes),
-		Rules:     focusPromptRules{engine: m.services.engine, tool: tool},
+		Rules:     status.PromptRules{Engine: m.services.engine, Tool: tool},
 	})
 }
-
-// focusPromptRules binds the status engine's prompt rules to one tool.
-type focusPromptRules struct {
-	engine *status.Engine
-	tool   string
-}
-
-func (r focusPromptRules) InputPrefix(row string) (string, bool) {
-	return r.engine.InputPrefix(r.tool, row)
-}
-
-func (r focusPromptRules) TextBeforeCaret(row string, caretX int) bool {
-	return status.HasTextBeforeCaret(r.engine, r.tool, row, caretX)
-}
-
-func (r focusPromptRules) ComposerIsEmpty(row string) bool {
-	return r.engine.ComposerIsEmpty(r.tool, row)
-}
-
-func (r focusPromptRules) MatchesActivityCutoff(row string) bool {
-	return r.engine.MatchesActivityCutoff(r.tool, row)
-}
-
-func (r focusPromptRules) ParksItsCaret() bool { return r.engine.ParksItsCaret(r.tool) }
 
 // leaveFocus returns to the list. Mouse reporting stays on: handing it back to
 // the terminal here would let a wheel notch scroll the manager out of view, so

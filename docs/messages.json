@@ -1,19 +1,38 @@
 [
   {
-    "id": "discord-community",
-    "banner": "Agent Manager has a Discord now",
-    "title": "Join the Agent Manager Community on Discord",
+    "id": "v0500-lifecycle-hooks",
+    "banner": "Lifecycle hooks are here",
+    "title": "v0.50.0: lifecycle hooks, and more you can do over SSH",
     "body": [
-      "Ask questions and get setup help in #help, from other users and the maintainer.",
-      "Share your setup, tips and experiments in #workflows, tagged by agent.",
-      "New releases post in #announcements.",
-      "Contributors and collaborators are actively wanted. Say hi in #dev.",
-      "Unassigned issues are free to claim. Bugs and feature requests still go to GitHub issues.",
-      "Press Enter to join."
+      "hooks.toml in your config folder runs commands when a session starts, changes status, is archived, restored or killed.",
+      "A notify_command you had moves into hooks.toml and now runs with banners off too.",
+      "If hooks.toml already exists, Messages shows the block to paste instead.",
+      "On your other machines you can now move, rename and delete sessions, and rename and delete groups.",
+      "GitHub Copilot CLI is a built-in tool, and the theme follows your system light and dark mode without a restart.",
+      "agent-manager update checks build provenance before it replaces the binary, and ctrl+] resizes the split everywhere.",
+      "Press Enter for the full v0.50.0 release notes."
     ],
-    "url": "https://discord.gg/ecS88An7pF",
-    "pinned": true,
-    "expires_at": "2026-11-22T12:00:00Z"
+    "url": "https://github.com/wainmann/agent-manager/releases/tag/v0.50.0",
+    "min_version": "0.40.0",
+    "max_version": "0.50.0"
+  },
+  {
+    "id": "v0500-breaking-changes",
+    "kind": "heads-up",
+    "banner": "Two things work differently in v0.50.0",
+    "title": "v0.50.0: notify_command moves to hooks.toml, and resize is ctrl+]",
+    "body": [
+      "After you update to v0.50.0, the next start moves your notify_command into hooks.toml as a [[hooks.notification]] block.",
+      "It used to run only when a banner showed. Now it runs on every banner trigger, even with the notifications row off.",
+      "If you turned notifications off to keep it quiet, delete that block from hooks.toml.",
+      "Run agent-manager hooks to see what the file holds.",
+      "The split's resize key is now ctrl+] instead of |, in the list and with a session focused.",
+      "A resize key you moved yourself in Settings stays where you put it.",
+      "Press Enter for the full v0.50.0 release notes."
+    ],
+    "url": "https://github.com/wainmann/agent-manager/releases/tag/v0.50.0",
+    "min_version": "0.40.0",
+    "max_version": "0.50.0"
   },
   {
     "id": "v0450-first-run-setup",

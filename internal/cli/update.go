@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	"github.com/YoanWai/agent-manager/internal/update"
 )
@@ -20,6 +19,8 @@ var (
 	updateDetect     = update.DetectManager
 	updateRefresh    = update.Refresh
 	updateApply      = update.Apply
+	updateUpgraded   = update.Manager.Upgraded
+	updateForInstall = update.ForInstall
 )
 
 func updateSection(version string) section {
@@ -63,7 +64,8 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			return errors.New(manager.Advice)
 		}
 		if manager.Delegated() {
-			command := exec.Command(manager.Command[0], manager.Command[1:]...)
+			execPath = update.RestartTarget(execPath)
+			command := manager.UpgradeCommand()
 			command.Stdin = os.Stdin
 			command.Stderr = os.Stderr
 			if *asJSON {
@@ -76,11 +78,18 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 			if err := command.Run(); err != nil {
 				return fmt.Errorf("%s: %w", manager.String(), err)
 			}
+			_, upgraded, err := updateUpgraded(manager, execPath, version, "")
+			if err != nil {
+				return fmt.Errorf("%s: checking the installed version: %w", manager.String(), err)
+			}
+			if !upgraded {
+				return reportUnchanged(out, *asJSON, manager, version, configDir)
+			}
 			return emit(out, *asJSON, updateReport{Delegate: manager.String()},
 				fmt.Sprintf("updated with %s", manager.String()))
 		}
 
-		if !update.VersionWithin(version, "0.0.0", "") {
+		if !update.IsRelease(version) {
 			// A dev build carries no release tag, so there is nothing to
 			// compare against or download.
 			return errors.New("update: this build is not a release; reinstall to upgrade")
@@ -105,4 +114,21 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 		return emit(out, *asJSON, updateReport{Version: result.Latest},
 			fmt.Sprintf("updated to %s", result.Latest))
 	}
+}
+
+// reportUnchanged tells a current install from one its package manager failed
+// to move, since both end with the same version and exit status.
+func reportUnchanged(out io.Writer, asJSON bool, manager update.Manager, version, configDir string) error {
+	ctx := context.Background()
+	result, err := updateRefresh(ctx, configDir, version)
+	if err == nil {
+		result, err = updateForInstall(ctx, configDir, version, manager, true, result)
+	}
+	if err != nil {
+		return fmt.Errorf("%s finished, still on %s: %w", manager.String(), version, err)
+	}
+	if result.Latest != "" {
+		return fmt.Errorf("%s finished, still on %s, and %s is available", manager.String(), version, result.Latest)
+	}
+	return emit(out, asJSON, updateReport{UpToDate: true}, "already up to date")
 }

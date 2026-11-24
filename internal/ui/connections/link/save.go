@@ -46,12 +46,15 @@ func Save(st Store, request SaveRequest) ([]store.Connection, error) {
 }
 
 // RailChange is what a saved list asks of the rail: the rename or removal
-// the write made, and the connection to select.
+// the write made, and the connection to select. A group a host renamed
+// carries its folds here from Group to ToGroup.
 type RailChange struct {
 	Rename string
 	To     string
 	Forget string
 	Focus  string
+
+	GroupHost, Group, ToGroup string
 }
 
 // ApplySave adopts the list the store returned after a save, or keeps the

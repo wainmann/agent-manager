@@ -52,6 +52,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Pop()
 		return m, nil
 	}
+	// Bubble Tea merges printable runes that arrive in one read into one
+	// key, so a held j reaches here as "jjj" and matches no binding. The
+	// agent's pane takes the run as typed text; the manager takes each
+	// rune as its own press, routed by the state the one before it left.
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && !msg.Paste && !m.agentOwnsKeyboard() {
+		cmds := make([]tea.Cmd, 0, len(msg.Runes))
+		for _, r := range msg.Runes {
+			_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+	}
 	if cmd, ok := m.surfaceKey(msg); ok {
 		return m, cmd
 	}
@@ -63,5 +75,5 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) railKeyContext() uirail.KeyContext {
-	return uirail.KeyContext{ListKeys: m.services.listKeys, ArrowStep: m.prefs.arrowStep, EnterFocuses: m.enterFocuses()}
+	return uirail.KeyContext{ListKeys: m.services.listKeys, ArrowStep: m.prefs.arrowStep, StepInAttaches: m.prefs.arrowAttach, EnterFocuses: m.enterFocuses()}
 }

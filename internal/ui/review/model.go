@@ -5,7 +5,6 @@
 package review
 
 import (
-	"hash/fnv"
 	"maps"
 	"slices"
 
@@ -284,15 +283,7 @@ func (m *Model) restore(state SavedState) bool {
 	return true
 }
 
-func ContentHash(fd *diff.FileDiff) uint64 {
-	hash := fnv.New64a()
-	for _, line := range fd.Lines {
-		_, _ = hash.Write([]byte{byte(line.Kind)})
-		_, _ = hash.Write([]byte(line.Text))
-		_, _ = hash.Write([]byte{'\n'})
-	}
-	return hash.Sum64()
-}
+func ContentHash(fd *diff.FileDiff) uint64 { return fd.ContentHash() }
 
 func (m Model) currentFile() *diff.FileDiff {
 	if m.fileIdx < 0 || m.fileIdx >= len(m.set.Files) {

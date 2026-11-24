@@ -128,6 +128,23 @@ func TestPsmuxCreateBindsTheSessionServer(t *testing.T) {
 	}
 }
 
+// A pane line that starts with ERROR is pane text, and the capture that
+// rides with the cursor query has to hand it back like any other line.
+func TestPsmuxDisplayAndCaptureKeepsAnErrorLine(t *testing.T) {
+	driver := requireTmux(t)
+	id := psmuxSession(t, driver, "errl", "Write-Output 'ERROR: boom'", "ERROR: boom")
+	expanded, pane, err := driver.DisplayAndCapture(id, "#{pane_id}")
+	if err != nil {
+		t.Fatalf("DisplayAndCapture: %v", err)
+	}
+	if strings.TrimSpace(expanded) != "%1" {
+		t.Fatalf("expanded = %q, want the pane id", expanded)
+	}
+	if !strings.Contains(stripANSI(pane), "ERROR: boom") {
+		t.Fatalf("capture lost the pane's ERROR line:\n%s", pane)
+	}
+}
+
 // The script a request key runs leaves the marker on the session's server
 // through PowerShell, the shell psmux's run-shell uses.
 func TestPsmuxRequestScriptLeavesTheMarker(t *testing.T) {

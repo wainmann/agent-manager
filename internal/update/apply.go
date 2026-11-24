@@ -55,8 +55,9 @@ func homebrewManaged(source, execPath string) bool {
 }
 
 // Apply downloads the release named by tag, verifies the archive for this
-// OS and architecture against the release's checksums.txt, and replaces
-// the binary at execPath through swapBinary.
+// OS and architecture against the release's checksums.txt and its build
+// provenance attestation, and replaces the binary at execPath through
+// swapBinary.
 func Apply(ctx context.Context, tag, execPath string) error {
 	if homebrewManaged(buildSource, execPath) {
 		return homebrewAdvice(execPath)
@@ -80,6 +81,9 @@ func Apply(ctx context.Context, tag, execPath string) error {
 	defer os.Remove(archive)
 
 	if err := verifyChecksum(archive, wantSum); err != nil {
+		return err
+	}
+	if err := checkProvenance(ctx, tag, asset, wantSum); err != nil {
 		return err
 	}
 

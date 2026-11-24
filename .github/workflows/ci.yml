@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -32,25 +34,87 @@ jobs:
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP" gitleaks
           rm gitleaks.tar.gz
-      # A new ref has an all-zero before. Scan that tip commit. Every other
-      # push scans before..after, and a pull request scans base..head, which
-      # is the PR's own commits.
+      # A pull request scans base..head and a merge group scans its base..head,
+      # every commit in the range, merged side branches included. A new ref
+      # has an all-zero before, so its tip commit is scanned. Every other push
+      # scans before..after. Merge commits are diffed against their first
+      # parent, so lines added while resolving a conflict are scanned too.
       - name: Scan new commits for secrets
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.after }}
         run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            log_opts="--no-merges --first-parent ${BASE_SHA}..${HEAD_SHA}"
-          elif printf '%s' "$BEFORE" | grep -Eq '^0+$'; then
-            log_opts="--no-merges --first-parent -1"
-          else
-            log_opts="--no-merges --first-parent ${BEFORE}..${AFTER}"
-          fi
+          case "$EVENT_NAME" in
+            pull_request) log_opts="${BASE_SHA}..${HEAD_SHA}" ;;
+            merge_group) log_opts="${GROUP_BASE_SHA}..${GROUP_HEAD_SHA}" ;;
+            *)
+              if printf '%s' "$BEFORE" | grep -Eq '^0+$'; then
+                log_opts="-1"
+              else
+                log_opts="${BEFORE}..${AFTER}"
+              fi
+              ;;
+          esac
+          log_opts="--diff-merges=first-parent ${log_opts}"
           "$RUNNER_TEMP/gitleaks" git --redact -v --exit-code 1 --log-opts="$log_opts" .
+
+  dependency-review:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          base-ref: ${{ github.event.merge_group.base_sha }}
+          head-ref: ${{ github.event.merge_group.head_sha }}
+
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint
+        run: |
+          curl -sSfL -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz -C "$RUNNER_TEMP" actionlint
+          rm actionlint.tar.gz
+      - name: Lint workflows
+        run: '"$RUNNER_TEMP/actionlint" -color'
+
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ZIZMOR_VERSION: 1.32.0
+      ZIZMOR_SHA256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: |
+          curl -sSfL -o zizmor.tar.gz "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  zizmor.tar.gz" | sha256sum -c -
+          tar -xzf zizmor.tar.gz -C "$RUNNER_TEMP" zizmor
+          rm zizmor.tar.gz
+      # The token is the read-only workflow token. zizmor uses it for the
+      # online audits (impostor commits, known-vulnerable actions).
+      - name: Audit workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RUNNER_TEMP/zizmor" --format=github .'
 
   govulncheck:
     runs-on: ubuntu-latest
@@ -167,7 +231,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # A snapshot build publishes nothing, so the shared cache is safe here.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0 # zizmor: ignore[cache-poisoning]
         with:
           go-version-file: go.mod
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0

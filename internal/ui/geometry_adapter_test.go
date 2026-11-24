@@ -2,13 +2,13 @@ package ui
 
 import (
 	"errors"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
@@ -50,11 +50,11 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
 	m := &Model{layout: layoutState{split: uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio}, width: 120, height: 40}, services: services{listKeys: keybind.DefaultList()}}
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if !m.layout.split.ResizeMode {
-		t.Fatal("| should enter resize mode")
+		t.Fatal("ctrl+] should enter resize mode")
 	}
 	if cmd != nil {
 		t.Fatal("enter should not toggle mouse reporting")
@@ -82,7 +82,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	}
 }
 
-func TestArrowNudgeAndPipeCommits(t *testing.T) {
+func TestArrowNudgeAndResizeKeyCommits(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	st := m.services.store
@@ -103,14 +103,14 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	if left, _ := m.splitWidths(); left != before {
 		t.Fatalf("left arrow should undo nudge, left=%d want %d", left, before)
 	}
-	// Nudge once more, then | commits.
+	// Nudge once more, then ctrl+] commits.
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.drainEffects(t)
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if m.layout.split.ResizeMode {
-		t.Fatal("| should commit and exit resize mode")
+		t.Fatal("ctrl+] should commit and exit resize mode")
 	}
 	if cmd != nil {
 		t.Fatal("commit should not toggle mouse reporting")
@@ -144,6 +144,32 @@ func TestEnterCommitsResize(t *testing.T) {
 	}
 	if got := uigeometrypanes.Load(st); got != 0.42 {
 		t.Fatalf("reloaded ratio = %v want 0.42", got)
+	}
+}
+
+// The list answers to the same key, and the character it used to take is
+// free again.
+func TestListResizeKeyIsTheOneKeyEverywhere(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	preparedView(m)
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode {
+		t.Fatal("| should no longer arm the divider")
+	}
+	if _, bound := m.services.listKeys.ActionFor("|"); bound {
+		t.Fatal("| is still bound on the list")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m.drainEffects(t)
+	m = updated.(*Model)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("ctrl+] should arm the divider on the list")
 	}
 }
 

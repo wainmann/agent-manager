@@ -12,9 +12,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// GroupFormSurface is the New Group card. It owns the fields, the parent
-// picker and the path completer, and asks the root for the work that needs
-// the workspace or the effect lane with messages: a submit and a base step.
+// GroupFormSurface is the New Group and Edit Group card. It owns the fields,
+// the parent picker and the path completer, and asks the root for the work
+// that needs the workspace or the effect lane with messages: a submit and a
+// base step.
 // The directory and base each parent lends a child are read when it opens,
 // as the picker's rows were.
 type GroupFormSurface struct {
@@ -60,8 +61,14 @@ type GroupBaseAskMsg struct{ Gen, Delta int }
 // FormOptions is what the root seeds a card with: the workspace reads that
 // would otherwise need a root, and the tokens it paints with.
 type FormOptions struct {
-	Gen       int
-	Dir       string
+	Gen int
+	Dir string
+	// Edit is the group an Edit Group card opens on, with its saved
+	// worktree choice, base and environment.
+	Edit      string
+	Worktree  int
+	Base      string
+	Env       string
 	Cols      int
 	Parents   []spawn.GroupOption
 	Parent    int
@@ -72,8 +79,14 @@ type FormOptions struct {
 }
 
 func NewGroupFormSurface(root GroupFormRoot, opts FormOptions) *GroupFormSurface {
+	form := NewGroupForm(opts.Dir, opts.Gen)
+	if opts.Edit != "" {
+		form = NewGroupEdit(opts.Edit, opts.Dir, opts.Worktree, opts.Gen)
+	}
 	s := &GroupFormSurface{
-		GroupForm: NewGroupForm(opts.Dir, opts.Gen),
+		GroupForm: form,
+		base:      opts.Base,
+		env:       opts.Env,
 		pc:        pathcomplete.State{Generation: uint64(opts.Gen) << 32},
 		remote:    opts.Remote,
 		parents:   opts.Parents,
@@ -221,7 +234,7 @@ func (s *GroupFormSurface) View(h surface.Host, _ string) string {
 	}
 	if s.pc.Active() {
 		view.Suggestions = func() string { return s.pc.View(pathStyles(s.styles)) }
-		view.SuggestHints = pathSuggestHints(s.pc.Chosen, s.styles.GlyphMode)
+		view.SuggestHints = pathSuggestHints(s.pc.Chosen, s.submitVerb(), s.styles.GlyphMode)
 	}
 	card := s.GroupForm.View(view)
 	return h.CardSized(s.root.CardWidth(cols), card.Title, card.Body, card.Hints)
@@ -250,11 +263,11 @@ func pathStyles(st spawn.Styles) pathcomplete.Styles {
 	return pathcomplete.Styles{GlyphMode: st.GlyphMode, Muted: st.Muted, Accent: st.Accent, Accent2: st.Accent2}
 }
 
-func pathSuggestHints(chosen bool, mode presentation.GlyphMode) [][2]string {
+func pathSuggestHints(chosen bool, verb string, mode presentation.GlyphMode) [][2]string {
 	if chosen {
 		return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
-	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
+	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"tab", "complete"}, {"↵", verb}, {"esc", "close"}}
 }
 
 // BaseChoice renders a group's base picker: its own ref, or auto and the

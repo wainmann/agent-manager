@@ -53,6 +53,33 @@ func rootBinding(key keybind.Key, action ...string) []string {
 	return []string{"bind-key", "-n", key.Tmux(), "if-shell", "-F", ownedBindingTest, strings.Join(action, " "), passThrough}
 }
 
+// agentPaneBindingTest holds in the agent's own pane alone. A CLI that
+// splits its window keeps the agent in pane 0 of the first window.
+const agentPaneBindingTest = "#{&&:" + ownedBindingTest + ",#{&&:#{window_start_flag},#{==:#{pane_index},0}}}"
+
+// AttachedPromptHead: ← at the prompt's start comes back from an attach.
+const AttachedPromptHead = true
+
+// promptHeadHint names ← in a session's footer while the server binds it,
+// so a footer never outlives the binding another process took off.
+const promptHeadHint = "#{?" + promptHeadOption + ",· ← prompt start = back ,}"
+
+// promptHeadBinding binds ← in the agent's pane to detach when check, run
+// with the session's name after it, exits zero, and to reach the pane as
+// itself otherwise. if-shell without -b holds the keys typed after ← until
+// the check answers, so none of them lands ahead of it. # is doubled so
+// tmux expands no format out of the path to the binary.
+func promptHeadBinding(check string) [][]string {
+	if check == "" {
+		return [][]string{{"set-option", "-g", promptHeadOption, "0"}}
+	}
+	ask := "if-shell " + ShellQuote(strings.ReplaceAll(check, "#", "##")+" #{q:session_name}") + " detach-client 'send-keys Left'"
+	return [][]string{
+		{"set-option", "-g", promptHeadOption, "1"},
+		{"bind-key", "-n", "Left", "if-shell", "-F", agentPaneBindingTest, ask, "send-keys Left"},
+	}
+}
+
 // requestAction leaves the request marker and detaches, as the one command
 // string an if-shell branch takes.
 func (d *Driver) requestAction(_ string, name string) []string {
@@ -104,14 +131,23 @@ func (d *Driver) eachServer(fn func(id string) error) error {
 	return fn("")
 }
 
-// splitCommandList leaves a command list whole: tmux runs it in one go.
-func splitCommandList(args []string) [][]string {
-	return [][]string{args}
+// bindingAction is a binding's command as tmux takes it, verbatim.
+func bindingAction(action ...string) []string {
+	return action
 }
 
-// bindingArg is a bind-key argument as tmux takes it, verbatim.
-func bindingArg(s string) string {
-	return s
+// listArgs leaves a command list as it is: tmux reads it in one go.
+func listArgs(args []string) []string {
+	return args
+}
+
+// displayAndCapture runs both commands as one list, which tmux runs with no
+// pane output in between, so both describe the same frame.
+func (d *Driver) displayAndCapture(target, format string) (string, error) {
+	return d.run(commandList(
+		[]string{"display-message", "-p", "-t", target, format},
+		[]string{"capture-pane", "-p", "-e", "-t", target},
+	)...)
 }
 
 // SocketPath is the file the server this driver talks to listens on. The

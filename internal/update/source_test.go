@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -63,7 +64,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir",
-			path:        "/home/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:YoanWai/agent-manager",
 		},
@@ -75,7 +76,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir under the new repo",
-			path:        "/home/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
 		},
@@ -84,6 +85,24 @@ func TestDetectManager(t *testing.T) {
 			path:        "/data/tools/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend install dir",
+			path:        "/Users/user/.local/share/mise/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend custom data dir",
+			path:        "/data/tools/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend under the earlier repo",
+			path:        "/Users/user/.local/share/mise/installs/github-yoan-wai-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:YoanWai/agent-manager",
 		},
 		{
 			label:       "pacman owned with yay",
@@ -116,15 +135,19 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label: "another ubi tool is direct",
-			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+			path:  "/Users/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+		},
+		{
+			label: "another github backend tool is direct",
+			path:  "/Users/user/.local/share/mise/installs/github-other-user-agent-manager/1.0.0/agent-manager",
 		},
 		{
 			label: "install script dir is direct",
-			path:  "/home/user/.local/bin/agent-manager",
+			path:  "/Users/user/.local/bin/agent-manager",
 		},
 		{
 			label: "gopath is direct",
-			path:  "/home/user/go/bin/agent-manager",
+			path:  "/Users/user/go/bin/agent-manager",
 		},
 		{
 			label: "manual opt prefix is direct",
@@ -152,6 +175,21 @@ func TestDetectManager(t *testing.T) {
 				t.Fatalf("Delegated() = %v with command %q", manager.Delegated(), tc.wantCommand)
 			}
 		})
+	}
+}
+
+func TestBrewUpgradesRefreshFirst(t *testing.T) {
+	stubSourceSeams(t, nil, false)
+	for _, path := range []string{
+		"/opt/homebrew/Caskroom/agent-manager/0.47.1/agent-manager",
+		"/opt/homebrew/Cellar/agent-manager/0.47.1/bin/agent-manager",
+	} {
+		env := strings.Join(DetectManager(path).UpgradeCommand().Env, "\n")
+		for _, want := range []string{"HOMEBREW_NO_AUTO_UPDATE=", "HOMEBREW_AUTO_UPDATE_SECS=0"} {
+			if !strings.Contains(env, want) {
+				t.Fatalf("%s: upgrade env lacks %s", path, want)
+			}
+		}
 	}
 }
 
@@ -219,7 +257,7 @@ func TestDetectScoopManager(t *testing.T) {
 			if manager.Name != "Scoop" || manager.Delegated() {
 				t.Fatalf("Scoop install must block the in-place update, got %+v", manager)
 			}
-			if manager.Advice != "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell." {
+			if manager.Advice != "installed with Scoop. Close agent-manager, then run scoop update, then scoop update agent-manager. For a global install, add --global to the second command in an elevated PowerShell." {
 				t.Fatalf("Scoop advice = %q", manager.Advice)
 			}
 		})
@@ -288,18 +326,40 @@ func TestPacmanOwnsOffLinux(t *testing.T) {
 	}
 }
 
-func TestRestartTargetPrefersPathEntry(t *testing.T) {
-	stubSourceSeams(t, map[string]string{"agent-manager": "/opt/homebrew/bin/agent-manager"}, false)
-	got := RestartTarget("/opt/homebrew/Caskroom/agent-manager/0.19.0/agent-manager")
-	if got != "/opt/homebrew/bin/agent-manager" {
-		t.Fatalf("RestartTarget = %q", got)
+func TestRestartTargetStaysWithTheOriginalInstall(t *testing.T) {
+	stubSourceSeams(t, map[string]string{"agent-manager": "/another/install/agent-manager"}, false)
+	for _, tc := range []struct{ path, want string }{
+		{"/opt/homebrew/Caskroom/agent-manager/0.47.1/agent-manager", "/opt/homebrew/bin/agent-manager"},
+		{"/usr/local/Cellar/agent-manager/0.47.1/bin/agent-manager", "/usr/local/bin/agent-manager"},
+		{"/home/linuxbrew/.linuxbrew/Cellar/agent-manager/0.47.1/bin/agent-manager", "/home/linuxbrew/.linuxbrew/bin/agent-manager"},
+		{"/opt/homebrew/opt/agent-manager/bin/agent-manager", "/opt/homebrew/bin/agent-manager"},
+		{"/usr/bin/agent-manager", "/usr/bin/agent-manager"},
+		{"/weird/place/agent-manager", "/weird/place/agent-manager"},
+	} {
+		if got := RestartTarget(filepath.FromSlash(tc.path)); got != filepath.FromSlash(tc.want) {
+			t.Errorf("RestartTarget(%q) = %q, want %q", tc.path, got, tc.want)
+		}
 	}
 }
 
-func TestRestartTargetFallsBackToExecPath(t *testing.T) {
-	stubSourceSeams(t, nil, false)
-	got := RestartTarget("/weird/place/agent-manager")
-	if got != "/weird/place/agent-manager" {
-		t.Fatalf("RestartTarget = %q", got)
+func TestRestartTargetResolvesLinksBeforeTheVersionDirectoryIsRemoved(t *testing.T) {
+	prefix := t.TempDir()
+	old := filepath.Join(prefix, "Caskroom", "agent-manager", "0.47.1", "agent-manager")
+	if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(prefix, "custom-link")
+	if err := os.Symlink(old, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := RestartTarget(link), filepath.Join(resolved, "bin", "agent-manager"); got != want {
+		t.Fatalf("restart target = %q, want %q", got, want)
 	}
 }

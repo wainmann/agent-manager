@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
@@ -688,6 +689,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		BaseCommand:      baseCommand,
 		Pane:             sessioncmd.PaneSize{Width: paneWidth, Height: paneHeight},
 		RollbackWorktree: opts.rollbackWorktree,
+		Reason:           lifecyclehook.ReasonSpawn,
 	})
 	if err != nil {
 		return err

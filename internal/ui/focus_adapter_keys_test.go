@@ -18,6 +18,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -315,6 +316,81 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	*m = *updated.(*Model)
 	if !m.effects.Quitting {
 		t.Fatal("ctrl+c on the list did not quit")
+	}
+}
+
+func TestFocusedShiftEnterReachesTheAgentAsANewline(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "focus-newline", t.TempDir(), "")
+	m.selectSessionRow(t, "focus-newline")
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter on the list reached a pane")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if !m.focused() {
+		t.Fatalf("after enter, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	want, _ := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want || len(request.Value.Args) == 0 {
+		t.Fatalf("Shift+Enter command = %q, args %q, want %q", request.Value.Command, request.Value.Args, want)
+	}
+	if request.Value.Submit {
+		t.Fatal("Shift+Enter counted as a submit")
+	}
+	m.drainEffects(t)
+
+	focusOnTop := func() bool {
+		top, _ := m.top()
+		_, ok := top.(*uifocus.Surface)
+		return ok
+	}
+	m.openFocusSaved()
+	if focusOnTop() {
+		t.Fatal("saved prompts did not open over focus")
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter under a card reached the pane")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if !focusOnTop() {
+		t.Fatalf("esc left the card open, screen = %v", m.screenID())
+	}
+
+	m.effects.Quitting = true
+	foreground := m.gens.foreground
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) || m.gens.foreground != foreground {
+		t.Fatal("Shift+Enter while quitting was taken as input")
+	}
+	m.effects.Quitting = false
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+	if !m.onList() {
+		t.Fatalf("ctrl+\\ left screen = %v", m.screenID())
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter after leaving focus reached the pane")
 	}
 }
 
@@ -1255,14 +1331,14 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldArrowStep
-	m.cycleSetting(1)
+	m.cycleSetting(-1)
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	if chosen, err := m.services.store.Setting(uisettings.ArrowStepSetting); err != nil || chosen != "off" {
 		t.Fatalf("toggle did not persist, chosen = %q, err = %v", chosen, err)
 	}
-	if storedFlag(t, m, uisettings.ArrowStepSetting) {
-		t.Fatal("storedArrowStep still reads on")
+	if m.prefs.arrowStep || m.prefs.arrowAttach {
+		t.Fatalf("the pair still reads on, step = %v, attach = %v", m.prefs.arrowStep, m.prefs.arrowAttach)
 	}
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -1287,6 +1363,63 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	*m = *updated.(*Model)
 	if !m.focused() {
 		t.Fatalf("left left focus with the pair off, screen = %v", m.screenID())
+	}
+}
+
+// The setting's attach value has → attach full screen, and the save puts
+// the ← binding on the session's tmux server. Stepping back to the focus
+// default takes the binding off again, so attached sessions keep ←.
+func TestArrowStepSettingAttachBindsLeftInTheSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "optin", t.TempDir(), "")
+	m.selectSessionRow(t, "optin")
+	sess := railSelectedSession(m)
+	leftBound := func() bool {
+		keys, err := sessionTmuxCmd(t, sess.ID, "list-keys", "-T", "root").CombinedOutput()
+		if err != nil {
+			t.Fatalf("list-keys: %v: %s", err, keys)
+		}
+		for _, line := range strings.Split(string(keys), "\n") {
+			if fields := strings.Fields(line); len(fields) > 3 && fields[3] == "Left" {
+				return true
+			}
+		}
+		return false
+	}
+	save := func(step int, want string) {
+		t.Helper()
+		m.openSettings()
+		m.settingsCard().State().Field = uisettings.FieldArrowStep
+		m.cycleSetting(step)
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+		m.drainEffects(t)
+		if chosen, err := m.services.store.Setting(uisettings.ArrowStepSetting); err != nil || chosen != want {
+			t.Fatalf("the row did not persist, chosen = %q, err = %v", chosen, err)
+		}
+	}
+	if leftBound() {
+		t.Fatal("the focus default bound ← in the session")
+	}
+
+	save(1, "attach")
+	if !m.prefs.arrowStep || !m.prefs.arrowAttach {
+		t.Fatalf("attach did not reach the list, step = %v, attach = %v", m.prefs.arrowStep, m.prefs.arrowAttach)
+	}
+	if leftBound() != (runtime.GOOS != "windows") {
+		t.Fatalf("after saving attach, ← bound = %v", leftBound())
+	}
+	updated, attach := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if request, attaching := m.effects.Main.Active.Request.(uilifecycle.AttachRequest); !attaching || request.ID != sess.ID {
+		t.Fatalf("→ queued %+v, want an attach to %s", m.effects.Main.Active.Request, sess.ID)
+	}
+	if m.foregroundTestCmd(t, attach) == nil || m.focused() {
+		t.Fatalf("→ did not open an attach, focused = %v, err = %q", m.focused(), m.errBar.text)
+	}
+
+	save(-1, "on")
+	if leftBound() {
+		t.Fatal("going back to focus left ← bound in the session")
 	}
 }
 
@@ -1592,10 +1725,11 @@ func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	useSessionKeys(t, m, []string{"f9"}, nil, []string{"f3"})
+	waitForCat := readyCat(t, m, "control-echo", "-v")
 	createSessionOn(t, m, "remapped", "control-echo", t.TempDir())
 	m.selectSessionRow(t, "remapped")
 	sess := railSelectedSession(m)
-	waitForPaneChild(t, m, sess.ID, "cat")
+	waitForCat(sess.ID)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)

@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -268,5 +269,33 @@ func TestRunSSHCapsWhatAHostPrints(t *testing.T) {
 	stdout, _, err := runSSH(context.Background(), []string{"sh", "-c", "head -c 8388608 /dev/zero"})
 	if err != nil || len(stdout) != 8<<20 {
 		t.Fatalf("an answer of exactly the cap = %d bytes, %v", len(stdout), err)
+	}
+}
+
+// The terminal's failures on the way back from an attach arrive joined to
+// the child's exit status, and reading the key out of that status keeps them.
+func TestAttachKeyKeepsFailuresJoinedToTheExitStatus(t *testing.T) {
+	reports, request := errors.New("turn reports on"), errors.New("ask for the scheme")
+	for _, tc := range []struct {
+		status exitStatus
+		key    string
+	}{
+		{exitAttachReview, "review"},
+		{exitAttachEditor, "editor"},
+	} {
+		key, err := AttachKey(errors.Join(errors.Join(tc.status, reports), request))
+		if key != tc.key || !errors.Is(err, reports) || !errors.Is(err, request) {
+			t.Errorf("status %d: key %q, error %v; want %q and both failures", tc.status, key, err, tc.key)
+		}
+		if errors.Is(err, tc.status) {
+			t.Errorf("status %d: the exit status that carried the key stayed in %v", tc.status, err)
+		}
+		if key, err := AttachKey(errors.Join(errors.Join(tc.status))); key != tc.key || err != nil {
+			t.Errorf("status %d alone: key %q, error %v; want %q and none", tc.status, key, err, tc.key)
+		}
+	}
+	failed := errors.Join(errors.Join(exitStatus(1), reports), request)
+	if key, err := AttachKey(failed); key != "" || err != failed {
+		t.Errorf("status 1: key %q, error %v; want no key and the error as it was", key, err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git/value"
 	udiff "github.com/aymanbagabas/go-udiff"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"hash/fnv"
 	"strings"
 	"unicode/utf8"
 )
@@ -45,6 +46,12 @@ type FileDiff struct {
 	HasStat   bool `json:"-"`
 	IsLoaded  bool `json:"-"`
 	rows      []Row
+	// hash is ContentHash taken once by BuildFile, which every frame of
+	// the review pane reads, and Clone copies it with the lines. Code that
+	// edits Lines after BuildFile builds the file again rather than keep a
+	// stale hash. hashed is false for a value built elsewhere.
+	hash   uint64
+	hashed bool
 }
 
 type Set struct {
@@ -142,7 +149,27 @@ hunks:
 	}
 	pairBlocks(&fd)
 	markChanges(&fd)
+	fd.hash, fd.hashed = hashLines(fd.Lines), true
 	return fd
+}
+
+// ContentHash identifies the rendering of the file: each line's kind and
+// text, which nothing changes once BuildFile returns.
+func (fd *FileDiff) ContentHash() uint64 {
+	if fd.hashed {
+		return fd.hash
+	}
+	return hashLines(fd.Lines)
+}
+
+func hashLines(lines []Line) uint64 {
+	hash := fnv.New64a()
+	for _, line := range lines {
+		_, _ = hash.Write([]byte{byte(line.Kind)})
+		_, _ = hash.Write([]byte(line.Text))
+		_, _ = hash.Write([]byte{'\n'})
+	}
+	return hash.Sum64()
 }
 
 func gapLine(text string) Line { return Line{Kind: Gap, Text: text, Pair: -1} }

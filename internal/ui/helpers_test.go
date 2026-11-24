@@ -694,6 +694,29 @@ func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
 	t.Fatalf("pane never ran %s; children = %v", name, children)
 }
 
+// readyCat returns the wait for tool's cat to read the pane. On Windows the
+// stand-in's process exists before its console is raw, and keys typed in
+// between meet the console's own line editing, which drops them, so there
+// the tool runs the stand-in in the mode that says when it is ready. A
+// POSIX pane has a tty from the start, and cat running is enough.
+func readyCat(t *testing.T, m *Model, tool string, catArgs ...string) (wait func(sessID string)) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return func(sessID string) {
+			t.Helper()
+			waitForPaneChild(t, m, sessID, "cat")
+		}
+	}
+	ready := filepath.Join(t.TempDir(), "ready")
+	definition := m.services.cfg.Tools[tool]
+	definition.Command = strings.Join(append([]string{testfixture.ModeCommand("cat-ready"), tmux.ShellQuote(ready)}, catArgs...), " ")
+	m.services.cfg.Tools[tool] = definition
+	return func(string) {
+		t.Helper()
+		testfixture.WaitForReady(t, ready)
+	}
+}
+
 // quitAgent ends the CLI the session launched with, leaving the pane on the
 // shell underneath it: the user pressing ctrl-d in their agent.
 func quitAgent(t *testing.T, m *Model, sessID string) {

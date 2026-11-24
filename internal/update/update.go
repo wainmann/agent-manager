@@ -212,7 +212,7 @@ func Refresh(ctx context.Context, configDir, current string) (Result, error) {
 // It is used during startup so post-update summaries can paint immediately.
 func Cached(configDir, current string) Result {
 	currentParts, ok := parseVersion(current)
-	if !ok {
+	if !ok || !IsRelease(current) {
 		return Result{}
 	}
 	cached, _ := loadCatalog(configDir)
@@ -259,7 +259,7 @@ func legacyCatalog(path string) cache {
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
 	currentParts, ok := parseVersion(current)
-	if !ok {
+	if !ok || !IsRelease(current) {
 		return Result{}, nil
 	}
 
@@ -271,7 +271,7 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	// release that is now installed, so however recently that was, it cannot
 	// name what the update brought. Updating within the interval lands in
 	// exactly that state, which is when the notes are read.
-	if !force && parsedHere && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
+	if !force && parsedHere && haveCatalog && cacheFresh(cached.CheckedAt, time.Now()) && !Newer(current, newest) {
 		return resultFor(currentParts, cached.Releases), nil
 	}
 
@@ -306,8 +306,8 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	return resultFor(currentParts, releases), nil
 }
 
-func cacheFresh(c cache, now time.Time) bool {
-	age := now.Sub(c.CheckedAt)
+func cacheFresh(checkedAt, now time.Time) bool {
+	age := now.Sub(checkedAt)
 	return age >= 0 && age < checkInterval
 }
 
@@ -538,10 +538,10 @@ func extractChanges(body string) ([]Change, int) {
 
 func cleanChange(bullet string) (Change, bool) {
 	change := Change{Kind: KindOther}
-	// Credit outside contributors on their digest lines; the maintainer's
-	// own handle and bot handles would be noise on every row.
+	// Credit every contributor on their digest lines; bot handles would be
+	// noise.
 	if match := pullSuffix.FindStringSubmatch(bullet); match != nil {
-		if handle := match[1]; handle != "@YoanWai" && !strings.HasSuffix(handle, "[bot]") {
+		if handle := match[1]; !strings.HasSuffix(handle, "[bot]") {
 			change.Author = handle
 		}
 	}
@@ -706,6 +706,14 @@ func parseVersion(v string) ([3]int, bool) {
 		parts[i] = n
 	}
 	return parts, true
+}
+
+// IsRelease reports whether v names a published release, such as "0.47.1".
+// A dev build and a git describe stamp such as "v0.47.1-10-g1656b508-dirty"
+// do not, so they never take an update or a what's-new greeting.
+func IsRelease(v string) bool {
+	_, ok := parseVersion(v)
+	return ok && !strings.ContainsAny(v, "-+")
 }
 
 // VersionWithin reports whether version falls inside the inclusive

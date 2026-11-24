@@ -359,6 +359,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main"},
 			[]string{"send", from, "--json", "--", "r1", "rebase on main"}, "queued a message for session gpu::r1"},
 		{"kill_session", map[string]any{"session_id": "gpu::r1"}, []string{"kill", "--json", "--", "r1"}, "killed remote-worker (id gpu::r1)"},
+		{"delete_session", map[string]any{"session_id": "gpu::r1"}, []string{"delete", "--json", "--", "r1"}, "deleted remote-worker (id gpu::r1)"},
 		{"revive_session", map[string]any{"session_id": "gpu::r1"}, []string{"revive", "--json", "--", "r1"}, "revived remote-worker (id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1"}, []string{"archive", "--json", "--", "r1"}, "(id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1", "archived": false}, []string{"archive", "--restore", "--json", "--", "r1"}, "restored remote-worker (id gpu::r1)"},

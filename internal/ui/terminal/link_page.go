@@ -19,7 +19,7 @@ var copyToClipboard = clipboard.WriteText
 type LinkPageMsg struct{ URL string }
 
 func ShowLinkPage(url string) tea.Cmd {
-	return tea.Exec(&LinkPage{URL: url}, func(err error) tea.Msg {
+	return Exec(&LinkPage{URL: url}, func(err error) tea.Msg {
 		if err != nil {
 			return LinkOpenErrMsg{Err: fmt.Errorf("show link: %w", err)}
 		}
