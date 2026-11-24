@@ -60,6 +60,14 @@ class SelectionTests(unittest.TestCase):
             scenarios.spawn_form(self.sandbox, 'fixagent')
         self.assertIsNone(next(frames, None))
 
+    def test_settings_close_is_acknowledged_before_navigation(self):
+        frames = iter(['Settings', 'Settings', 'A G E N T'])
+        with patch.object(scenarios, 'capture', side_effect=lambda _: next(frames)), \
+                patch.object(scenarios, 'key') as key:
+            scenarios.close_settings(self.sandbox, 'settings-closed')
+        key.assert_called_once_with(self.sandbox, 'Escape')
+        self.assertIsNone(next(frames, None))
+
     def test_selected_remote_preview_does_not_receive_a_navigation_key(self):
         selected = preview('remote-agent on box')
         with patch.object(ssh_scenarios, 'capture', return_value=selected), \

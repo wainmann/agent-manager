@@ -56,6 +56,18 @@ class Sandbox:
         closed = 'http://127.0.0.1:1'
         self.env.update(HTTP_PROXY=closed, HTTPS_PROXY=closed, http_proxy=closed, https_proxy=closed)
         self.log = self.artifacts / 'commands.jsonl'
+        tmux_bin = shutil.which('tmux')
+        if tmux_bin:
+            traced = self.home / 'tmux-bin'
+            traced.mkdir()
+            logs = self.artifacts / 'tmux-logs'
+            logs.mkdir()
+            wrapper = traced / 'tmux'
+            wrapper.write_text('#!/bin/sh\n' +
+                               f'case "$1 $2" in "-L agentmgr") cd {shlex.quote(str(logs))} || exit; set -- -v "$@" ;; esac\n' +
+                               f'exec {shlex.quote(tmux_bin)} "$@"\n')
+            wrapper.chmod(0o700)
+            self.env['PATH'] = str(traced) + ':' + self.env.get('PATH', '')
 
     def seed_feed_cache(self):
         """A fresh, empty message feed, so no scenario races a GitHub fetch.
@@ -162,8 +174,20 @@ class Sandbox:
                 errors.append(f'socket directory: {error}')
         return errors
 
+    def process_snapshot(self, name):
+        panes = self.tmux('list-panes', '-a', '-F',
+                          '#{pid} #{session_name} #{pane_id} #{pane_pid} #{pane_current_command} '
+                          '#{pane_dead} #{pane_dead_status}', socket='agentmgr', check=False)
+        (self.artifacts / (name + '-panes.txt')).write_text(panes.stdout + panes.stderr)
+        processes = self.run(['ps', '-eo', 'pid,ppid,pgid,sid,stat,comm'], check=False)
+        (self.artifacts / (name + '-processes.txt')).write_text(processes.stdout + processes.stderr)
+
     def failure_frames(self):
         errors = []
+        try:
+            self.process_snapshot('failure')
+        except Exception as error:
+            errors.append(f'process snapshot: {error}')
         for socket, target in [('e2e-outer', 'smoke:0.0'), ('agentmgr', '%0')]:
             try:
                 capture = self.tmux('capture-pane', '-p', '-t', target, socket=socket, check=False)

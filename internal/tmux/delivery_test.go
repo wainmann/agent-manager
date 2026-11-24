@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -53,24 +54,36 @@ func TestSendTextContextKillsAndReapsTransportBeforeReturning(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "started")
 	parentPID := filepath.Join(dir, "parent-pid")
-	late := filepath.Join(dir, "late-child")
+	childPID := filepath.Join(dir, "child-pid")
+	gatePath := filepath.Join(dir, "gate")
+	if err := syscall.Mkfifo(gatePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gate, err := os.OpenFile(gatePath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
 	stub := filepath.Join(dir, "tmux")
 	script := fmt.Sprintf(`#!/bin/sh
 case " $* " in
   *" paste-buffer "*)
     echo $$ > %s
-    : > %s
-    (sleep 0.5; echo late > %s) &
-    while :; do sleep 1; done
+    sh -c %s &
+    wait
     ;;
 esac
 exit 0
-`, ShellQuote(parentPID), ShellQuote(started), ShellQuote(late))
+`, ShellQuote(parentPID), ShellQuote(fmt.Sprintf(`echo $$ > %s
+exec 3< %s
+: > %s
+read -r release <&3`, ShellQuote(childPID), ShellQuote(gatePath), ShellQuote(started))))
 	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	driver := &Driver{bin: stub, socket: testSocket}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	type response struct {
 		result SendResult
 		err    error
@@ -116,9 +129,25 @@ exit 0
 	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("transport process %d still exists after return: %v", pid, err)
 	}
-	time.Sleep(650 * time.Millisecond)
-	if _, err := os.Stat(late); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("transport child resumed after guard-safe return: %v", err)
+	rawChildPID, err := os.ReadFile(childPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := strconv.Atoi(strings.TrimSpace(string(rawChildPID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := exec.Command("ps", "-p", strconv.Itoa(child), "-o", "stat=").Output()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && len(state) == 0 {
+		return
+	}
+	if err != nil {
+		t.Fatalf("inspect transport child: %v", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(state)), "Z") {
+		_ = syscall.Kill(child, syscall.SIGKILL)
+		t.Fatalf("transport child can resume after guard-safe return, state %q", state)
 	}
 }
 
