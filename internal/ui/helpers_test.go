@@ -694,6 +694,25 @@ func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
 	t.Fatalf("pane never ran %s; children = %v", name, children)
 }
 
+// fixtureReady has tool's Windows stand-in say when its console is raw, and
+// returns the wait for that. The stand-in's process exists before then, and
+// keys typed in between meet the console's own line editing, which drops
+// them. A POSIX pane has a tty from the start and nothing to wait for.
+func fixtureReady(t *testing.T, m *Model, tool string) (wait func()) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return func() {}
+	}
+	ready := filepath.Join(t.TempDir(), "ready")
+	definition := m.services.cfg.Tools[tool]
+	definition.Env = map[string]string{testfixture.ReadyEnv: ready}
+	m.services.cfg.Tools[tool] = definition
+	return func() {
+		t.Helper()
+		testfixture.WaitForReady(t, ready)
+	}
+}
+
 // quitAgent ends the CLI the session launched with, leaving the pane on the
 // shell underneath it: the user pressing ctrl-d in their agent.
 func quitAgent(t *testing.T, m *Model, sessID string) {
