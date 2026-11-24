@@ -1973,6 +1973,33 @@ func TestRenameWorktreeBranchNeverLeavesHeadOnAMissingBranch(t *testing.T) {
 	}
 }
 
+func TestHoldRefsBlocksDeletingEveryHeldRef(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	gitIn(t, dir, "branch", "old")
+	gitIn(t, dir, "branch", "new")
+	tip, err := driver.run(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := driver.holdRefs(dir, tip, "refs/heads/old", "refs/heads/new")
+	if err != nil {
+		t.Fatalf("hold: %v", err)
+	}
+	for _, ref := range []string{"refs/heads/old", "refs/heads/new"} {
+		if _, err := driver.run(dir, "update-ref", "-d", ref); err == nil {
+			t.Errorf("deleted %s while it was held", ref)
+		}
+	}
+	if err := release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := driver.run(dir, "update-ref", "-d", "refs/heads/new"); err != nil {
+		t.Fatalf("delete after release: %v", err)
+	}
+}
+
 func TestRenameWorktreeBranchKeepsOpenFile(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")

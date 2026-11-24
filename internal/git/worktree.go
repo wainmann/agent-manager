@@ -256,9 +256,9 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 // commands keep running there. `git branch -m` deletes the old ref before
 // it repoints HEAD, so a reader in that gap finds HEAD naming a missing
 // branch and fails. Copying first, then repointing HEAD, then deleting the
-// old ref keeps HEAD on a branch that exists at every step. The old ref
-// stays locked at the copied tip while HEAD moves, so a commit racing the
-// rename lands on one branch or fails to lock, and is never left behind.
+// old ref keeps HEAD on a branch that exists at every step. Both refs stay
+// locked at the copied tip while HEAD moves, so a commit racing the rename
+// lands on one branch or fails to lock, and is never left behind.
 func (d *Driver) moveCheckedOutBranch(root, path, branch, newBranch string) error {
 	oldRef, newRef := "refs/heads/"+branch, "refs/heads/"+newBranch
 	// -c carries the branch config and reflog, as -m does.
@@ -269,7 +269,7 @@ func (d *Driver) moveCheckedOutBranch(root, path, branch, newBranch string) erro
 	if err != nil {
 		return errors.Join(err, d.dropCopy(root, newBranch, ""))
 	}
-	release, err := d.holdRef(root, oldRef, tip)
+	release, err := d.holdRefs(root, tip, oldRef, newRef)
 	if err != nil {
 		return errors.Join(fmt.Errorf("branch %s changed or is in use by another git command: %w", branch, err), d.dropCopy(root, newBranch, tip))
 	}
@@ -298,8 +298,8 @@ func (d *Driver) dropCopy(root, branch, tip string) error {
 	return errors.Join(err, d.dropBranchConfig(root, branch))
 }
 
-// holdRef locks ref, which must point at tip, until release is called.
-func (d *Driver) holdRef(root, ref, tip string) (func() error, error) {
+// holdRefs locks refs, which must all point at tip, until release is called.
+func (d *Driver) holdRefs(root, tip string, refs ...string) (func() error, error) {
 	cmd := exec.Command(d.bin, "update-ref", "--stdin")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
@@ -324,13 +324,17 @@ func (d *Driver) holdRef(root, ref, tip string) (func() error, error) {
 		}
 		return nil
 	}
-	if _, err := io.WriteString(stdin, "start\nverify "+ref+" "+tip+"\nprepare\n"); err != nil {
+	request := "start\n"
+	for _, ref := range refs {
+		request += "verify " + ref + " " + tip + "\n"
+	}
+	if _, err := io.WriteString(stdin, request+"prepare\n"); err != nil {
 		return nil, errors.Join(err, finish())
 	}
 	replies := bufio.NewScanner(stdout)
 	for _, want := range []string{"start: ok", "prepare: ok"} {
 		if !replies.Scan() || replies.Text() != want {
-			return nil, errors.Join(fmt.Errorf("could not lock %s at %s", ref, tip), finish())
+			return nil, errors.Join(fmt.Errorf("could not lock %s at %s", strings.Join(refs, " and "), tip), finish())
 		}
 	}
 	return func() error {
