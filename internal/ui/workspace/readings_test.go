@@ -181,3 +181,52 @@ func TestFootLineFitsItsWidth(t *testing.T) {
 		t.Fatalf("foot line %d cells wide: %q", got, ansi.Strip(line[0]))
 	}
 }
+
+func plainRows(r Readings, width int) []string {
+	var rows []string
+	for _, line := range ComputerLines(r, Net{}, width, presentation.GlyphModeAdvanced) {
+		rows = append(rows, strings.Join(strings.Fields(ansi.Strip(line)), " "))
+	}
+	return rows
+}
+
+func TestComputerLinesLoadMeter(t *testing.T) {
+	r := Readings{LoadOK: true, LoadCPUs: 10, Load1: 18.95, Load5: 8.5, Load15: 1.55}
+
+	wide := strings.Join(plainRows(r, 60), "\n")
+	if want := "190% 18.95/8.50/1.55\nmem"; !strings.Contains(wide, want) {
+		t.Fatalf("wide rows = %q, want the meter and averages on one row between cpu and mem", wide)
+	}
+	narrow := strings.Join(plainRows(r, 30), "\n")
+	if want := "190%\n18.95/8.50/1.55\nmem"; !strings.Contains(narrow, want) {
+		t.Fatalf("narrow rows = %q, want the averages under the meter", narrow)
+	}
+
+	r.LoadOK = false
+	if rows := strings.Join(plainRows(r, 60), "\n"); strings.Contains(rows, "load") {
+		t.Fatalf("unexpected load row without a sample: %q", rows)
+	}
+}
+
+func TestFootLineLoadSitsBeforeTemperatures(t *testing.T) {
+	r := Readings{LoadOK: true, LoadCPUs: 10, Load1: 2.314, Load5: 1.8, Load15: 1.55, CPUTempOK: true, CPUTemp: 61}
+	foot := ansi.Strip(FootLine(r, Net{}, 200, presentation.GlyphModeAdvanced)[0])
+	if want := "load 2.31/1.80/1.55  temp cpu 61°C"; !strings.Contains(foot, want) {
+		t.Fatalf("foot line = %q, want %q", foot, want)
+	}
+}
+
+func TestComputerLinesLoadUsesTheSharedMeter(t *testing.T) {
+	forceANSI256(t)
+	r := Readings{LoadOK: true, LoadCPUs: 10, Load1: 4.2}
+	want := uitheme.Gauge(42, MeterWidth(60), false, presentation.GlyphModeAdvanced)
+	for _, line := range ComputerLines(r, Net{}, 60, presentation.GlyphModeAdvanced) {
+		if strings.Contains(ansi.Strip(line), "load") {
+			if !strings.Contains(line, want) {
+				t.Fatalf("load row = %q, want the gauge %q", line, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no load row")
+}

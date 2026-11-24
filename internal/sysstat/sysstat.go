@@ -41,6 +41,11 @@ type Snapshot struct {
 	BatteryPercent  float64
 	BatteryCharging bool
 	BatteryOK       bool
+	Load1           float64
+	Load5           float64
+	Load15          float64
+	LoadCPUs        int
+	LoadOK          bool
 }
 
 type ProcStat struct {
@@ -77,6 +82,7 @@ func Sample(diskPath string) Snapshot {
 	sampleNet(&snap)
 	sampleTemps(&snap)
 	sampleBattery(&snap)
+	sampleLoad(&snap)
 	startHostSampler()
 	overlayHost(&snap)
 
