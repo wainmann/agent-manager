@@ -275,7 +275,7 @@ func (q *Bar) Submit(h Host) Request {
 func (q *Bar) SpawnRequest(h spawn.ChoiceHost, group, prompt string) (spawn.Request, bool) {
 	toolName := q.Tool()
 	if toolName == "" {
-		h.ReportErr("no tools configured")
+		h.ReportErr("no CLIs configured")
 		return spawn.Request{}, false
 	}
 	picked, err := q.choice.Launch(h, toolName, "")
@@ -526,9 +526,9 @@ func (q *Bar) Legend(h Host, mode presentation.GlyphMode) [][2]string {
 	if q.savedList.Open() {
 		return q.savedList.Hint("insert", "back to the prompt", mode)
 	}
-	pairs := [][2]string{{"↵", "send"}, {presentation.NavigationLabel(mode, "↑↓"), "target or caret"}, {"tab", "tool"}}
+	pairs := [][2]string{{"↵", "send"}, {presentation.NavigationLabel(mode, "↑↓"), "target or caret"}, {"tab", "CLI"}}
 	if len(q.toolNames) > 1 {
-		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
+		pairs = append(pairs, [2]string{"shift+tab", "previous CLI"})
 	}
 	pairs = append(pairs, [2]string{"ctrl+o", "saved prompts"})
 	if q.Spawning(h) {

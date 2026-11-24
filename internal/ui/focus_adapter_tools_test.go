@@ -59,8 +59,8 @@ func TestFocusedModifiedEnterFollowsEachToolsKeyMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default config: %v", err)
 	}
-	for name, tool := range shipped.Tools {
-		if _, ok := builtinKeyModes[name]; !ok && !tool.Shell {
+	for name := range shipped.CLIs {
+		if _, ok := builtinKeyModes[name]; !ok {
 			t.Errorf("built-in tool %q has no key mode in builtinKeyModes; read its pane's #{pane_key_mode} and add it", name)
 		}
 	}
@@ -93,7 +93,7 @@ func focusedKeysRead(t *testing.T, mode paneKeyMode) string {
 	toolName := string(mode) + "-keys"
 	dir := t.TempDir()
 	keys := filepath.Join(dir, "keys")
-	m.services.cfg.Tools[toolName] = config.Tool{Command: `sh -c '` + request + `: > ready; exec head -n 1 > keys'`, DefaultStatus: status.Idle}
+	m.services.cfg.CLIs[toolName] = config.CLI{Command: `sh -c '` + request + `: > ready; exec head -n 1 > keys'`, DefaultStatus: status.Idle}
 	createSessionOn(t, m, toolName, toolName, dir)
 	m.selectSessionRow(t, toolName)
 	sessID := railSelectedSession(m).ID

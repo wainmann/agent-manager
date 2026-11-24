@@ -338,7 +338,7 @@ def lifecycle(sandbox, remote, agent_id):
             f'archived {REMOTE_AGENT} on {CONNECTION}')
     sandbox.wait('remote-archived', lambda: str(remote.query(f"SELECT archived FROM sessions WHERE id = '{agent_id}'")),
                  lambda value: value == '[(1,)]')
-    key(sandbox, 't')
+    key(sandbox, 'T')
     frame(sandbox, 'archived-view', 'ARCHIVED')
     select_archived_agent(sandbox)
     key(sandbox, 'u')
@@ -346,7 +346,7 @@ def lifecycle(sandbox, remote, agent_id):
             f'restored {REMOTE_AGENT} on {CONNECTION}')
     sandbox.wait('remote-restored', lambda: str(remote.query(f"SELECT archived FROM sessions WHERE id = '{agent_id}'")),
                  lambda value: value == '[(0,)]')
-    key(sandbox, 't')
+    key(sandbox, 'T')
     frame(sandbox, 'active-view', f'{CONNECTION}  ssh', 'ARCHIVED')
 
     select(sandbox, 'grouped-agent', f'{GROUPED_AGENT}  on {CONNECTION}')
@@ -403,7 +403,7 @@ def left_at_prompt_head(sandbox, remote, agent_id):
 
 
 def spawn_and_terminal(sandbox, remote):
-    """Quick prompt on the connection row starts an agent there; T opens a terminal there."""
+    """Quick prompt on the connection row starts an agent there; t opens a terminal there."""
     select(sandbox, 'connection-row', 'ssh to fixture@' + CONNECTION)
     before = len(remote.sessions())
     key(sandbox, 'Space')
@@ -418,7 +418,7 @@ def spawn_and_terminal(sandbox, remote):
     key(sandbox, 'Escape')
 
     select(sandbox, 'connection-row-again', 'ssh to fixture@' + CONNECTION)
-    key(sandbox, 'T')
+    key(sandbox, 't')
     frame(sandbox, 'remote-terminal', 'opened terminal ')
     terminals = remote.query("SELECT id FROM sessions WHERE tool = 'terminal' AND opened_without_session = 1")
     if len(terminals) != 1:
@@ -494,7 +494,7 @@ def offline_connection(sandbox):
     frame(sandbox, 'offline', 'Connection refused')
     if 'unreachable' not in preview_of(capture(sandbox)):
         raise AssertionError('unreachable host not marked unreachable')
-    key(sandbox, 'T')
+    key(sandbox, 't')
     frame(sandbox, 'offline-refusal', f'{DOWN}: unreachable over SSH')
     key(sandbox, 'd')
     confirm(sandbox, 'remove-connection', f'remove connection {DOWN}?', CONNECTION)

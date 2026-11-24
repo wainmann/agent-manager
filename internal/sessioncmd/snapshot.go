@@ -1,6 +1,10 @@
 package sessioncmd
 
-import "time"
+import (
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
+)
 
 // SnapshotVersion is the envelope shape another manager reads over SSH. A
 // change a reader of the previous shape would misread bumps it.
@@ -58,8 +62,11 @@ func (s *Sessions) Snapshot(sessionID string) (Snapshot, error) {
 	}
 	for _, sess := range stored {
 		pane, running := panes[sess.ID]
-		if runtime.cfg.Tools[sess.Tool].Shell {
+		if sess.Tool == config.TerminalTool {
 			snapshot.Terminals = append(snapshot.Terminals, terminalRow(sess, running, names[sess.ParentID], pane.Path))
+			continue
+		}
+		if runtime.cfg.IsTool(sess.Tool) {
 			continue
 		}
 		snapshot.Sessions = append(snapshot.Sessions, sessionRow(sess, running, sess.ID == sessionID, pane.Path))

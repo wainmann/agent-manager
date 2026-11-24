@@ -64,6 +64,9 @@ type workspace struct {
 	// lastListedAt is the newest listing applied; an older one still carries
 	// focus, turn ends and pane facts, but not the rows it saw.
 	lastListedAt time.Time
+	// browsers is the last engine read for each browser row, kept through a
+	// pass that could not read them.
+	browsers map[string]browserState
 }
 
 // computerLines is the machine block docked at the rail's foot.
@@ -109,7 +112,16 @@ func pollMessage(result execution.Result) tea.Msg {
 		proc: s.Proc, procFor: s.ProcFor, preview: s.Preview, agents: agentStats{count: s.Agents.Count, cpu: s.Agents.CPU, ram: s.Agents.RAM, rss: s.Agents.RSS},
 		queuedMessages: s.QueuedMessages, paneLines: s.PaneLines, panePrompts: s.PanePrompts, panes: s.Panes,
 		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID, turnsEnded: s.TurnsEnded, followWarning: s.FollowWarning,
-		hookFailures: s.HookFailures, hooksConfigError: s.HooksConfigError, notifyNotCarried: s.NotifyNotCarried, notifyFailed: s.NotifyFailed}
+		hookFailures: s.HookFailures, hooksConfigError: s.HooksConfigError, notifyNotCarried: s.NotifyNotCarried, notifyFailed: s.NotifyFailed,
+		browsers: browserStates(s.Browsers), browsersRead: s.BrowsersRead, browserWarning: s.BrowserWarning}
+}
+
+func browserStates(engines map[string]execution.BrowserEngine) map[string]browserState {
+	states := make(map[string]browserState, len(engines))
+	for id, engine := range engines {
+		states[id] = browserState{URL: engine.URL, Title: engine.Title, Engine: true, AgentDriven: engine.AgentDriven}
+	}
+	return states
 }
 
 func (p *poller) refreshOnce() tea.Msg                                { return pollMessage(p.runner.Step()) }
@@ -189,6 +201,11 @@ type refreshMsg struct {
 	hooksConfigError string
 	notifyNotCarried string
 	notifyFailed     string
+	// browsers holds the engines a read pass found. browsersRead is false
+	// when the pass could not read them, and browserWarning says why once.
+	browsers       map[string]browserState
+	browsersRead   bool
+	browserWarning string
 }
 
 // StartPoller launches the background polling loop. It runs outside the
@@ -234,7 +251,7 @@ func (m *Model) syncPollInput() {
 // it where the selection has come to rest, never on every cursor move.
 func (m *Model) watchSelection() {
 	sess, ok := m.selected()
-	if !ok || sess.Archived {
+	if !ok || sess.Archived || m.isBrowser(sess.Tool) {
 		m.focus.runtime.ClearFocus()
 		return
 	}
@@ -310,6 +327,12 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.ageError()
 		if msg.followWarning != "" {
 			m.reportWarn(msg.followWarning)
+		}
+		if msg.browserWarning != "" {
+			m.reportWarn(msg.browserWarning)
+		}
+		if msg.browsersRead {
+			m.workspace.browsers = msg.browsers
 		}
 		var focusExit tea.Cmd
 		if !staleListing {

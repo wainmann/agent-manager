@@ -77,9 +77,9 @@ func TestEmitSessionStateAddsANotificationOnlyOnATrigger(t *testing.T) {
 func TestNotificationHooksFollowTheBannerTriggerWhateverTheBannerSetting(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
 	m := buildModel(t)
-	hooked := m.cfg.Tools["claude-hooked"]
+	hooked := m.cfg.CLIs["claude-hooked"]
 	hooked.Command = `sh -c 'exec cat' --`
-	m.cfg.Tools["claude-hooked"] = hooked
+	m.cfg.CLIs["claude-hooked"] = hooked
 	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
 	sess := m.sessionRows()[0]
 	waitForPane(t, m, sess.ID, "boot-marker")
@@ -294,12 +294,12 @@ func TestNotifyTransitionSilencedBySetting(t *testing.T) {
 // that stays waiting across polls never re-fires.
 func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	m := buildModel(t)
-	hooked := m.cfg.Tools["claude-hooked"]
+	hooked := m.cfg.CLIs["claude-hooked"]
 	// Windows' stand-in already ignores the --settings the launch appends.
 	if runtime.GOOS != "windows" {
 		hooked.Command = `sh -c 'exec cat' --`
 	}
-	m.cfg.Tools["claude-hooked"] = hooked
+	m.cfg.CLIs["claude-hooked"] = hooked
 	if err := m.spawnSession("claude-hooked", "needy", t.TempDir(), "", "boot-marker", false, false); err != nil {
 		t.Fatal(err)
 	}
@@ -345,9 +345,9 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 // store's to settle, and its tests cover it.
 func TestSessionStateEmitsOnceAcrossManagers(t *testing.T) {
 	m := buildModel(t)
-	hooked := m.cfg.Tools["claude-hooked"]
+	hooked := m.cfg.CLIs["claude-hooked"]
 	hooked.Command = `sh -c 'exec cat' --`
-	m.cfg.Tools["claude-hooked"] = hooked
+	m.cfg.CLIs["claude-hooked"] = hooked
 	createSessionOn(t, m, "needy", "claude-hooked", t.TempDir())
 	sess := m.sessionRows()[0]
 	waitForPane(t, m, sess.ID, "boot-marker")
@@ -419,11 +419,11 @@ func TestRefreshQuotesTheConversationFollowedThisPass(t *testing.T) {
 	if err := m.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
-	hooked := m.cfg.Tools["claude-hooked"]
+	hooked := m.cfg.CLIs["claude-hooked"]
 	if runtime.GOOS != "windows" {
 		hooked.Command = `sh -c 'exec cat' --`
 	}
-	m.cfg.Tools["claude-hooked"] = hooked
+	m.cfg.CLIs["claude-hooked"] = hooked
 	if err := m.spawnSession("claude-hooked", "needy", t.TempDir(), "", "boot-marker", false, false); err != nil {
 		t.Fatal(err)
 	}

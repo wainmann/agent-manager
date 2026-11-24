@@ -26,7 +26,7 @@ func TestConfirmedReviewSendEmitsARound(t *testing.T) {
 	if extra := rec.Events(); len(extra) != 1 {
 		t.Fatalf("a refused send emitted %+v", extra)
 	}
-	m.services.cfg.Tools["shell"] = config.Tool{Shell: true}
+	m.services.cfg.Tools["shell"] = config.Tool{}
 	m.workspace.sessions[0].Tool = "shell"
 	m.handleReviewSend(uireview.SendResult{TargetID: "s1", Outcome: uireview.SendConfirmed, Count: 1, Round: 1})
 	if extra := rec.Events(); len(extra) != 1 {

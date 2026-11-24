@@ -65,6 +65,12 @@ var official = map[string]string{
 	"copilot":      "curl -fsSL https://gh.io/copilot-install | bash",
 	"hermes":       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
 	"pi":           "curl -fsSL https://pi.dev/install.sh | sh",
+
+	"terminal-browser": "curl -fsSL https://terminal-browser.sh/install | bash",
+}
+
+var darwinAlternatives = map[string]string{
+	"terminal-browser": "brew install terminal-browser",
 }
 
 // windowsOfficial replaces official on native Windows, where the curl
@@ -130,6 +136,9 @@ func shownCommand(goos, tool string) string {
 
 func hint(goos, tool string) string {
 	if command := shownCommand(goos, tool); command != "" {
+		if alternative := darwinAlternatives[tool]; goos == "darwin" && alternative != "" {
+			return "install it with: " + command + ", or " + alternative
+		}
 		return "install it with: " + command
 	}
 	if command := installCommand(goos, tool); command != "" {

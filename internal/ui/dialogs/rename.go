@@ -163,7 +163,7 @@ func (d Rename) Hints() [][2]string {
 		return [][2]string{{"↵", "save; its subgroups and sessions move with it"}, {"esc", "cancel"}}
 	}
 	if tool := d.Tool(); tool != "" {
-		return [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
+		return [][2]string{{"tab", "runs " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 	}
 	return [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 }

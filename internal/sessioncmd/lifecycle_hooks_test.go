@@ -37,7 +37,7 @@ func TestLifecycleHooksCoverSpawnKillForkAndAFailedLaunch(t *testing.T) {
 	h := newSessionHarness(t)
 	lifecycle, rec := recordingLifecycle(t, h)
 	runtime := harnessRuntime(t, h)
-	tool := runtime.Config.Tools["echoer"]
+	tool := runtime.Config.CLIs["echoer"]
 	sess := store.Session{ID: "hooked", Name: "hooked", Tool: "echoer", Cwd: t.TempDir(), Status: status.Starting}
 	launched, err := lifecycle.Launch(LaunchRequest{
 		Session: sess, Tool: tool, BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24}, Reason: lifecyclehook.ReasonSpawn,
@@ -96,7 +96,7 @@ func TestLifecycleHooksCoverSpawnKillForkAndAFailedLaunch(t *testing.T) {
 	rec.Reset()
 	shell := store.Session{ID: "shell-hook", Name: "shell", Tool: "terminal", Cwd: t.TempDir(), Status: status.Starting}
 	if _, err := lifecycle.Launch(LaunchRequest{
-		Session: shell, Tool: runtime.Config.Tools["terminal"], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24}, Reason: lifecyclehook.ReasonSpawn,
+		Session: shell, Tool: runtime.Config.Tools["terminal"].Launch(), BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24}, Reason: lifecyclehook.ReasonSpawn,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,10 +109,10 @@ func TestLifecycleHooksCoverReviveRestartArchiveRestoreDeleteAndAfterTurn(t *tes
 	h := newSessionHarness(t)
 	lifecycle, rec := recordingLifecycle(t, h)
 	runtime := harnessRuntime(t, h)
-	tool := runtime.Config.Tools["echoer"]
+	tool := runtime.Config.CLIs["echoer"]
 	tool.SessionIDFlag = "--session"
-	runtime.Config.Tools["echoer"] = tool
-	lifecycle.runtime.Config.Tools["echoer"] = tool
+	runtime.Config.CLIs["echoer"] = tool
+	lifecycle.runtime.Config.CLIs["echoer"] = tool
 
 	sess := store.Session{ID: "again", Name: "again", Tool: "echoer", Cwd: t.TempDir(), Status: status.Dead, AgentSessionID: "old-conv"}
 	if err := h.store.CreateSession(sess); err != nil {
@@ -271,7 +271,7 @@ func TestLifecycleHooksRollBackTheConversationTheStartAnnounced(t *testing.T) {
 	if _, err := db.Exec("CREATE TRIGGER refuse_ack BEFORE UPDATE OF acked ON sessions WHEN NEW.id = 'restarted' BEGIN SELECT RAISE(ABORT, 'ack write refused'); END"); err != nil {
 		t.Fatal(err)
 	}
-	tool := lifecycle.runtime.Config.Tools[sess.Tool]
+	tool := lifecycle.runtime.Config.CLIs[sess.Tool]
 	bind := func(time.Time) error { return nil }
 	if _, err := lifecycle.launchExisting(sess, tool, "sleep 30", PaneSize{Width: 80, Height: 24}, false, false, lifecyclehook.ReasonRestart, "new-conversation", bind); err == nil {
 		t.Fatal("a launch whose ack write failed succeeded")

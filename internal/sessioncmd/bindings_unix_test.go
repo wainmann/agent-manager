@@ -29,7 +29,7 @@ func TestLifecycleLaunchBindsTheStoredArrowStep(t *testing.T) {
 	}
 	sess := store.Session{ID: "arrowstep", Name: "arrowstep", Tool: "echoer", Cwd: t.TempDir(), Status: status.Starting}
 	if _, err := lifecycle.Launch(LaunchRequest{
-		Session: sess, Tool: runtime.Config.Tools[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
+		Session: sess, Tool: runtime.Config.CLIs[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
 	}); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}

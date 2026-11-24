@@ -18,7 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func SnapshotRelaunch(st *store.Store, sess store.Session, tool config.Tool, agentSessionID string) error {
+func SnapshotRelaunch(st *store.Store, sess store.Session, tool config.CLI, agentSessionID string) error {
 	if agentSessionID != "" || tool.SessionStore == "" {
 		return nil
 	}
@@ -35,7 +35,7 @@ const pickerInjectionTimeout = 45 * time.Second
 // keys wait for the caret to rest on the tool's composer row, since a tool
 // drawing inline (agy) leaves its last frame, composer and all, in the pane
 // it exited.
-func InjectPickerKeys(driver *tmux.Driver, sessID string, tool config.Tool) {
+func InjectPickerKeys(driver *tmux.Driver, sessID string, tool config.CLI) {
 	composer := tool.InputPrefix
 	if composer == "" {
 		composer = tool.ActivityCutoff
@@ -106,7 +106,7 @@ func caretRow(driver *tmux.Driver, sessID string) (string, bool) {
 // relaunched, read after the agent quit, since that agent may have reported
 // a switch the caller's copy predates, and a warning when the agent started
 // without the agent-manager tools because registering them timed out.
-func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, events lifecyclehook.Emitter, sessID string, tool config.Tool, reason string) (store.Session, string, error) {
+func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, events lifecyclehook.Emitter, sessID string, tool config.CLI, isTool bool, reason string) (store.Session, string, error) {
 	sess, err := st.Get(sessID)
 	if err != nil {
 		return store.Session{}, "", err
@@ -125,7 +125,7 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 		return store.Session{}, "", err
 	}
 	tool = tool.WithChoice(sess.Choice)
-	base := launch.ReviveCommand(tool, sess.AgentSessionID)
+	base := relaunchCommand(tool, sess)
 	launchedAt := time.Now()
 	profile, err := st.LaunchEnv(sess.Environment)
 	if err != nil {
@@ -146,13 +146,22 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	}
 	sess.AgentLaunchedAt = launchedAt
 	sess.Status = status.Starting
-	emit(events, tool, startEvent(sess, reason))
+	emit(events, isTool, startEvent(sess, reason))
 	// A leftover ack from the agent that exited must not swallow the first
 	// finished alert of the one taking its place.
 	if err := st.SetAcked(sess.ID, false); err != nil {
 		return store.Session{}, "", err
 	}
 	return sess, warning, nil
+}
+
+// relaunchCommand is what a row comes back on. A browser reopens the page it
+// last showed, and an agent resumes its conversation.
+func relaunchCommand(tool config.CLI, sess store.Session) string {
+	if sess.Tool == config.BrowserTool {
+		return launch.BrowserCommand(tool.Command, sess.BrowserURL)
+	}
+	return launch.ReviveCommand(tool, sess.AgentSessionID)
 }
 
 // paneSettle is how long a busy pane is given to come back empty. A shell

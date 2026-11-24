@@ -4,14 +4,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-// emit stamps and sends one event. A terminal row has no hooks.
-func emit(events lifecyclehook.Emitter, tool config.Tool, ev lifecyclehook.Event) {
-	if tool.Shell {
+// emit stamps and sends one event. A tool's row, a terminal or a browser,
+// has no hooks.
+func emit(events lifecyclehook.Emitter, isTool bool, ev lifecyclehook.Event) {
+	if isTool {
 		return
 	}
 	ev.At = time.Now().UTC()
@@ -19,7 +19,7 @@ func emit(events lifecyclehook.Emitter, tool config.Tool, ev lifecyclehook.Event
 }
 
 func (l *Lifecycle) emit(ev lifecyclehook.Event) {
-	emit(l.runtime.Events, l.runtime.Config.Tools[ev.Session.Tool], ev)
+	emit(l.runtime.Events, l.runtime.Config.IsTool(ev.Session.Tool), ev)
 }
 
 func startEvent(sess store.Session, reason string) lifecyclehook.Event {
@@ -118,7 +118,7 @@ func sessionsUnder(sessions []store.Session, path string) []store.Session {
 }
 
 func (r *runtime) emit(ev lifecyclehook.Event) {
-	emit(r.events, r.cfg.Tools[ev.Session.Tool], ev)
+	emit(r.events, r.cfg.IsTool(ev.Session.Tool), ev)
 }
 
 func (r *runtime) emitTask(caller store.Session, name, id, title string) {

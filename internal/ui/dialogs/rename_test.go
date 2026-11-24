@@ -33,7 +33,7 @@ func TestRenameSessionKeepsAMissingTool(t *testing.T) {
 }
 
 func TestRenameHints(t *testing.T) {
-	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "tool: zsh"} {
+	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "runs zsh"} {
 		t.Fatalf("session hints = %v", got)
 	}
 }

@@ -319,6 +319,32 @@ func TestCreateDeliversShiftEnterToAnAgentThatAsksForExtendedKeys(t *testing.T) 
 	}
 }
 
+// terminal-browser turns these server options on at its first launch, so
+// Create sets them first and the agents' keys read the same from the start.
+func TestCreateSetsTheKeyOptionsTerminalBrowserNeeds(t *testing.T) {
+	driver := requireTmux(t)
+	requireTmuxAtLeast(t, 3, 5)
+	for _, option := range [][]string{{"extended-keys", "off"}, {"extended-keys-format", "xterm"}} {
+		if out, err := tmuxCmd("set-option", "-s", option[0], option[1]).CombinedOutput(); err != nil {
+			t.Fatalf("reset %s: %v: %s", option[0], err, out)
+		}
+	}
+	id := "keyopts" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	for option, want := range map[string]string{"extended-keys": "on", "extended-keys-format": "csi-u"} {
+		out, err := tmuxCmd("show-options", "-sv", option).CombinedOutput()
+		if err != nil {
+			t.Fatalf("show-options %s: %v: %s", option, err, out)
+		}
+		if got := strings.TrimSpace(string(out)); got != want {
+			t.Fatalf("%s = %q after Create, want %q", option, got, want)
+		}
+	}
+}
+
 // Focus mode replays a modified key by its tmux name, so each name it sends
 // has to reach an agent that asked for extended keys as the CSI u it came in as.
 func TestModifiedKeyNamesReachAnAgentThatAsksForExtendedKeys(t *testing.T) {

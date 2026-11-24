@@ -151,7 +151,7 @@ func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	m.publishPaneSize()
 	m.resizeSessions()
 	if m.fullFocus() {
-		if sess, ok := m.selected(); ok {
+		if sess, ok := m.selected(); ok && !m.isBrowser(sess.Tool) {
 			m.layout.panes.PinFullFocus(paneSizing{m}, sess.ID, m.layout.width, m.listBodyHeight())
 		}
 	}
@@ -224,6 +224,9 @@ func (m *Model) resizeSessions() {
 	}
 	sessions := make([]uigeometrypanes.Session, 0, len(m.workspace.sessions))
 	for _, sess := range m.workspace.sessions {
+		if m.isBrowser(sess.Tool) {
+			continue
+		}
 		sessions = append(sessions, uigeometrypanes.Session{
 			ID:        sess.ID,
 			Tool:      sess.Tool,
@@ -257,6 +260,9 @@ func (m *Model) publishPaneSize() {
 // that size on detach.
 func (m *Model) adoptPaneGeom(id string) {
 	m.layout.panes.Forget(id)
+	if sess, ok := m.sessionByID(id); ok && m.isBrowser(sess.Tool) {
+		return
+	}
 	width, height := m.paneTargetSize()
 	m.queueGeometry(uigeometrypanes.Resize{Targets: []uigeometrypanes.PaneResize{{ID: id, Size: [2]int{width, height}}}})
 }

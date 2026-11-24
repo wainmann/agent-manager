@@ -3,6 +3,7 @@ package ui
 import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"maps"
+	"os"
 	"slices"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uicomposer "github.com/YoanWai/agent-manager/internal/ui/composer"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
@@ -121,6 +123,9 @@ type mouseCapture struct {
 type environment struct {
 	workDir string
 	homeDir string
+	// insideTmux is whether the manager itself started under a tmux, which
+	// cannot pass a browser pane's images through to the outer terminal.
+	insideTmux bool
 	// scheme is the light or dark side the terminal last reported, unknown
 	// until a report arrives.
 	scheme systheme.Scheme
@@ -145,7 +150,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// Tests build the model through New, so no hooks.toml of the user's runs.
 	events := lifecyclehook.Nop{}
 	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, Events: events,
-		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }}
+		TakeFocus: func() (string, bool) { return notify.TakeFocus(dir) }, Browsers: termbrowser.NewOnServer(driver.SocketPath())}
 	opts := execution.OptionsFromConfig(cfg)
 	var model *Model
 	lifecycle, err := sessioncmd.NewLifecycle(sessioncmd.Runtime{
@@ -201,8 +206,9 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		poller:  &poller{runner: deps.Execution},
 		layout:  layoutState{split: uigeometry.Gesture{Ratio: uigeometrypanes.Load(st)}},
 		env: environment{
-			workDir: uilaunch.InitialWorkingDir(),
-			homeDir: uilaunch.InitialHomeDir(),
+			workDir:    uilaunch.InitialWorkingDir(),
+			homeDir:    uilaunch.InitialHomeDir(),
+			insideTmux: os.Getenv("TMUX") != "",
 		},
 		release: uirelease.New(st, version),
 		services: services{
@@ -222,7 +228,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		},
 		rail:      uirailpersist.Load(st),
 		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),
-		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
+		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.CLIs)))),
 		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &uiframe.CursorAnchor{}},
 		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{
@@ -253,5 +259,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.setupOnLaunch(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckStartupFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.setupOnLaunch(), m.refreshExistingSessionUX, m.syncBrowserFrames, m.release.Check(), m.release.CheckStartupFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
 }

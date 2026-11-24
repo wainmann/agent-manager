@@ -50,7 +50,7 @@ type Sessions struct {
 	newGit       func() (*git.Driver, error)
 	archiveOwner ArchiveOwner
 	// loadCatalog is swapped in tests.
-	loadCatalog func(configDir, toolName string, tool config.Tool) (catalog.Catalog, error)
+	loadCatalog func(configDir, toolName string, tool config.CLI) (catalog.Catalog, error)
 }
 
 func NewSessions(configDir string, words Vocabulary) *Sessions {
@@ -77,7 +77,8 @@ func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Dri
 }
 
 // agent resolves a target id to an agent session, refusing the ids that
-// belong to terminals so an agent never types a sentence at a shell.
+// belong to terminals and browsers so an agent never types a sentence at
+// a shell or a page.
 func (r *runtime) agent(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -90,8 +91,8 @@ func (r *runtime) agent(id string) (store.Session, error) {
 	if err != nil {
 		return store.Session{}, err
 	}
-	if r.cfg.Tools[sess.Tool].Shell {
-		return store.Session{}, fmt.Errorf("session %s is a terminal, not an agent; use the terminal tools for it", id)
+	if r.cfg.IsTool(sess.Tool) {
+		return store.Session{}, fmt.Errorf("session %s is not an agent; use the terminal or browser tools for it", id)
 	}
 	return sess, nil
 }
@@ -144,7 +145,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 	}
 	sessions := make([]Session, 0)
 	for _, sess := range stored {
-		if runtime.cfg.Tools[sess.Tool].Shell {
+		if runtime.cfg.IsTool(sess.Tool) {
 			continue
 		}
 		pane, running := panes[sess.ID]

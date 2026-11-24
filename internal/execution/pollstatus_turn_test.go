@@ -26,11 +26,11 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 			m := buildModel(t)
 			// Redraws the whole screen from the file named on each line, the
 			// way a full-screen CLI repaints, with nothing echoed.
-			drawer := m.cfg.Tools["claude-hooked"]
+			drawer := m.cfg.CLIs["claude-hooked"]
 			drawer.Command = `sh -c 'stty -echo; while IFS= read -r f; do printf "\033[H\033[2J"; cat "$f"; done' --`
 			drawer.UserEcho = "^❯ "
 			drawer.ChromeLine = `^\s+Tip: `
-			m.cfg.Tools["claude-hooked"] = drawer
+			m.cfg.CLIs["claude-hooked"] = drawer
 			engine, err := status.NewEngine(m.cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -132,11 +132,11 @@ func TestATurnBetweenPollsEmitsWorkingThenFinishedOnce(t *testing.T) {
 // once and then go quiet instead of reporting it again.
 func TestATurnAnnouncedBeforeAFailedPassIsNotAnnouncedAgain(t *testing.T) {
 	m := buildModel(t)
-	drawer := m.cfg.Tools["claude-hooked"]
+	drawer := m.cfg.CLIs["claude-hooked"]
 	drawer.Command = `sh -c 'stty -echo; while IFS= read -r f; do printf "\033[H\033[2J"; cat "$f"; done' --`
 	drawer.StatusSource = ""
 	drawer.UserEcho = "^❯ "
-	m.cfg.Tools["claude-hooked"] = drawer
+	m.cfg.CLIs["claude-hooked"] = drawer
 	engine, err := status.NewEngine(m.cfg)
 	if err != nil {
 		t.Fatal(err)

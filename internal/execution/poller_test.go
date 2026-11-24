@@ -934,7 +934,7 @@ func TestCodexCutOffRowShimmerStaysWorkingPastStuckGrace(t *testing.T) {
 	}
 }
 
-func declaresWorking(tool config.Tool) bool {
+func declaresWorking(tool config.CLI) bool {
 	if tool.BusyLine != "" {
 		return true
 	}
@@ -972,7 +972,7 @@ func TestStuckGraceAcrossBuiltinTools(t *testing.T) {
 	shimmer := func(pane string, frame int) string {
 		return fmt.Sprintf("\x1b[38;5;%dm", 245+frame) + pane + "\x1b[39m"
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		t.Run(name, func(t *testing.T) {
 			pane, ok := workingPanes[name]
 			if !ok {
@@ -1954,7 +1954,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 	for _, signal := range []string{"rule", "busy line"} {
 		t.Run(signal, func(t *testing.T) {
 			m := buildModel(t)
-			tool := m.cfg.Tools["ready-tool"]
+			tool := m.cfg.CLIs["ready-tool"]
 			tool.Command = `sh -c 'printf "\033[2J\033[H❯ /compact\n⠋ working\n❯ "; IFS= read -r line; printf "\033[2J\033[H❯ /compact\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
 			if runtime.GOOS == "windows" {
 				tool.Command = testfixture.ModeCommand(`prompt-loop --first '\033[2J\033[H❯ /compact\n⠋ working\n❯ ' --then '\033[2J\033[H❯ /compact\n❯ '`)
@@ -1964,7 +1964,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 			} else {
 				tool.BusyLine = "^⠋ working$"
 			}
-			m.cfg.Tools["ready-tool"] = tool
+			m.cfg.CLIs["ready-tool"] = tool
 			engine, err := status.NewEngine(m.cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -2048,13 +2048,13 @@ func TestPendingInputWaitsForTypedText(t *testing.T) {
 
 func TestPendingInputLandsOnAnErroredPane(t *testing.T) {
 	m := buildModel(t)
-	tool := m.cfg.Tools["ready-tool"]
+	tool := m.cfg.CLIs["ready-tool"]
 	tool.Command = `sh -c 'printf "error: boom\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
 	if runtime.GOOS == "windows" {
 		tool.Command = testfixture.ModeCommand(`prompt-loop --first 'error: boom\n❯ '`)
 	}
 	tool.Rules = []config.Rule{{State: status.Errored, Pattern: "error: boom"}}
-	m.cfg.Tools["ready-tool"] = tool
+	m.cfg.CLIs["ready-tool"] = tool
 	engine, err := status.NewEngine(m.cfg)
 	if err != nil {
 		t.Fatal(err)
