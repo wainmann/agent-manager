@@ -1,0 +1,54 @@
+name: psmux repro
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Install psmux
+        run: |
+          $zip = "$env:RUNNER_TEMP\psmux.zip"
+          Invoke-WebRequest https://github.com/psmux/psmux/releases/download/v3.4.0/psmux-v3.4.0-windows-x64.zip -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'a66b6be7c13c6fa0dc3660a267b9e34eaa91a4eb7f07fbd55a0468018bd0f721') {
+            throw 'psmux download does not match its release checksum'
+          }
+          Expand-Archive $zip "$env:RUNNER_TEMP\psmux"
+          "$env:RUNNER_TEMP\psmux" >> $env:GITHUB_PATH
+      - name: Run three-step repro once
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          if ($PSVersionTable.PSVersion.Major -ne 7) { throw 'PowerShell 7 required' }
+          psmux -V
+          $PSNativeCommandUseErrorActionPreference = $false
+          $commands = @(
+            { psmux -L t new-session -d -s s -- pwsh -NoLogo -NoExit -Command "Write-Output 'ERROR: boom'" }
+            { psmux -L t capture-pane -p -t s:@1.0 }
+            { psmux -L t display-message -p -t s:@1.0 '#{pane_id}' ';' capture-pane -p -t s:@1.0 }
+          )
+          for ($index = 0; $index -lt $commands.Count; $index++) {
+            $command = $commands[$index]
+            $step = $index + 1
+            Write-Output "===== STEP $step BEGIN ====="
+            Write-Output "COMMAND: $($command.ToString().Trim())"
+            & $command 1> "$env:RUNNER_TEMP\stdout.txt" 2> "$env:RUNNER_TEMP\stderr.txt"
+            $code = $LASTEXITCODE
+            Write-Output "EXIT CODE: $code"
+            Write-Output '===== STDOUT BEGIN ====='
+            Get-Content "$env:RUNNER_TEMP\stdout.txt" -Raw | Write-Output
+            Write-Output '===== STDOUT END ====='
+            Write-Output '===== STDERR BEGIN ====='
+            Get-Content "$env:RUNNER_TEMP\stderr.txt" -Raw | Write-Output
+            Write-Output '===== STDERR END ====='
+            Write-Output "===== STEP $step END ====="
+            if ($index -eq 0) { Start-Sleep -Seconds 5 }
+          }
+          exit 0
