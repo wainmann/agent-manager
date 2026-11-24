@@ -403,6 +403,37 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	}
 }
 
+func TestQuickSpawnRefusedByTheHintKeepsANewerPromptOnTheBar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	m.quick().SetTools([]string{"hermes"}, 0)
+
+	updated, cmd := m.quickSpawn("backend", "fix the tests")
+	m = updated.(*Model)
+	m.quick().Input.SetValue("newer prompt")
+	m.applyCmd(t, cmd)
+
+	if hintOpen(m) {
+		t.Fatal("a stale refusal replaced the bar holding a newer prompt")
+	}
+	if m.quick() == nil || m.quick().Input.Value() != "newer prompt" {
+		t.Fatalf("the newer prompt left the bar, quick = %v", m.quick())
+	}
+	if m.errBar.text == "" {
+		t.Fatal("the refusal was not reported")
+	}
+}
+
 // A form spawn the hint dialog refused takes the form off screen with it,
 // so the images its prompt was holding have nothing left naming them.
 func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
