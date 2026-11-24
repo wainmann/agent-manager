@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -116,7 +117,7 @@ func Run(services Services, request Request) (Result, error) {
 		}
 		switch target.Action {
 		case Archive:
-			result.Archive, operationErr = services.Lifecycle.ArchiveForHuman(sessioncmd.ArchiveSelection{Sessions: target.Sessions, GroupPath: target.Path})
+			result.Archive, operationErr = services.Lifecycle.ArchiveForHuman(sessioncmd.ArchiveSelection{Sessions: target.Sessions, GroupPath: target.Path, Reason: lifecyclehook.ReasonUser})
 		case Restore:
 			wasDead := map[string]bool{}
 			for _, sess := range target.Sessions {

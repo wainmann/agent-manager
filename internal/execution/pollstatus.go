@@ -132,6 +132,36 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 	return newStatus, nil
 }
 
+// turnMark is the newest prompt and reply a pane shows, as wrapped at its
+// width.
+type turnMark struct {
+	sum   uint64
+	width int
+}
+
+// unseenTurn reports a turn that ran between two polls: the newest prompt
+// or reply changed while the session rested at both. The region as a whole
+// is no signal at rest, because a tool redraws hint rows as the composer
+// changes and that moves the region's top edge.
+func (p *Runner) unseenTurn(sess store.Session, pane string, width int, verdict string, marks map[string]turnMark) bool {
+	text := p.engine.Plain(sess.Tool, pane)
+	echo, _ := p.engine.LastUserEcho(sess.Tool, text)
+	if echo == "" {
+		return false
+	}
+	prose, _, _ := p.engine.FullTurnText(sess.Tool, text)
+	mark := turnMark{sum: hashString(echo + "\x00" + prose), width: width}
+	marks[sess.ID] = mark
+	previous, seen := p.turnMarks[sess.ID]
+	return seen && previous.width == width && previous.sum != mark.sum && rested(sess.Status) && rested(verdict)
+}
+
+// rested is a status a turn leaves behind. Waiting is left out, because
+// working through a dialog changes the screen without a new turn.
+func rested(current string) bool {
+	return current == status.Finished || current == status.Idle
+}
+
 // turnInFlight reports whether a status means a turn is running or resting
 // unacknowledged. Only then can a quiet region mean the turn just ended;
 // finished and waiting stay in the set so the inferred status persists

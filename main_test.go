@@ -22,6 +22,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -656,5 +657,42 @@ func TestServeBackgroundPrintsWhetherItStartedOne(t *testing.T) {
 	}
 	if err := runServe(&bytes.Buffer{}, &bytes.Buffer{}, []string{"-h"}, t.TempDir(), start); !errors.Is(err, cli.ErrUsageShown) {
 		t.Fatalf("serve -h = %v", err)
+	}
+}
+
+func TestServeSendsTerminalSequencesToStderr(t *testing.T) {
+	previous := termseq.Out
+	t.Cleanup(func() { termseq.Out = previous })
+	dir := t.TempDir()
+	release, acquired, err := app.LockServe(dir)
+	if err != nil || !acquired {
+		t.Fatalf("LockServe = %v, %v", acquired, err)
+	}
+	defer release()
+	out, errs := &bytes.Buffer{}, &bytes.Buffer{}
+	start := func([]string, string) (int, error) { t.Fatal("serve started a manager"); return 0, nil }
+	if err := runServe(out, errs, nil, dir, start); err != nil {
+		t.Fatal(err)
+	}
+	if err := termseq.Emit("\a"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "\a") || !strings.Contains(errs.String(), "\a") {
+		t.Fatalf("serve stdout %q, stderr %q: the bell belongs on stderr", out.String(), errs.String())
+	}
+}
+
+func TestACommandSendsTerminalSequencesToStderr(t *testing.T) {
+	previous := termseq.Out
+	t.Cleanup(func() { termseq.Out = previous })
+	termseq.Out = os.Stdout
+	err := withBackend(t.TempDir(), "kill", func(*sessioncmd.Backend) error {
+		if termseq.Out != os.Stderr {
+			t.Fatal("a command's stdout carries its answer, so the bell fallback belongs on stderr")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

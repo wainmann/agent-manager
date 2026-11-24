@@ -190,3 +190,27 @@ func TestSettingsVerbsCheckTheirOperands(t *testing.T) {
 		t.Fatalf("settings set -h = %v, %q", err, out.String())
 	}
 }
+
+func TestSettingsSetClearsNotifyCommandAndRefusesAnyOtherValue(t *testing.T) {
+	configDir := t.TempDir()
+	st := settingsStore(t, configDir)
+	if err := st.SetSetting(store.NotifyCommandKey, "curl"); err != nil {
+		t.Fatal(err)
+	}
+	specs := func() ([]store.SettingSpec, error) {
+		return []store.SettingSpec{{Key: store.NotifyCommandKey}}, nil
+	}
+	err := runSettingsSet(&bytes.Buffer{}, specs, []string{store.NotifyCommandKey, "say done"}, configDir)
+	if err == nil || !strings.Contains(err.Error(), "hooks.toml") || !strings.Contains(err.Error(), "agent-manager hooks") {
+		t.Fatalf("refusal = %v", err)
+	}
+	if got, err := st.Setting(store.NotifyCommandKey); err != nil || got != "curl" {
+		t.Fatalf("stored = %q, %v", got, err)
+	}
+	if err := runSettingsSet(&bytes.Buffer{}, specs, []string{store.NotifyCommandKey, "   "}, configDir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Setting(store.NotifyCommandKey); err != nil || got != "" {
+		t.Fatalf("cleared = %q, %v", got, err)
+	}
+}

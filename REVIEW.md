@@ -68,7 +68,8 @@ reachable by mouse, and the reverse. A value that varies by tool, version, or
 user is discovered at runtime rather than listed in code. A user-facing
 setting is stored by the manager in `state.db`, named in `ui.SettingSpecs`,
 and changed from a Settings row or from `agent-manager settings`, never
-from a file, block, or environment variable the user edits. A command, a
+from a file, block, or environment variable the user edits. `hooks.toml`
+is the exception, because a hook is a command the user writes. A command, a
 token or a URL stays off the modal. Report a change that breaks one of
 those.
 

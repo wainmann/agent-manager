@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -62,11 +63,8 @@ type Runner struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
-	// commandFn runs the user's notify command for the same event, or logs
-	// why it could not; tests swap in a recorder.
-	commandFn func(event notify.Event, command string, readErr error)
-	// showCommandFn shows a new notify command; tests swap in a recorder.
-	showCommandFn func(command string)
+	// events receives session_state after this process's status write.
+	events lifecyclehook.Emitter
 	// takeFocus collects the session a clicked notification named; tests
 	// swap in a stub.
 	takeFocus func() (string, bool)
@@ -75,6 +73,8 @@ type Runner struct {
 	// and one-off refresh commands
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
+	// turnMarks is the newest turn each pane showed on the last poll.
+	turnMarks map[string]turnMark
 	// conversations reads which conversation a running agent is on for the
 	// CLIs that report no switch themselves.
 	conversations conversation.Reader
@@ -370,6 +370,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	var agents AgentStats
 	var cpuSecDelta float64
 	paneHashes := make(map[string]uint64, len(sessions))
+	turnMarks := make(map[string]turnMark, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
 	panePrompts := make(map[string]string, len(sessions))
 	followFailures := make(map[string]error, len(sessions))
@@ -470,6 +471,9 @@ func (p *Runner) step(ctx context.Context) Result {
 					return Result{Err: err}
 				}
 				newStatus = derived
+				if p.unseenTurn(sess, pane, panes[sess.ID].Width, derived, turnMarks) {
+					newStatus = status.Working
+				}
 				// Hold the launch state until the agent first paints its pane,
 				// so a just-created session reads "starting up" rather than
 				// flashing idle before it has booted. A grace cap keeps a tool
@@ -529,18 +533,30 @@ func (p *Runner) step(ctx context.Context) Result {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
-			written, changed, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			written, changed, previous, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
 			if err != nil {
 				return Result{Err: err}
 			}
 			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
-				// Managers sharing a server derive the same transition; only
-				// the one whose write moved the stored status announces it.
-				if changed {
-					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
-				}
 			}
+			// Managers sharing a server derive the same transition; only
+			// the one whose write moved the stored status announces it.
+			// A claim or a delivery can move the stored status while the
+			// listed row already matches, and that move is announced too.
+			if written && changed {
+				var banner notify.Event
+				triggered := false
+				if newStatus != sess.Status {
+					banner, triggered = p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
+				}
+				p.emitSessionState(sess, newStatus, previous, banner, triggered)
+			}
+		}
+		// A later session's failed write ends the pass before the marks are
+		// swapped in, and the next pass must not announce this turn again.
+		if mark, ok := turnMarks[sess.ID]; ok {
+			p.turnMarks[sess.ID] = mark
 		}
 		if observed {
 			due, err := p.afterTurnDue(sess, newStatus)
@@ -566,6 +582,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
+	p.turnMarks = turnMarks
 	followWarning := p.newFollowFailure(sessions, followFailures)
 
 	groups, err := p.store.Groups()
@@ -651,6 +668,18 @@ func (p *Runner) step(ctx context.Context) Result {
 			msg.FocusID = id
 		}
 	}
+	if msg.HookFailures, err = p.store.HookFailures(); err != nil {
+		return Result{Err: err}
+	}
+	if msg.HooksConfigError, err = p.store.HooksConfigError(); err != nil {
+		return Result{Err: err}
+	}
+	if msg.NotifyNotCarried, err = p.store.Setting(store.NotifyCommandNotCarriedKey); err != nil {
+		return Result{Err: err}
+	}
+	if msg.NotifyFailed, err = p.store.Setting(store.NotifyCommandFailedKey); err != nil {
+		return Result{Err: err}
+	}
 	if sampleStats {
 		p.statsSampledAt = sampledAt
 		msg.Snap = sysstat.Sample("/")
@@ -718,11 +747,3 @@ func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 
 const notificationsSetting = "notifications"
 const notifyFinishedSetting = "notify_finished"
-
-// notifyCommandSetting is a shell command run on every notification, with
-// the event in AM_* variables. Empty runs nothing.
-const notifyCommandSetting = "notify_command"
-
-// notifyCommandShownSetting is the last notify command a banner showed the
-// user, so a new one is announced once, before its first run.
-const notifyCommandShownSetting = "notify_command_shown"
