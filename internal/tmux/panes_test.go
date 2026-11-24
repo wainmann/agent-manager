@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+func TestParsePanesKeepsPathSpacesButNotLineEndings(t *testing.T) {
+	for _, eol := range []string{"\n", "\r\n"} {
+		out := "am_live 0 123 80 24 1 0 /dev/tty /work dir " + eol +
+			"am_empty 0 124 80 24 1 0 /dev/tty " + eol
+		panes := parsePanes(out)
+		for id, want := range map[string]string{"live": "/work dir ", "empty": ""} {
+			if pane, ok := panes[id]; !ok || pane.Path != want {
+				t.Errorf("ending %q, pane %q: present=%v path=%q, want %q", eol, id, ok, pane.Path, want)
+			}
+		}
+	}
+}
+
 // An agent that changes directory mid-session, as Claude Code's /cd and
 // EnterWorktree do, is a child of the launch script, and tmux reports the
 // directory of the pane's foreground process group.

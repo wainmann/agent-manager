@@ -65,6 +65,9 @@ func TestRemoteActionsBuildTheirRemoteCall(t *testing.T) {
 	}{
 		{"kill an agent", boxSession("s1"), uirail.Kill, []string{"kill", "--json", "--", "s1"}, "killed api on box"},
 		{"kill a terminal closes it", boxSession("t1"), uirail.Kill, []string{"terminal", "close", "--", "t1"}, "killed sh on box"},
+		{"delete an agent", boxSession("s1"), uirail.Delete, []string{"delete", "--json", "--", "s1"}, "deleted api on box"},
+		{"delete an archived agent", boxSession("s3"), uirail.Delete, []string{"delete", "--json", "--", "s3"}, "deleted shelved on box"},
+		{"delete a terminal closes it", boxSession("t1"), uirail.Delete, []string{"terminal", "close", "--", "t1"}, "killed sh on box"},
 		{"revive", boxSession("s2"), uirail.Revive, []string{"revive", "--json", "--", "s2"}, "revived old on box"},
 		{"archive", boxSession("s1"), uirail.Archive, []string{"archive", "--json", "--", "s1"}, "archived api on box"},
 		{"restore", boxSession("s3"), uirail.Restore, []string{"archive", "--restore", "--json", "--", "s3"}, "restored shelved on box"},
@@ -116,7 +119,6 @@ func TestRemoteActionsAlreadyInPlaceDoNothing(t *testing.T) {
 
 func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 	refused := map[uirail.ActionKind]string{
-		uirail.RenameAction: "rename", uirail.MoveToGroup: "move", uirail.Delete: "delete",
 		uirail.Restart: "restart", uirail.Fork: "fork", uirail.OpenReview: "review",
 		uirail.OpenEditor: "the editor", uirail.CopyReply: "copy reply", uirail.MarkIdle: "mark idle",
 		uirail.CancelEnd: "cancel end", uirail.KillAll: "kill all",
@@ -138,6 +140,16 @@ func TestUnsupportedRemoteActionsAreRefusedWithoutIO(t *testing.T) {
 		m.clearErr()
 		if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: target}); cmd != nil || m.errBar.text != "kill isn't available on SSH connections yet" {
 			t.Fatalf("kill on %+v: status %q", target, m.errBar.text)
+		}
+	}
+	for target, want := range map[uirail.Selection]string{
+		boxRow:           "box is a connection, not a group to move",
+		boxGroup:         "moving a group isn't available on SSH connections yet",
+		boxSession("t1"): "moving or nesting a terminal isn't available on SSH connections yet",
+	} {
+		m.clearErr()
+		if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.MoveToGroup, Target: target}); cmd != nil || moveOpen(m) || m.errBar.text != want {
+			t.Fatalf("move on %+v: status %q, want %q", target, m.errBar.text, want)
 		}
 	}
 	if calls := fake.taken(); len(calls) != 0 {
@@ -164,12 +176,19 @@ func TestOfflineHostRefusesCallsWithItsError(t *testing.T) {
 	state := hostState(m, "box")
 	state.OK, state.Failures, state.Attempted, state.Err = false, 1, time.Now(), "box: unreachable over SSH: connection refused"
 	setHost(m, "box", state)
-	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 {
-		t.Fatal("a call to an offline host went out")
+	for name, kind := range map[string]uirail.ActionKind{"kill": uirail.Kill, "move": uirail.MoveToGroup} {
+		m.clearErr()
+		_, cmd := m.runRailIntent(uirail.Intent{Kind: kind, Target: boxSession("s1")})
+		if cmd != nil || !m.remoteIdle() || len(fake.taken()) != 0 || moveOpen(m) {
+			t.Fatalf("%s on an offline host went out or opened a card", name)
+		}
+		if m.errBar.text != "box: unreachable over SSH: connection refused" {
+			t.Fatalf("%s: status = %q", name, m.errBar.text)
+		}
 	}
-	if m.errBar.text != "box: unreachable over SSH: connection refused" {
-		t.Fatalf("status = %q", m.errBar.text)
+	m.clearErr()
+	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "box: unreachable over SSH: connection refused" {
+		t.Fatalf("group delete on an offline host: confirm %v, status %q", confirmOpen(m), m.errBar.text)
 	}
 }
 
@@ -346,6 +365,70 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	}
 }
 
+// The host's delete takes the terminals nested under the agent, archived
+// ones too, so its confirm counts them the way a local delete does.
+func TestRemoteDeleteConfirmCountsTheTerminalsItTakes(t *testing.T) {
+	fake := &fakeSSH{}
+	m := listedModel(t, fake)
+	fake.snapshot.Terminals = append(fake.snapshot.Terminals,
+		sessioncmd.Terminal{ID: "t2", Name: "api-sh", Group: "web", Status: "idle", Running: true, ParentID: "s1"},
+		sessioncmd.Terminal{ID: "t3", Name: "api-log", Group: "web", Status: "dead", ParentID: "s1", Archived: true},
+		sessioncmd.Terminal{ID: "t4", Name: "shelved-sh", Group: "web", Status: "dead", ParentID: "s3", Archived: true})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	for id, want := range map[string]string{
+		"s1": "delete api on box and 2 terminals? kills their tmux sessions there.",
+		"s2": "delete old on box? kills its tmux session there.",
+		"s3": "delete shelved on box and 1 terminal? kills their tmux sessions there.",
+	} {
+		m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxSession(id)})
+		if !confirmOpen(m) || pendingConfirm(m).prompt.Label != want {
+			t.Fatalf("delete %s: label %q, want %q", id, pendingConfirm(m).prompt.Label, want)
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	}
+	if calls := fake.taken(); len(calls) != 0 {
+		t.Fatalf("calls before an answer = %q", calls)
+	}
+}
+
+// d on a remote group asks with that host's counts, worded like the local
+// group delete, and the yes sends the ids of the sessions it counted, so the
+// host refuses when its sessions changed since.
+func TestRemoteGroupDeleteAsksWithTheHostsCountsAndSendsThem(t *testing.T) {
+	fake := &fakeSSH{}
+	m := listedModel(t, fake)
+	fake.snapshot.Groups = append(fake.snapshot.Groups, sessioncmd.Group{Path: "web/ui"})
+	fake.snapshot.Sessions = append(fake.snapshot.Sessions, sessioncmd.Session{ID: "s4", Name: "ui", Tool: "claude", Group: "web/ui", Status: "idle", Running: true})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	m.rail.Focus(boxGroup)
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup})
+	prompt := pendingConfirm(m).prompt
+	if want := "delete group web on box (1 subgroups, 5 sessions incl. archived)? kills their tmux sessions there."; !confirmOpen(m) || prompt.Label != want || !prompt.Group || prompt.Action != uidialogs.ConfirmDelete {
+		t.Fatalf("confirm %v = %+v, want %q", confirmOpen(m), prompt, want)
+	}
+	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "y"))
+	if want := []string{"delete-group", "--json", "--with-sessions=s1,s2,s3,s4,t1", "--", "web"}; len(fake.taken()) != 1 || !slices.Equal(fake.taken()[0], want) {
+		t.Fatalf("calls = %q, want one %q", fake.taken(), want)
+	}
+	if m.errBar.text != "deleted group web on box" {
+		t.Fatalf("status = %q", m.errBar.text)
+	}
+}
+
+// The archived view's d deletes only the archived rows under a group, which
+// the host has no call for, so it refuses rather than delete the live ones.
+func TestRemoteGroupDeleteInTheArchivedViewIsRefused(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	m.rail.SetArchived(true)
+	if _, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup}); cmd != nil || confirmOpen(m) || m.errBar.text != "deleting a group from the archive isn't available on SSH connections yet" {
+		t.Fatalf("confirm %v, status %q", confirmOpen(m), m.errBar.text)
+	}
+	if calls := fake.taken(); len(calls) != 0 {
+		t.Fatalf("calls = %q, want none", calls)
+	}
+}
+
 func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
@@ -485,6 +568,31 @@ func TestRemoteSpawnLeavesThisMachinesChoiceAlone(t *testing.T) {
 	want := []string{"spawn", "--json", "--prompt=build it", "--tool=claude", "--group=web"}
 	if calls := fake.taken(); len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Fatalf("calls = %q, want %q", calls, want)
+	}
+}
+
+func TestRemoteSpawnLeavesThisMachinesDefaultToolAlone(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	if err := m.services.store.SetDefaultTool("ready-tool"); err != nil {
+		t.Fatal(err)
+	}
+	m.settings.Cache.ApplyValues([]uisettings.Value{{Key: uisettings.DefaultToolSetting, Value: "ready-tool"}})
+	m.rail.Focus(boxGroup)
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick().Input.SetValue("build it")
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.runRemoteCmd(t, cmd)
+	if calls := fake.taken(); len(calls) != 1 || !slices.Contains(calls[0], "--tool=claude") {
+		t.Fatalf("calls = %q, want one claude spawn on the host", calls)
+	}
+
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want this machine's ready-tool", tool, err)
+	}
+	if got := m.settings.Cache.Value(uisettings.DefaultToolSetting); got != "ready-tool" {
+		t.Fatalf("cached default tool = %q, want this machine's ready-tool", got)
 	}
 }
 

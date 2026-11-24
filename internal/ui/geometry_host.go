@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,8 +54,26 @@ func (h geometryHost) TakeForeground() { h.m.takeForeground() }
 
 func (h geometryHost) Quit() tea.Cmd { return h.m.quit() }
 
+func (h geometryHost) AgentOwnsKeys() bool { return h.m.focused() }
+
 func newResizeSurface(m *Model) *uigeometry.Surface {
-	return uigeometry.NewSurface(geometryHost{m}, m.services.listKeys)
+	return uigeometry.NewSurface(geometryHost{m}, m.resizeKeys())
+}
+
+// resizeKeys is the key table the divider gesture answers to: the session's
+// while a focused session sits under it, since that is the table the key that
+// armed it came from, and the list's otherwise.
+func (m *Model) resizeKeys() keybind.Table {
+	if m.focused() {
+		return m.services.keys
+	}
+	return m.services.listKeys
+}
+
+// resizeGlyph is the resize key as the gesture's own table spells it.
+func (m *Model) resizeGlyph() string {
+	advanced := m.prefs.glyphMode.Effective() == presentation.GlyphModeAdvanced
+	return presentation.KeyLabel(m.prefs.glyphMode, m.resizeKeys().Binding(keybind.Resize).Text("/", advanced))
 }
 
 // paneSizing is the root as the geometry runtime reaches it: what a shrink

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -361,7 +362,7 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 	}
 }
 
-func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
+func TestFormHiddenLastToolFallsBackToFirstEnabled(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
@@ -374,22 +375,58 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 
 	m.applyTestMsg(t, m.openForm()())
 	if got := m.form().Tool(); got != "claude" {
-		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
+		t.Fatalf("hidden last tool should fall back to the first enabled CLI, got %q", got)
 	}
 	if m.form().Worktree() {
 		t.Fatal("hidden last tool should fall back to the settings worktree default")
 	}
 }
 
-func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
+func TestLastSpawnToolBecomesSettingsDefault(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	submitFormSession(t, m, "first")
 
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want the last spawn, ready-tool", tool, err)
+	}
 	m.openSettings()
-	if got := m.settingsCard().State().ToolNames[m.settingsCard().State().ToolIndex]; got != "claude" {
-		t.Fatalf("settings default tool = %q, want stored default", got)
+	if got := m.settingsCard().State().ToolNames[m.settingsCard().State().ToolIndex]; got != "ready-tool" {
+		t.Fatalf("settings default tool = %q, want the last spawn", got)
+	}
+
+	_, close := m.closeSettings()
+	m.applyCmd(t, close)
+	if err := m.services.store.SetDefaultTool("claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form().Tool(); got != "claude" {
+		t.Fatalf("form tool = %q, want the default changed in settings after the spawn", got)
+	}
+}
+
+func TestQuickSpawnToolBecomesSettingsDefault(t *testing.T) {
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "ready-tool"))
+	m.quick().Input.SetValue("build it")
+	_, cmd := m.submitQuick()
+	m.applyCmd(t, cmd)
+
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want the quick bar spawn, ready-tool", tool, err)
+	}
+	m.closeQuick()
+	m.openQuickMode()
+	if got := m.quick().Tool(); got != "ready-tool" {
+		t.Fatalf("reopened quick bar tool = %q, want the last spawn", got)
 	}
 }
 
@@ -601,5 +638,111 @@ func TestSpawnBasePreviewNamesAFailedLookup(t *testing.T) {
 	m.recordBaseFetch(uilaunch.BaseFetchedMsg{Key: key})
 	if got := ansi.Strip(m.spawnBaseLabel(key.Dir, "")); got != "HEAD (auto)" {
 		t.Fatalf("label = %q, want HEAD (auto) when the repo names no default", got)
+	}
+}
+
+// A spawn accepted right before a quit completes during the drain and its
+// pick must still reach the store; a save enqueued then is the quit's
+// causal followup, not user work a drain refuses.
+func TestQuitDrainsTheSpawnedDefaultToolSave(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form().SetName("first")
+	m.form().SetDir(t.TempDir())
+	// The submit command runs the queued spawn, so the test leaves it
+	// unrun and the quit below drains a spawn in flight.
+	_, _ = m.submitForm()
+	if m.effects.Main.Active == nil {
+		t.Fatal("the spawn is not on the lane")
+	}
+	_, _ = m.requestQuit()
+	m.drainEffects(t)
+	if len(m.effects.Main.Pending) != 0 {
+		t.Fatal("quit accepted new user work")
+	}
+	if _, ok := m.nextEffectCmd()().(tea.QuitMsg); !ok {
+		t.Fatal("drained queue did not quit")
+	}
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool after quit = %q, %v; want the completed spawn, ready-tool", tool, err)
+	}
+}
+
+// A failed save reconciles the cache to the store only while its own pick is
+// still the newest: a newer pick owns the cache, and a failed readback knows
+// nothing to reconcile it to.
+func TestFailedChoiceSaveOnlyReconcilesItsOwnPick(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	key := uisettings.DefaultToolSetting
+	m.saveChoiceSetting(key, "opencode")
+	m.saveChoiceSetting(key, "claude")
+	newest := m.settings.ChoiceGen[key]
+	saveErr := errors.New("disk full")
+
+	m.applyChoiceSave(
+		uilaunch.ChoiceSaveRequest{Key: key, Value: "opencode", Generation: newest - 1},
+		uilaunch.ChoiceSaveResult{Stored: "opencode", Valid: true}, saveErr)
+	if got := m.settings.Cache.Value(key); got != "claude" {
+		t.Fatalf("cached %s = %q after a stale failure, want the newer pick claude", key, got)
+	}
+
+	m.applyChoiceSave(
+		uilaunch.ChoiceSaveRequest{Key: key, Value: "claude", Generation: newest},
+		uilaunch.ChoiceSaveResult{}, saveErr)
+	if got := m.settings.Cache.Value(key); got != "claude" {
+		t.Fatalf("cached %s = %q after a failed readback, want the pick kept", key, got)
+	}
+
+	m.applyChoiceSave(
+		uilaunch.ChoiceSaveRequest{Key: key, Value: "claude", Generation: newest},
+		uilaunch.ChoiceSaveResult{Stored: "codex", Valid: true}, saveErr)
+	if got := m.settings.Cache.Value(key); got != "codex" {
+		t.Fatalf("cached %s = %q, want the stored codex after the failure read back", key, got)
+	}
+}
+
+// Each pick starts a generation of its own, so a completion can tell which
+// one it belongs to.
+func TestChoiceSaveStampsANewGeneration(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	key := uisettings.DefaultToolSetting
+	before := m.settings.ChoiceGen[key]
+	m.saveChoiceSetting(key, "claude")
+	m.saveChoiceSetting(key, "opencode")
+	if got := m.settings.ChoiceGen[key]; got != before+2 {
+		t.Fatalf("generation = %d, want %d after two picks", got, before+2)
+	}
+}
+
+// A Settings save that replaces default_tool outranks a picker save still on
+// the lane: the picker's failed completion must not restore the older pick.
+func TestSettingsSaveOutranksAPendingPickerSave(t *testing.T) {
+	m := buildModel(t)
+	key := uisettings.DefaultToolSetting
+	m.saveChoiceSetting(key, "opencode")
+	picker := m.settings.ChoiceGen[key]
+
+	m.openSettings()
+	d := m.settingsCard().State()
+	d.Field = uisettings.FieldTool
+	m.cycleSetting(1)
+	chosen := d.ToolNames[d.ToolIndex]
+	if chosen == "opencode" {
+		t.Fatalf("settings row picked %q, want a tool the picker did not choose", chosen)
+	}
+	m.applyCmd(t, m.captureSettingsSave(d, true, false))
+	if got := m.settings.Cache.Value(key); got != chosen {
+		t.Fatalf("cached %s = %q, want the settings pick %q", key, got, chosen)
+	}
+
+	m.applyChoiceSave(
+		uilaunch.ChoiceSaveRequest{Key: key, Value: "opencode", Generation: picker},
+		uilaunch.ChoiceSaveResult{Stored: "opencode", Valid: true}, errors.New("disk full"))
+	if got := m.settings.Cache.Value(key); got != chosen {
+		t.Fatalf("cached %s = %q after the stale picker failure, want %q", key, got, chosen)
 	}
 }

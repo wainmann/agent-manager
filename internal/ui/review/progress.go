@@ -68,16 +68,24 @@ func (m Model) FileReviewed(path string) bool {
 
 func (m *Model) clearStaleMarks() bool {
 	marks := m.reviewed[m.reviewKey()]
+	if len(marks) == 0 {
+		return false
+	}
+	files := make(map[string]*diff.FileDiff, len(m.set.Files))
+	for i := range m.set.Files {
+		files[m.set.Files[i].File.Path] = &m.set.Files[i]
+	}
+	scopeKey := m.scopeKey()
 	changed := false
 	for markKey, stored := range marks {
 		if stored == 0 {
 			continue
 		}
 		scope, path, _ := strings.Cut(markKey, "\x00")
-		if scope != m.scopeKey() {
+		if scope != scopeKey {
 			continue
 		}
-		fd := m.fileByPath(path)
+		fd := files[path]
 		if fd != nil && fd.Loaded() && ContentHash(fd) != stored {
 			delete(marks, markKey)
 			changed = true
@@ -127,11 +135,20 @@ func (m *Model) markMissingCommentsOutdated() bool {
 }
 
 func (m *Model) reanchorAnnotations(path string) bool {
+	fd := m.fileByPath(path)
 	notes := m.annotations[m.reviewKey()]
+	currentHash := ContentHash(fd)
+	var index map[anchor]anchorMatch
+	occupied := map[slot]int{}
+	for i := range notes {
+		if notes[i].file == path {
+			occupied[noteSlot(&notes[i])]++
+		}
+	}
 	changed := false
 	for i := range notes {
 		note := &notes[i]
-		if path != "" && note.file != path {
+		if note.file != path {
 			continue
 		}
 		scope := note.scope
@@ -141,11 +158,6 @@ func (m *Model) reanchorAnnotations(path string) bool {
 		if !m.inScope(scope) {
 			continue
 		}
-		fd := m.fileByPath(note.file)
-		if fd == nil {
-			continue
-		}
-		currentHash := ContentHash(fd)
 		if note.hash != 0 && note.hash == currentHash {
 			if note.outdated {
 				note.outdated = false
@@ -160,20 +172,21 @@ func (m *Model) reanchorAnnotations(path string) bool {
 			}
 			continue
 		}
-		matches, target := 0, 0
-		for _, line := range fd.Lines {
-			if line.Kind == diff.Gap {
-				continue
-			}
-			num, deleted := annotationLine(line)
-			if deleted == note.deleted && excerptOf(line.Text) == note.excerpt {
-				matches++
-				target = num
-			}
+		if index == nil {
+			index = anchorIndex(fd)
 		}
-		if matches == 1 && !m.annotationOccupies(note.file, target, note.deleted, i) {
-			if note.line != target || note.hash != currentHash || note.outdated {
-				note.line = target
+		match := index[anchor{excerpt: note.excerpt, deleted: note.deleted}]
+		target := slot{line: match.line, deleted: note.deleted}
+		own := noteSlot(note)
+		taken := occupied[target]
+		if own == target {
+			taken--
+		}
+		if match.count == 1 && taken == 0 {
+			if note.line != match.line || note.hash != currentHash || note.outdated {
+				occupied[own]--
+				occupied[target]++
+				note.line = match.line
 				note.hash = currentHash
 				note.outdated = false
 				changed = true
@@ -184,6 +197,43 @@ func (m *Model) reanchorAnnotations(path string) bool {
 		}
 	}
 	return changed
+}
+
+// slot is the line a comment sits on within the file: two comments never
+// share one.
+type slot struct {
+	line    int
+	deleted bool
+}
+
+func noteSlot(note *annotation) slot {
+	return slot{line: note.line, deleted: note.deleted}
+}
+
+type anchor struct {
+	excerpt string
+	deleted bool
+}
+
+// anchorMatch counts the lines of a file an excerpt matches, with the
+// number of the last one.
+type anchorMatch struct {
+	count int
+	line  int
+}
+
+func anchorIndex(fd *diff.FileDiff) map[anchor]anchorMatch {
+	index := make(map[anchor]anchorMatch, len(fd.Lines))
+	for _, line := range fd.Lines {
+		if line.Kind == diff.Gap {
+			continue
+		}
+		num, deleted := annotationLine(line)
+		key := anchor{excerpt: excerptOf(line.Text), deleted: deleted}
+		match := index[key]
+		index[key] = anchorMatch{count: match.count + 1, line: num}
+	}
+	return index
 }
 
 func (m Model) fileByPath(path string) *diff.FileDiff {
@@ -240,15 +290,6 @@ func annotationLine(line diff.Line) (int, bool) {
 }
 
 func AnnotationLine(line diff.Line) (int, bool) { return annotationLine(line) }
-
-func (m Model) annotationOccupies(file string, line int, deleted bool, self int) bool {
-	for i, note := range m.annotations[m.reviewKey()] {
-		if i != self && note.file == file && note.line == line && note.deleted == deleted {
-			return true
-		}
-	}
-	return false
-}
 
 func excerptOf(text string) string {
 	excerpt := strings.TrimSpace(stripControls(text))

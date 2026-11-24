@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,10 @@ const pinnedPrefixOption = "@am_pinned_prefix"
 // keys the manager bound, so the next run can take them off.
 const rootKeysOption = "@am_root_keys"
 
+// promptHeadOption is the global user option that reads 1 while the server
+// binds ← in attached sessions.
+const promptHeadOption = "@am_prompt_head"
+
 const (
 	RequestReview = "review"
 	RequestEditor = "editor"
@@ -49,10 +54,25 @@ type Driver struct {
 	paneThemePush     sync.Mutex
 	socketPath        atomic.Pointer[string]
 	sessionKeys       atomic.Pointer[keybind.Table]
+	promptHead        atomic.Pointer[string]
 }
 
 func (d *Driver) SetSessionKeys(keys keybind.Table) {
 	d.sessionKeys.Store(&keys)
+}
+
+// SetPromptHeadCheck names the shell command an attached ← runs to ask
+// whether the caret sits at the head of the agent's prompt. Empty leaves ←
+// to the agent.
+func (d *Driver) SetPromptHeadCheck(command string) {
+	d.promptHead.Store(&command)
+}
+
+func (d *Driver) promptHeadCheck() string {
+	if command := d.promptHead.Load(); command != nil {
+		return *command
+	}
+	return ""
 }
 
 func (d *Driver) currentSessionKeys() keybind.Table {
@@ -125,9 +145,24 @@ func PaneTarget(id string) string {
 	return windowTarget(id) + ".0"
 }
 
-// tmux requires -L <socket> before the command word.
+// ConfigFile replaces the user's tmux.conf for every server this process
+// starts when set. Only tests set it: a plugin-loading config costs seconds
+// per server, and the suite starts hundreds. psmux is left on its own config.
+var ConfigFile string
+
+// SocketArgs prefixes a to address the named server, the way every Driver
+// call does; tests that run the binary themselves build their commands
+// with it. tmux requires -L <socket> before the command word.
+func SocketArgs(socket string, a ...string) []string {
+	args := []string{"-L", socket}
+	if ConfigFile != "" && runtime.GOOS != "windows" {
+		args = append(args, "-f", ConfigFile)
+	}
+	return append(args, a...)
+}
+
 func (d *Driver) args(a ...string) []string {
-	return append([]string{"-L", d.socket}, a...)
+	return SocketArgs(d.socket, a...)
 }
 
 // command builds one invocation of the multiplexer on this driver's socket.
@@ -164,27 +199,22 @@ func (d *Driver) runContextStarted(ctx context.Context, started func(), args ...
 		return "", err
 	}
 	defer release()
-	// tmux takes a command list in one invocation; psmux's command line
-	// reads only one command, so there each runs on its own, stopping at the
-	// first that fails the way tmux does.
 	var out bytes.Buffer
-	for i, command := range splitCommandList(args) {
-		cmd := d.commandContext(ctx, command...)
-		configureBoundedCommand(cmd)
-		cmd.Stdout = &out
-		cmd.Stderr = &out
-		if err := cmd.Start(); err != nil {
-			return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
+	cmd := d.commandContext(ctx, listArgs(args)...)
+	configureBoundedCommand(cmd)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("tmux %s: %w", strings.Join(args, " "), err)
+	}
+	if started != nil {
+		started()
+	}
+	if err := cmd.Wait(); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			err = contextErr
 		}
-		if started != nil && i == 0 {
-			started()
-		}
-		if err := cmd.Wait(); err != nil {
-			if contextErr := ctx.Err(); contextErr != nil {
-				err = contextErr
-			}
-			return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
-		}
+		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
 	}
 	return out.String(), nil
 }
@@ -196,8 +226,7 @@ func (d *Driver) runIn(id string, args ...string) (string, error) {
 	return d.run(append(sessionRoute(id), args...)...)
 }
 
-// runInContext is runIn bounded by ctx, reporting when the first command
-// started.
+// runInContext is runIn bounded by ctx, reporting when the command started.
 func (d *Driver) runInContext(ctx context.Context, started func(), id string, args ...string) (string, error) {
 	return d.runContextStarted(ctx, started, append(sessionRoute(id), args...)...)
 }

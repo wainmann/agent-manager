@@ -217,9 +217,26 @@ func attachScript(id string) string {
 }
 
 // AttachKey reports the host's review or editor key ending an attach, which
-// this manager cannot carry out for a session on another machine. The error
-// is nil then; otherwise it is err as it was.
+// this manager cannot carry out for a session on another machine. The exit
+// status that carried the key is taken out of err, and a failure joined to
+// it, as the terminal's is on the way back from an attach, is returned.
+// Without a key the error is err as it was.
 func AttachKey(err error) (string, error) {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		parts := joined.Unwrap()
+		key, rest := "", make([]error, 0, len(parts))
+		for _, part := range parts {
+			partKey, partErr := AttachKey(part)
+			if partKey != "" {
+				key = partKey
+			}
+			rest = append(rest, partErr)
+		}
+		if key == "" {
+			return "", err
+		}
+		return key, errors.Join(rest...)
+	}
 	var exited interface{ ExitCode() int }
 	if errors.As(err, &exited) {
 		switch exited.ExitCode() {

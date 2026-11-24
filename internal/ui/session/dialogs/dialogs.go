@@ -394,8 +394,7 @@ func wholeGroupDelete(groups []string, path string, subtree []store.Session) Car
 	}
 	return Card{
 		Group: true,
-		Label: fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
-			path, subgroups, len(subtree)),
+		Label: uisession.GroupDeleteLabel(path, subgroups, len(subtree), "kills their tmux sessions."),
 		Target: uilifecycle.Target{
 			Action:    uilifecycle.Remove,
 			Path:      path,

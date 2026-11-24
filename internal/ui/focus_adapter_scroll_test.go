@@ -470,6 +470,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	waitForCat := readyCat(t, m, "quietchat")
 	createSessionOn(t, m, "fullscreen", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "fullscreen")
@@ -479,7 +480,7 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	// cat writes the enter sequence back to the pane, which tmux applies.
 	// The bytes go as hex: psmux turns a literal newline in send-keys -l
 	// into the two characters \n.
-	waitForPaneChild(t, m, sess.ID, "cat")
+	waitForCat(sess.ID)
 	if out, err := tmuxCmd(t, "send-keys", "-t", "am_"+sess.ID, "-H",
 		"1b", "5b", "3f", "31", "30", "34", "39", "68", "0a").CombinedOutput(); err != nil {
 		t.Fatalf("send-keys: %v: %s", err, out)

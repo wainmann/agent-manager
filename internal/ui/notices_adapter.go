@@ -1,11 +1,16 @@
 package ui
 
 import (
+	"path/filepath"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
+	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -29,7 +34,20 @@ func (m *Model) noticeSources() uinotices.Sources {
 	sources := m.release.Sources()
 	sources.Store = m.services.store != nil
 	sources.ConfigImportError = m.notices.ImportError
+	sources.HookFailures = m.notices.HookFailures
+	sources.HooksConfigError = m.notices.HooksConfigError
+	sources.NotifyNotCarried = m.notices.NotifyNotCarried
+	sources.NotifyFailed = m.notices.NotifyFailed
+	sources.HooksLog = filepath.Join(m.services.configDir, lifecyclehook.LogFile)
 	return sources
+}
+
+func hookFailuresFrom(in []store.HookFailure) []uinotices.HookFailure {
+	out := make([]uinotices.HookFailure, len(in))
+	for i, failure := range in {
+		out[i] = uinotices.HookFailure{At: failure.At, Event: failure.Event, Command: failure.Command, Reason: failure.Reason}
+	}
+	return out
 }
 
 func (m *Model) activeNotices() []uinotices.Notice {
@@ -81,7 +99,7 @@ func (m *Model) openNotices(id string) {
 // after an update. A dev build is the developer's own tree, not an
 // install, so it never greets and never advances the stored version.
 func (m *Model) openStartupGreeting() {
-	if m.release.Version == "dev" {
+	if !update.IsRelease(m.release.Version) {
 		return
 	}
 	switch id := m.startupGreeting(); id {

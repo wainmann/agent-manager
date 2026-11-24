@@ -36,7 +36,7 @@ func (h *helpRows) fixed(key, does string) {
 	h.rows = append(h.rows, [2]string{key, does})
 }
 
-func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string {
+func listHelpRows(list keybind.Table, arrowStep, arrowAttach bool, glyphs Glyphs) [][2]string {
 	mode := glyphs.Mode
 	h := helpRows{list: list, mode: mode}
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
@@ -48,7 +48,11 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.fixed("drag "+glyphs.Reorder, presentation.NavigationLabel(mode, "move the row, into another group too, or click it for ↑↓"))
 	h.fixed("click a key", "in a footer or a card's foot, run it as if typed")
 	if arrowStep {
-		h.action("step in: focus the session, open the group", keybind.StepIn)
+		stepIn := "step in: focus the session, open the group"
+		if arrowAttach {
+			stepIn = "step in: attach to the session full screen, open the group"
+		}
+		h.action(stepIn, keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)
 	}
 	h.action("reorder the row up among its siblings", keybind.ReorderUp)
@@ -62,11 +66,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
 	h.action("fold / unfold every group (active view)", keybind.FoldAll)
-	resize := "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"
-	if mode.Effective() == presentation.GlyphModeBasic {
-		resize = "resize split: left/right, h/l, drag; enter sets, esc cancels"
-	}
-	h.action(resize, keybind.Resize)
+	h.action(resizeHelp(mode), keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)
@@ -80,7 +80,7 @@ func sessionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]st
 	h.action("focus it: keys reach the agent, the list stays on screen", keybind.Open)
 	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
 	h.fixed("", "settings swap what the two do")
-	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
+	h.action("mark it idle when it is finished or waiting, without entering it", keybind.MarkIdle)
 	h.action("quick prompt mode: answer the session without attaching", keybind.Prompt)
 	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)
@@ -139,7 +139,10 @@ func connectionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2
 	h.action("edit its name and SSH destination", keybind.Rename)
 	h.action("remove it; its sessions keep running on that host", keybind.Delete)
 	h.action("new session or terminal on that host", keybind.NewSession, keybind.Terminal)
-	h.fixed("", "its sessions: attach, quick prompt, kill, revive, archive, restore")
+	h.action("move one of its agents to another group there", keybind.Move)
+	h.fixed("", "its agents: attach, prompt, kill, revive, archive, restore, delete")
+	h.fixed("", "its groups: delete there, with their subgroups and sessions")
+	h.fixed("", "its agents, terminals and groups: rename")
 	h.fixed("", "attach opens an SSH attach in this terminal")
 	return h.rows
 }
@@ -150,7 +153,7 @@ func helpSections(ctx Context) []helpSection {
 	mode := ctx.Glyphs.Mode
 	list := ctx.ListKeys
 	sections := []helpSection{
-		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
+		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.ArrowAttach, ctx.Glyphs)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list, mode)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list, mode)},
@@ -171,7 +174,7 @@ func helpSections(ctx Context) []helpSection {
 			{presentation.NavigationLabel(mode, "←→"), "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, [][2]string{
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, ctx.AttachedBack, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"click the list", "focused: back to the manager (mouse back too)"},
@@ -245,7 +248,7 @@ func formatSections(sections []helpSection, mode presentation.GlyphMode) []helpS
 	return sections
 }
 
-func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, mode presentation.GlyphMode) [][2]string {
+func sessionHelpRows(keys keybind.Table, arrowStep, attachedBack bool, mouseRows [][2]string, mode presentation.GlyphMode) [][2]string {
 	rows := [][2]string{
 		{"typing", "goes straight to the agent, q included"},
 		{"ctrl+c", "goes to the agent"},
@@ -257,7 +260,11 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, 
 	}
 	rows = append(rows, [2]string{detach[0].Tea(), back})
 	if arrowStep {
-		rows = append(rows, [2]string{presentation.NavigationLabel(mode, "←"), "focused: back to the manager, at the prompt's start"})
+		where := "focused"
+		if attachedBack {
+			where = "focused or attached"
+		}
+		rows = append(rows, [2]string{presentation.NavigationLabel(mode, "←"), where + ": back to the manager, at the prompt's start"})
 	}
 	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})
@@ -265,14 +272,28 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, 
 	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
+	if label := keys.Binding(keybind.Resize).Label(); label != "" {
+		// The section covers an attach too, where no resize binding is
+		// installed, so the row names the screen that keeps it.
+		rows = append(rows, [2]string{label, "focused: " + resizeHelp(mode)})
+	}
 	if label := keys.Binding(keybind.SavedPrompt).Label(); label != "" {
-		rows = append(rows, [2]string{label, "open saved prompts and paste the pick"})
+		rows = append(rows, [2]string{label, "focused: open saved prompts and paste the pick"})
 	}
 	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
 	}
 	rows = append(rows, [2]string{"pgup/pgdn", "focused: scroll the pane's history on its normal screen"})
 	return append(rows, mouseRows...)
+}
+
+// resizeHelp is the one wording the list's and a focused session's key map
+// share for the divider, so the two never drift apart.
+func resizeHelp(mode presentation.GlyphMode) string {
+	if mode.Effective() == presentation.GlyphModeBasic {
+		return "resize split: left/right, h/l, drag; enter sets, esc cancels"
+	}
+	return "resize the split (←→ or hl, drag; ↵ commits, esc cancels)"
 }
 
 func titledWith(name string, list keybind.Table, mode presentation.GlyphMode, actions ...string) string {

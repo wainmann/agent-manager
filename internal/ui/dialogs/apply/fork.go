@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -195,6 +196,7 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		Tool:        chosen,
 		BaseCommand: baseCommand,
 		Pane:        request.Pane,
+		Reason:      lifecyclehook.ReasonFork,
 	})
 	if err != nil {
 		return result, err

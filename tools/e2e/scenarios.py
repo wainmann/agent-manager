@@ -188,6 +188,8 @@ def select_row(sandbox, name, step):
         except TimeoutError:
             continue
         return
+    if row_selected(capture(sandbox), name):
+        raise AssertionError(f'row {name!r} is selected but its preview never showed {READY_MARKER!r}')
     raise AssertionError(f'row {name!r} not reachable in the list')
 
 
@@ -245,6 +247,8 @@ def spawn_form(sandbox, prompt, new_mark='◆'):
     key(sandbox, 'Enter')
     sandbox.wait('spawn-row', lambda: json.dumps(store_sessions(sandbox)),
                  lambda value: any(row['name'] == prompt for row in json.loads(value)))
+    # The row lands before the form closes, and a key sent meanwhile types into its prompt and keeps it open.
+    sandbox.wait('form-closed', lambda: capture(sandbox), lambda value: 'New Session' not in value)
     return prompt
 
 

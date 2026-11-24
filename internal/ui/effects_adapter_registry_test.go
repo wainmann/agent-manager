@@ -45,7 +45,7 @@ func TestEveryPackageEffectIsBoundAndApplied(t *testing.T) {
 	})
 
 	for _, effect := range packageEffects(t) {
-		if !applied[effect.name] && !errorOnly[effect.name] {
+		if !applied[effect.name] {
 			t.Errorf("%s is an effect with no case in applyEffect", effect.name)
 		}
 		if !bound[effect.services] {
@@ -53,10 +53,6 @@ func TestEveryPackageEffectIsBoundAndApplied(t *testing.T) {
 		}
 	}
 }
-
-// errorOnly are requests whose outcome is only their error, which the
-// default arm of applyEffect reports.
-var errorOnly = map[string]bool{"uilaunch.ChoiceSaveRequest": true}
 
 type packageEffect struct {
 	name     string

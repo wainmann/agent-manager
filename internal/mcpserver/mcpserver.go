@@ -202,6 +202,7 @@ type sessionCommands interface {
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
+	Delete(sessionID, targetID string) (sessioncmd.Deletion, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
 	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
 	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
@@ -369,12 +370,12 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_sessions",
-		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill or archive. " +
+		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill, delete or archive. " +
 			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
-			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
+			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, delete_session, revive_session, archive_session and move_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
 		listed, err := sessions.List(sessionID)
@@ -458,7 +459,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"The message is not typed in the instant you send it: Agent Manager holds it until that agent is at rest, so it can never land on an approval prompt and answer it. " +
 			"It arrives labelled as coming from another of the user's agents, and the recipient should treat it as the operator's instruction for ordinary work. Commit, push, merge, publish, and delete still wait for the user. " +
 			"Returns a message id for message_status; call read_session to see what the agent did with it. " +
-			"Refused rather than delivered: identical text to the same session inside ten minutes, more than five messages a minute from the same sender to the same recipient, more than twenty undelivered held by a recipient, more than eight messages between the same two sessions in ten minutes, or a message over 8000 bytes (point the agent at a file or a task instead). " +
+			"Refused rather than delivered: identical text to the same session inside ten minutes, more than five messages a minute from the same sender to the same recipient, more than twenty undelivered held by a recipient, or a message over 8000 bytes (point the agent at a file or a task instead). " +
 			"After a refusal, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
@@ -550,6 +551,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 		return textContent("killed " + sessioncmd.FormatSession(killed)), killed, nil
 	})
+	addDeleteSession(server, noCaller, sessionID, sessions, remotes)
 
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "archive_session",
@@ -580,10 +582,11 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Only where the row is filed changes; the agent keeps running.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		if err := localOnly("move_session", args.SessionID); err != nil {
-			return nil, sessioncmd.Session{}, err
+		move := func() (sessioncmd.Session, error) { return sessions.Move(sessionID, args.SessionID, args.Group) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			move = func() (sessioncmd.Session, error) { return remotes.move(ctx, ref, args.Group) }
 		}
-		moved, err := sessions.Move(sessionID, args.SessionID, args.Group)
+		moved, err := move()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}

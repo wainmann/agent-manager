@@ -228,6 +228,24 @@ func TestDeadlineIsUnreachable(t *testing.T) {
 	}
 }
 
+func TestACallItsCallerGaveUpOnIsNotAnOutdatedHost(t *testing.T) {
+	started := make(chan struct{})
+	c := newTestClient(t, func(ctx context.Context, _ []string) ([]byte, []byte, error) {
+		close(started)
+		<-ctx.Done()
+		return []byte(`{"output":"ab`), nil, errors.New("signal: killed")
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+	_, err := c.ReadSession(ctx, Ref{Host: "gpu", ID: "a1"})
+	if !errors.Is(err, context.Canceled) || TroubleOf(err) == TroubleOutdated {
+		t.Fatalf("a call cut off mid-answer by its caller = %v, trouble %v", err, TroubleOf(err))
+	}
+}
+
 func TestEveryCallHasADeadline(t *testing.T) {
 	deadlines := map[string]time.Duration{}
 	c := newTestClient(t, func(ctx context.Context, argv []string) ([]byte, []byte, error) {
@@ -239,10 +257,19 @@ func TestEveryCallHasADeadline(t *testing.T) {
 		return []byte(`{}`), nil, nil
 	})
 	ctx := context.Background()
+	c.Snapshot(ctx, "gpu")
 	c.Kill(ctx, Ref{Host: "gpu", ID: "a1"})
+	c.Archive(ctx, Ref{Host: "gpu", ID: "a1"}, false)
+	c.Delete(ctx, Ref{Host: "gpu", ID: "a1"})
+	c.DeleteGroup(ctx, "gpu", "web")
 	c.Spawn(ctx, "gpu", sessioncmd.CreateSessionOptions{})
-	if d := deadlines["kill"]; d <= 14*time.Second || d > callTimeout {
-		t.Fatalf("kill deadline %v, want %v", d, callTimeout)
+	if d := deadlines["snapshot"]; d <= 14*time.Second || d > callTimeout {
+		t.Fatalf("snapshot deadline %v, want %v", d, callTimeout)
+	}
+	for _, command := range []string{"kill", "archive", "delete", "delete-group"} {
+		if d := deadlines[command]; d <= hookCallTimeout-time.Second || d > hookCallTimeout {
+			t.Fatalf("%s deadline %v, want %v for the host's hook drain", command, d, hookCallTimeout)
+		}
 	}
 	if d := deadlines["spawn"]; d <= 59*time.Second || d > createTimeout {
 		t.Fatalf("spawn deadline %v, want %v", d, createTimeout)

@@ -95,6 +95,7 @@ func TestResultsAreCleaned(t *testing.T) {
 		"kill":    func(c *Client) (sessioncmd.Session, error) { return c.Kill(ctx, ref) },
 		"revive":  func(c *Client) (sessioncmd.Session, error) { return c.Revive(ctx, ref) },
 		"archive": func(c *Client) (sessioncmd.Session, error) { return c.Archive(ctx, ref, false) },
+		"move":    func(c *Client) (sessioncmd.Session, error) { return c.Move(ctx, ref, "work") },
 	}
 	for name, run := range lifecycles {
 		c, _ := recorder(t, session)
@@ -107,7 +108,16 @@ func TestResultsAreCleaned(t *testing.T) {
 		}
 	}
 
-	c, _ := recorder(t, `{"id":"t1","name":"`+hostile+`","parent_id":"a1","parent_name":"`+hostile+`"}`)
+	c, _ := recorder(t, `{"id":"s1","name":"`+hostile+`","notice":"`+hostile+`"}`)
+	if got, err := c.Delete(ctx, ref); err != nil || got != (sessioncmd.Deletion{Session: sessioncmd.Session{ID: "s1", Name: "xy"}, Notice: "xy"}) {
+		t.Errorf("Delete = %+v, %v", got, err)
+	}
+	c, _ = recorder(t, `{"id":"s1;reboot"}`)
+	if got, err := c.Delete(ctx, ref); err == nil {
+		t.Errorf("Delete accepted an unsafe id: %+v", got)
+	}
+
+	c, _ = recorder(t, `{"id":"t1","name":"`+hostile+`","parent_id":"a1","parent_name":"`+hostile+`"}`)
 	if got, err := c.CreateTerminal(ctx, "gpu", sessioncmd.CreateTerminalOptions{}); err != nil ||
 		got != (sessioncmd.Terminal{ID: "t1", Name: "xy", ParentID: "a1", ParentName: "xy"}) {
 		t.Errorf("CreateTerminal = %+v, %v", got, err)

@@ -3,6 +3,8 @@ package review
 import (
 	"testing"
 
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -116,5 +118,38 @@ func TestDecidePickRefusesAStaleOrUnsaveablePick(t *testing.T) {
 	base := m.DecidePick(PickedMsg{Choice: PickerChoice{Kind: PickBase, Value: "main"}, Source: fresh, StoreRoot: "/w/one"})
 	if base.Refused != "" || base.Base == nil || base.Base.Ref != "main" || base.Base.StoreRoot != "/w/one" || base.Base.TargetID != "s1" {
 		t.Fatalf("base pick = %+v", base)
+	}
+}
+
+// reanchorAnnotations looks its file up without a nil check, so ApplyFile
+// must refuse a result whose index and path do not name a file in the set,
+// even when a comment on that path is waiting to re-anchor.
+func TestApplyFileRefusesAPathOutsideTheSetBeforeReanchoring(t *testing.T) {
+	m := New(false)
+	request := m.Open(Target{ID: "s1"}, git.ScopeUncommitted, "/repo")
+	set := diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "a.go"}}}}
+	m.ApplyLoad(LoadResult{
+		TargetID: "s1", Scope: request.Scope, Generation: request.Generation, Set: set,
+		RepoRoots: []string{"/repo"}, RepoRoot: "/repo", SavedLoaded: true,
+		Saved: SavedState{Comments: []Comment{
+			{ID: "aaaaaaaaaaaaaaa1", File: "a.go", Line: 1, Excerpt: "alpha()", Text: "stays"},
+			{ID: "aaaaaaaaaaaaaaa2", File: "gone.go", Line: 1, Excerpt: "beta()", Text: "file left the set"},
+		}},
+	})
+	loaded := diff.BuildFile(nil, []byte("x\nalpha()\n"), git.ChangedFile{Path: "a.go"}, git.FileStat{})
+	result := func(index int, path string) FileResult {
+		return FileResult{TargetID: "s1", Scope: request.Scope, Generation: request.Generation,
+			RepoRoot: "/repo", Index: index, Path: path, File: loaded}
+	}
+	for _, refused := range []FileResult{result(0, "gone.go"), result(1, "gone.go"), result(-1, "a.go")} {
+		if got := m.ApplyFile(refused); got.Accepted {
+			t.Fatalf("accepted index %d path %q", refused.Index, refused.Path)
+		}
+	}
+	if got := m.ApplyFile(result(0, "a.go")); !got.Accepted {
+		t.Fatal("refused the file the set names")
+	}
+	if notes := m.Annotations(); notes[0].Line != 2 || notes[1].Line != 1 {
+		t.Fatalf("lines = %d, %d, want 2, 1", notes[0].Line, notes[1].Line)
 	}
 }

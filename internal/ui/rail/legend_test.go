@@ -70,3 +70,63 @@ func TestRootLegendOnlyOffersApplicableActions(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteLegendOffersDeleteOnAnAgentOnly(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}
+	agent := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box"}, false)
+	if !slices.Contains(agent.Pairs, [2]string{"d", "delete"}) {
+		t.Fatalf("a remote agent should offer delete, got %+v", agent.Pairs)
+	}
+	// d on a shell closes it, which x already offers.
+	shell := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box", Terminal: true}, false)
+	if slices.Contains(shell.Pairs, [2]string{"d", "delete"}) {
+		t.Fatalf("a remote shell should leave delete to close, got %+v", shell.Pairs)
+	}
+}
+
+// d on a remote group deletes it there in the active view only; the
+// archived view's delete has no host call.
+func TestRemoteGroupLegendOffersDeleteOutsideTheArchive(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}
+	group := rail.RemoteRow{Kind: rail.GroupRow, Host: "box"}
+	if legend := model.RemoteLegendInView(ctx, group, false, false); !slices.Contains(legend.Pairs, [2]string{"d", "delete"}) {
+		t.Fatalf("a remote group should offer delete, got %+v", legend.Pairs)
+	}
+	if legend := model.RemoteLegendInView(ctx, group, false, true); slices.ContainsFunc(legend.Pairs, func(pair [2]string) bool { return pair[1] == "delete" }) {
+		t.Fatalf("a remote group in the archived view should not offer delete, got %+v", legend.Pairs)
+	}
+}
+
+func TestRemoteLegendOffersRenameOnAgentsShellsAndGroups(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList()}
+	for _, row := range []rail.RemoteRow{{Kind: rail.SessionRow, Host: "box"}, {Kind: rail.SessionRow, Host: "box", Terminal: true}, {Kind: rail.GroupRow, Host: "box"}} {
+		if legend := model.RemoteLegend(ctx, row, false); !slices.Contains(legend.Pairs, [2]string{"r", "rename"}) {
+			t.Fatalf("%s should offer rename, got %+v", legend.Title, legend.Pairs)
+		}
+	}
+}
+
+func TestRemoteLegendOffersMoveOnAnAgentOnly(t *testing.T) {
+	model := rail.New(nil)
+	remapped, err := keybind.Parse("M")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, keys := range map[string]keybind.Table{
+		"m": keybind.DefaultList(),
+		"M": keybind.DefaultList().With(keybind.Move, keybind.Keys(remapped)),
+	} {
+		ctx := rail.LegendContext{ListKeys: keys}
+		agent := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box"}, false)
+		if !slices.Contains(agent.Pairs, [2]string{key, "move"}) {
+			t.Fatalf("a remote agent should offer move on %s, got %+v", key, agent.Pairs)
+		}
+		shell := model.RemoteLegend(ctx, rail.RemoteRow{Kind: rail.SessionRow, Host: "box", Terminal: true}, false)
+		if slices.ContainsFunc(shell.Pairs, func(pair [2]string) bool { return pair[1] == "move" }) {
+			t.Fatalf("a remote shell is neither moved nor nested there, got %+v", shell.Pairs)
+		}
+	}
+}

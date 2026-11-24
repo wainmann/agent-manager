@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	tmux.ConfigFile = os.DevNull
 	cleanup, err := testfixture.Prepare(testSocket)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -49,7 +50,7 @@ func runTests(m *testing.M) int {
 }
 
 func tmuxCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command(tmux.Binary, append([]string{"-L", testSocket}, args...)...)
+	cmd := exec.Command(tmux.Binary, tmux.SocketArgs(testSocket, args...)...)
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(os.Environ(), "PSMUX_NO_WARM=1")
 	}
@@ -80,11 +81,17 @@ func skipControlMode(t *testing.T) {
 // lostMsg is a lost client as newTestWatcher delivers it.
 type lostMsg struct{ err error }
 
+// clipboardMsg is a clipboard write as newTestWatcher delivers it.
+type clipboardMsg struct{ sessionID, text string }
+
 // newTestWatcher delivers frames and lost clients through one send, the way
 // the root UI receives them as messages.
 func newTestWatcher(driver *tmux.Driver, send func(any)) *Watcher {
 	return New(driver, 300*time.Millisecond, Sink{
 		Frame: func(frame Frame) { send(frame) },
 		Lost:  func(err error) { send(lostMsg{err}) },
+		Clipboard: func(sessionID, text string) {
+			send(clipboardMsg{sessionID, text})
+		},
 	})
 }

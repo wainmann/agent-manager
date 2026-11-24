@@ -50,6 +50,16 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((self.sandbox.artifacts / 'moving-selected.txt').read_text(), selected)
         self.assertFalse((self.sandbox.artifacts / 'j-selected.txt').exists())
 
+    def test_spawn_waits_for_the_form_to_close(self):
+        form = '◆ New Session\nfixagent'
+        frames = iter([form, form, form, form, 'rail'])
+        self.sandbox.tmux = lambda *args: None
+        with patch.object(scenarios, 'capture', side_effect=lambda _: next(frames)), \
+                patch.object(scenarios, 'store_sessions', return_value=[{'name': 'fixagent'}]), \
+                patch.object(scenarios, 'key'):
+            scenarios.spawn_form(self.sandbox, 'fixagent')
+        self.assertIsNone(next(frames, None))
+
     def test_selected_remote_preview_does_not_receive_a_navigation_key(self):
         selected = preview('remote-agent on box')
         with patch.object(ssh_scenarios, 'capture', return_value=selected), \

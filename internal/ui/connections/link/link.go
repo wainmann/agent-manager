@@ -43,6 +43,9 @@ type Root interface {
 	// CloseAsker closes the form or card a completed call came from, when
 	// it is still the one that asked.
 	CloseAsker(gen int, asker Asker)
+	// CloseRename closes the name field a completed rename came from, when
+	// it still holds the name that was sent or names a group.
+	CloseRename(gen int, name string)
 	// SettleAccepted closes the quick bar a delivered send came from when
 	// it asks to and nothing reached it since.
 	SettleAccepted(composerGen int, submitted uint64, closeAfterSend bool)
@@ -220,7 +223,7 @@ func (s *State) Read() tea.Cmd {
 	}
 	client := s.Client
 	return func() tea.Msg {
-		text, err := client.ReadScreen(context.Background(), read.Ref, read.Terminal)
+		text, err := client.ReadScreen(read.Ctx, read.Ref, read.Terminal)
 		return PreviewMsg{Read: read, Text: text, Err: err}
 	}
 }
@@ -269,16 +272,24 @@ func (s *State) attachReady(root Root, msg AttachReadyMsg) tea.Cmd {
 }
 
 // attachDone reports how the attach ended and picks the host and its screen
-// back up.
+// back up. A key the host asked for and a failure on the way back share the
+// one status line.
 func (s *State) attachDone(root Root, msg AttachDoneMsg) tea.Cmd {
 	key, err := remote.AttachKey(msg.Err)
+	note := ""
+	switch key {
+	case "review":
+		note = "review opens only for sessions on this machine, not yet for one on " + msg.Host
+	case "editor":
+		note = "the editor opens only for sessions on this machine, not yet for one on " + msg.Host
+	}
 	switch {
+	case err != nil && note != "":
+		root.ReportErr(note + "; " + err.Error())
 	case err != nil:
 		root.ReportErr(msg.Host + ": attach ended: " + err.Error())
-	case key == "review":
-		root.ReportErr("review opens only for sessions on this machine, not yet for one on " + msg.Host)
-	case key == "editor":
-		root.ReportErr("the editor opens only for sessions on this machine, not yet for one on " + msg.Host)
+	case note != "":
+		root.ReportErr(note)
 	}
 	return tea.Batch(s.PollHost(msg.Host), s.Read())
 }

@@ -17,6 +17,11 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
+
 type recordedStart struct {
 	calls   int
 	args    []string
@@ -110,7 +115,7 @@ func TestServeStopsWhenItsContextEndsAfterPolling(t *testing.T) {
 		_ = os.Remove(driver.SocketPath())
 	})
 	dir := t.TempDir()
-	local, err := OpenLocal(dir, driver)
+	local, err := OpenLocal(dir, "test", driver)
 	if err != nil {
 		t.Fatalf("OpenLocal: %v", err)
 	}

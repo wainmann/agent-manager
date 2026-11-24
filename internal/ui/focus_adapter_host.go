@@ -28,6 +28,7 @@ func (h focusHost) Bindings(pressed string) uifocus.Bindings {
 	keys := h.m.services.keys
 	bindings := uifocus.Bindings{
 		Detach:    keys.Binding(keybind.Detach).Has(pressed),
+		Resize:    keys.Binding(keybind.Resize).Has(pressed),
 		Editor:    keys.Binding(keybind.Editor).Has(pressed),
 		Review:    keys.Binding(keybind.Review).Has(pressed),
 		Saved:     keys.Binding(keybind.SavedPrompt).Has(pressed),
@@ -41,20 +42,29 @@ func (h focusHost) Bindings(pressed string) uifocus.Bindings {
 
 func (h focusHost) RuntimeReady() bool { return h.m.focus.runtime.Ready() }
 
+// Resize arms the divider gesture over the focused pane, the way the list's
+// key does on the list.
+func (h focusHost) Resize() tea.Cmd {
+	_, cmd := h.m.enterResizeMode()
+	return cmd
+}
+
 func (h focusHost) Queued(id string, write uifocus.Write) tea.Cmd {
 	sess, ok := h.m.sessionByID(id)
 	if !ok {
 		return nil
 	}
-	command := write.Command
-	if write.Kind == uifocus.WriteKeys {
+	command, args := write.Command, write.Args
+	if write.ExtendedOnly {
+		command, args = tmux.GuardedExtendedKey(tmux.PaneTarget(id), write.Name)
+	} else if write.Kind == uifocus.WriteKeys {
 		command = keyCommand(tmux.PaneTarget(id), write.Raw, write.Name)
 	}
 	h.m.dispatchInput(focusruntime.Request{
 		Kind:    focusruntime.Kind(write.Kind),
 		Session: sess,
 		Command: command,
-		Args:    write.Args,
+		Args:    args,
 		Text:    write.Text,
 		Submit:  write.Submit,
 		Echo:    write.Echo,

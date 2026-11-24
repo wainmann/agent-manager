@@ -29,7 +29,7 @@
 
 <p align="center">
   <a href="https://github.com/wainmann/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/wainmann/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
-  <a href="https://github.com/wainmann/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwainmann%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
+  <a href="https://github.com/wainmann/agent-manager/releases"><img src="https://img.shields.io/github/downloads/wainmann/agent-manager/total?style=for-the-badge&label=downloads&labelColor=1f2328&color=6f42c1" alt="downloads"></a>
   <a href="https://github.com/wainmann/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/wainmann/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
   <a href="https://discord.gg/ecS88An7pF"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1f2328" alt="Discord"></a>
   <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/sponsor-github-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor on GitHub"></a>
@@ -42,7 +42,7 @@
 
 ![three agents spawned from the quick prompt bar, one each on Claude Code, Codex and Gemini CLI, tab picking the CLI each time, each new agent landing in the list](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, Cursor CLI, Kiro CLI, and GitHub Copilot CLI run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -64,106 +64,37 @@ Not here yet: cost tracking.
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, **Muse Code**, **Oh My Pi**, and **Cursor CLI**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes, Antigravity, Oh My Pi, and Cursor CLI have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/wainmann/agent-manager/issues/new/choose).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, **Muse Code**, **Oh My Pi**, **Cursor CLI**, **Kiro CLI**, and **GitHub Copilot CLI**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes, Antigravity, Oh My Pi, Cursor CLI, Kiro CLI, and GitHub Copilot CLI have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/wainmann/agent-manager/issues/new/choose).
 
 ## Install
 
-Runs on macOS and Linux, natively on Windows with [psmux](docs/install.md#windows), and inside WSL2.
-
-### Homebrew (macOS / Linux)
+Runs on macOS, Linux, Windows (with [psmux](docs/install.md#windows)) and WSL2.
 
 ```bash
-brew install agent-manager
+brew install agent-manager                         # Homebrew (macOS / Linux)
+brew install --cask yoanwai/tap/agent-manager      # Homebrew cask, prebuilt binary
+yay -S agent-manager-bin                           # Arch Linux (AUR)
+mise use -g github:wainmann/agent-manager          # mise
+go install github.com/YoanWai/agent-manager@latest # Go
 ```
 
-Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. This is the homebrew-core formula, which builds from source. For the prebuilt binary, `brew install --cask yoanwai/tap/agent-manager`.
-
-### Scoop (Windows)
+```bash
+# install script (macOS / Linux / WSL2)
+curl -fsSL https://github.com/wainmann/agent-manager/releases/latest/download/install.sh | sh
+```
 
 ```powershell
+# install script (Windows)
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 | iex
+```
+
+```powershell
+# Scoop (Windows)
 scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update agent-manager`. A global install uses `scoop update agent-manager --global` in an elevated PowerShell. The in-app updater shows those instructions instead of replacing Scoop's binary.
-
-<!--
-winget is not listed yet. Each release opens a manifest PR to
-microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
-microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
-Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
-and microsoft/winget-pkgs#469116 (0.47.1).
-When the package is published, add a winget section here with:
-winget install --id YoanWai.AgentManager -e
--->
-
-### Install script (macOS / Linux)
-
-Download the script, read it, then run it. `sh install.sh` runs only after that download succeeds.
-
-```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh &&
-sh install.sh
-```
-
-That copy is the script on `main`. It is not in `checksums.txt`. The release that first attaches `install.sh` lists that file in `checksums.txt`. Once it does, download the attached file and, when `gh` is logged in, verify it before the script runs:
-
-```bash
-curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo wainmann/agent-manager &&
-sh install.sh
-```
-
-The release URL above has no file until that tag exists, so the first command is the one that works until then. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
-
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. When that check fails, the script tries again with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which older releases need, and stops only if both fail. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
-
-Running it without a file to read first:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh
-```
-
-### Verified zip (Windows)
-
-Download the Windows zip for your architecture and `checksums.txt` from the same [release](https://github.com/wainmann/agent-manager/releases/latest). Compare its SHA-256 with the matching line in `checksums.txt` before extracting it. The [manual Windows install](docs/install.md#download-and-verify-the-zip) gives the PowerShell commands, optional provenance verification, and dependency setup.
-
-### Install script (Windows)
-
-Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
-
-```powershell
-irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Content .\install.ps1
-    Unblock-File .\install.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-}
-```
-
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Older releases verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example: PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
-
-```powershell
-irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
-if ($?) {
-    Get-Command gh -ErrorAction Stop | Out-Null
-    if ($?) {
-        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
-        if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
-        if ($LASTEXITCODE -eq 0) {
-            Get-Content .\install.ps1
-            Unblock-File .\install.ps1
-            powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-        }
-    }
-}
-```
-
-On a Windows client with no execution policy set, the effective policy is Restricted, so every `.ps1` is refused. `-ExecutionPolicy Bypass` applies to that process only, after you have read the file. Where the policy is already RemoteSigned, `Unblock-File` then `.\install.ps1` is enough. RemoteSigned refuses an unsigned script that still has the Mark of the Web. A browser download sets that mark. `irm -OutFile` does not (Microsoft documents `Invoke-WebRequest` as not marking the Internet zone). `Unblock-File` does nothing in that case.
-
-Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
-
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, updating, and uninstalling: [docs/install.md](docs/install.md).
+Prebuilt binaries for every platform are on [Releases](https://github.com/wainmann/agent-manager/releases). [docs/install.md](docs/install.md) covers dependencies, checking a download, updating and uninstalling.
 
 ## Usage
 
@@ -186,7 +117,7 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 | drag `⠿` / `=` | Reorder a row, drop it into another group, or nest a terminal under an agent |
 | `[…]` / right click | The row's actions: attach, prompt, review, fork, rename, move, archive, kill, delete and more |
 | click the list / mouse back | Focused: back to the list. A click on another row focuses that one |
-| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. Settings can turn the pair off |
+| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. Settings can turn the pair off, or set it to `attach`: `→` then attaches full screen and `←` at the prompt's start comes back from the attach (macOS and Linux hosts) |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
@@ -226,7 +157,7 @@ Join the [Agent Manager Community](https://discord.gg/ecS88An7pF) on Discord. As
 
 **Contributors and collaborators wanted.** agent-manager is actively looking for people to help build it. Unassigned issues are free to take, comment on one to claim it, and regular contributors get invited as collaborators. Say hi in #dev on [Discord](https://discord.gg/ecS88An7pF).
 
-Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
+Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Project roles and how decisions are made are in [GOVERNANCE.md](GOVERNANCE.md), with the current roster in [MAINTAINERS.md](MAINTAINERS.md). Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
 
 ### Contributors
 

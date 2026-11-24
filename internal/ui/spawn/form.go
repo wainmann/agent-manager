@@ -145,7 +145,7 @@ func TextField(placeholder string, limit int) textinput.Model {
 }
 
 func NewForm(h ChoiceHost, tools []string, toolIndex int) Form {
-	name := TextField("my-session", 60)
+	name := TextField("my-session", 0)
 	name.Focus()
 	return Form{
 		name:      name,
@@ -201,15 +201,9 @@ func (d *Form) savedKey(msg tea.KeyMsg) tea.Cmd {
 // instead of clipping at the card edge. Inputs reserve 3 columns: their
 // "> " prompt plus the cursor cell that renders past the last character.
 func (d *Form) SyncWidths(inner int) {
-	d.name.Width = inner - 3
-	d.dir.Width = inner - 3
-	// textinput recomputes its scroll window only inside Update/SetValue/
-	// SetCursor, so a width change alone would render a stale window until
-	// the next keystroke.
-	d.name.SetCursor(d.name.Position())
-	d.dir.SetCursor(d.dir.Position())
-	d.choice.filter.Width = inner - 3
-	d.choice.filter.SetCursor(d.choice.filter.Position())
+	presentation.FitInput(&d.name, inner-3)
+	presentation.FitInput(&d.dir, inner-3)
+	presentation.FitInput(&d.choice.filter, inner-3)
 }
 
 func (d *Form) Tool() string {

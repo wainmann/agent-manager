@@ -13,14 +13,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/lifecyclehook"
 	"github.com/YoanWai/agent-manager/internal/remote/value"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
 const (
-	callTimeout   = 15 * time.Second
-	createTimeout = 60 * time.Second
-	maxInFlight   = 4
+	callTimeout = 15 * time.Second
+	// hookCallTimeout is for a call that can fire hooks there. The CLI on
+	// the host waits up to DrainCall for them before it answers.
+	hookCallTimeout = callTimeout + lifecyclehook.DrainCall
+	createTimeout   = 60 * time.Second
+	maxInFlight     = 4
 	// exitSSH is ssh's own failure; the remote command's status passes
 	// through otherwise.
 	exitSSH = 255
@@ -295,8 +299,9 @@ func (c *Client) decode(ctx context.Context, host string, timeout time.Duration,
 	if err != nil {
 		// A command an older agent-manager does not know falls through to
 		// its interactive manager, which fails without a terminal after
-		// printing escape sequences instead of JSON.
-		if !Unreachable(err) && !errors.Is(err, errTooLong) && len(bytes.TrimSpace(out)) > 0 && !json.Valid(out) {
+		// printing escape sequences instead of JSON. A call its caller gave
+		// up on is cut off mid-answer too, and says nothing about the host.
+		if ctx.Err() == nil && !Unreachable(err) && !errors.Is(err, errTooLong) && len(bytes.TrimSpace(out)) > 0 && !json.Valid(out) {
 			return outdated(host)
 		}
 		return err

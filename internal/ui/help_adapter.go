@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
@@ -16,7 +17,15 @@ import (
 type helpHost struct{ *Model }
 
 func (h helpHost) KeyTables() uihelp.Tables {
-	return uihelp.Tables{Session: h.services.keys, List: h.services.listKeys, ArrowStep: h.prefs.arrowStep}
+	return uihelp.Tables{Session: h.services.keys, List: h.services.listKeys, ArrowStep: h.prefs.arrowStep, ArrowAttach: h.prefs.arrowAttach,
+		AttachedBack: h.prefs.arrowAttach && h.attachBindsPromptHead()}
+}
+
+// attachBindsPromptHead asks the host the selected row attaches on. A
+// remote row's host is Linux or macOS, whatever this machine runs.
+func (h helpHost) attachBindsPromptHead() bool {
+	selection, _ := h.rail.Selected()
+	return selection.Remote() || tmux.AttachedPromptHead
 }
 
 func (h helpHost) Glyphs() uihelp.Glyphs {

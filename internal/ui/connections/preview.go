@@ -1,6 +1,7 @@
 package connections
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -20,27 +21,41 @@ type Preview struct {
 	err      string
 	gen      uint64
 	reading  bool
+	// drop ends the read that is out.
+	drop context.CancelFunc
 }
 
 // Read is one read of a remote screen the root runs off the update path.
+// Ctx ends once the selection leaves the row, so a read nobody will see
+// gives its host's one call back to whatever the user does next.
 type Read struct {
 	Ref      remote.Ref
 	Terminal bool
 	Gen      uint64
+	Ctx      context.Context
 }
 
 // Follow tracks the selected row, and reports whether it is an agent or
 // terminal not read yet. Anything else clears the preview.
 func (p *Preview) Follow(row Row, ok bool) bool {
 	if !ok || row.Kind != SessionRow {
+		p.leave()
 		*p = Preview{gen: p.gen + 1}
 		return false
 	}
 	if p.ref == row.Ref {
 		return false
 	}
+	p.leave()
 	*p = Preview{ref: row.Ref, terminal: row.Terminal, gen: p.gen + 1}
 	return true
+}
+
+// leave drops the read that is out for the row the selection is leaving.
+func (p *Preview) leave() {
+	if p.drop != nil {
+		p.drop()
+	}
 }
 
 // StartRead claims the next read of the tracked row, unless there is none,
@@ -54,7 +69,9 @@ func (c *Connections) StartRead() (Read, bool) {
 		return Read{}, false
 	}
 	p.reading = true
-	return Read{Ref: p.ref, Terminal: p.terminal, Gen: p.gen}, true
+	ctx, drop := context.WithCancel(context.Background())
+	p.drop = drop
+	return Read{Ref: p.ref, Terminal: p.terminal, Gen: p.gen, Ctx: ctx}, true
 }
 
 // Apply lands a read, unless the selection moved since it started.

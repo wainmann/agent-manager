@@ -288,6 +288,7 @@ var sessionActions = []Action{
 	{Editor, "open its directory", keys("f3")},
 	{TmuxPrefix, "replaces your tmux prefix while attached", Binding{}},
 	{SavedPrompt, "open saved prompts", keys("f4")},
+	{Resize, "resize the split", keys("ctrl+]")},
 }
 
 var listActions = []Action{
@@ -307,7 +308,7 @@ var listActions = []Action{
 	{Prompt, "quick prompt mode", keys("space")},
 	{CopyReply, "copy the session's newest reply to the clipboard", keys("y")},
 	{Review, "review the session's diff", keys("ctrl+r")},
-	{MarkIdle, "mark a finished session idle", keys(".")},
+	{MarkIdle, "mark a finished or waiting session idle", keys(".")},
 	{Rename, "rename the session, edit the group", keys("r")},
 	{Move, "move the row to another group", keys("m")},
 	{Editor, "open the directory in your editor", keys("o")},
@@ -325,7 +326,7 @@ var listActions = []Action{
 	{Archived, "archived view", keys("t")},
 	{EmptyGroups, "hide / show empty groups", keys("e")},
 	{FoldAll, "fold / unfold every group", keys("F")},
-	{Resize, "resize the split", keys("|")},
+	{Resize, "resize the split", keys("ctrl+]")},
 	{Settings, "settings", keys("s")},
 	{Messages, "messages", keys("M")},
 	{Help, "the key map", keys("?")},

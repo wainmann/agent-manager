@@ -35,6 +35,8 @@ func (r linkRoot) RailConnection(change uilink.RailChange) {
 		r.queueRail(r.rail.RenameHost(change.Rename, change.To).Mutations, 0, true)
 	case change.Forget != "":
 		r.queueRail(r.rail.ForgetHost(change.Forget).Mutations, 0, true)
+	case change.Group != "":
+		r.queueRail(r.rail.RenameGroup(change.GroupHost, change.Group, change.ToGroup).Mutations, 0, true)
 	}
 	if change.Focus != "" {
 		r.rail.Focus(uirail.Selection{Kind: uirail.ConnectionRow, Host: change.Focus})
@@ -67,12 +69,33 @@ func (r linkRoot) CloseAsker(gen int, asker uilink.Asker) {
 	}
 }
 
+func (r linkRoot) CloseRename(gen int, name string) {
+	s, ok := surfaceOf[*uidialogs.RenameSurface](r.Model)
+	// A group field closes on any name: the path it names is gone once the
+	// host renamed it, and r on the new row opens it again.
+	if ok && uint64(gen) == r.gens.dialog && (s.Group() != "" || s.Name() == name) {
+		r.Pop()
+	}
+}
+
 func (r linkRoot) SettleAccepted(composerGen int, submitted uint64, closeAfterSend bool) {
 	r.settleAccepted(composerGen, submitted, closeAfterSend)
 }
 
 func (r linkRoot) RestoreRefused(composerGen int, submission spawn.Submission) {
 	r.restoreRefused(composerGen, submission)
+}
+
+// remoteRenameRoot is the root as a remote row's rename field reaches it:
+// the call it opened with, which a submit completes with the new name.
+type remoteRenameRoot struct {
+	*Model
+	call uilink.Call
+}
+
+func (r remoteRenameRoot) QueueRename(request uidialogs.RenameRequest) tea.Cmd {
+	r.call.Text = request.Name
+	return r.queueRemote(r.call)
 }
 
 // connectionsRoot is the root as the connection card reads it: the theme's
@@ -110,8 +133,9 @@ func (r connectionsRoot) Report(err error) tea.Cmd {
 }
 
 var (
-	_ uilink.Root        = linkRoot{}
-	_ uiconnections.Root = connectionsRoot{}
+	_ uilink.Root          = linkRoot{}
+	_ uiconnections.Root   = connectionsRoot{}
+	_ uidialogs.RenameRoot = remoteRenameRoot{}
 )
 
 // routeConnectionMsg hands a routed connection result to the package, and

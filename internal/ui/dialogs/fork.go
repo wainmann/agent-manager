@@ -3,6 +3,7 @@ package dialogs
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,7 +23,7 @@ type Fork struct {
 }
 
 func (d *Fork) Open(sourceName, sourceGroup string) {
-	name := newField("fork name", 60)
+	name := newField("fork name", 0)
 	name.SetValue(sourceName + "-fork")
 	name.CursorEnd()
 	name.Focus()
@@ -35,6 +36,11 @@ func (d Fork) Gen() int { return d.gen }
 func (d Fork) Name() string { return cleanName(d.name.Value()) }
 
 func (d *Fork) SetName(name string) { d.name.SetValue(name) }
+
+// SetWidth fits the name field to the card, so a long name scrolls.
+func (d *Fork) SetWidth(width int) {
+	presentation.FitInput(&d.name, width)
+}
 
 type ForkAction uint8
 

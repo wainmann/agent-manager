@@ -388,6 +388,16 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
+	case "home":
+		return tea.KeyMsg{Type: tea.KeyHome}
+	case "end":
+		return tea.KeyMsg{Type: tea.KeyEnd}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -596,14 +606,19 @@ func TestNoticesEscCloses(t *testing.T) {
 }
 
 func TestDevBuildNeverGreets(t *testing.T) {
-	st := noticeStore(t)
-	m := noticeModel(st, "dev")
-	m.openStartupGreeting()
-	if !m.listClear() {
-		t.Fatal("a dev build must not open a startup greeting")
-	}
-	if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "" {
-		t.Fatalf("a dev build must not advance the stored version, got %q", seen)
+	for _, version := range []string{"dev", "v0.2.0-10-g1656b508-dirty"} {
+		st := noticeStore(t)
+		if err := st.SetSetting(uirelease.LastSeenSetting, "v0.1.0"); err != nil {
+			t.Fatal(err)
+		}
+		m := noticeModel(st, version)
+		m.openStartupGreeting()
+		if !m.listClear() {
+			t.Fatalf("%s build must not open a startup greeting", version)
+		}
+		if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "v0.1.0" {
+			t.Fatalf("%s build must not advance the stored version, got %q", version, seen)
+		}
 	}
 }
 

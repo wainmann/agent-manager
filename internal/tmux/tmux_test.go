@@ -44,6 +44,7 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	ConfigFile = os.DevNull
 	// psmux keeps its servers' registry under its data directory, which a
 	// fresh one isolates the way the private socket does for tmux.
 	if runtime.GOOS == "windows" {
@@ -71,9 +72,10 @@ func runTests(m *testing.M) int {
 	return code
 }
 
-// tmuxCmd builds a raw tmux command aimed at the test socket.
+// tmuxCmd builds a raw tmux command aimed at the test socket. -u keeps
+// non-ASCII output intact when the test runs without a UTF-8 locale.
 func tmuxCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command(Binary, append([]string{"-L", testSocket}, args...)...)
+	cmd := exec.Command(Binary, append([]string{"-u"}, SocketArgs(testSocket, args...)...)...)
 	cmd.Env = commandEnv()
 	return cmd
 }

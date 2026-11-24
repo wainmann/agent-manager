@@ -15,9 +15,16 @@ func TestMirrorReadsTheRowTheFrameCaresAbout(t *testing.T) {
 	if editor.Editor != "nvim" || editor.Flag != nil {
 		t.Fatalf("the editor row should mirror its line only: %+v", editor)
 	}
-	step := Mirror(ArrowStepSetting, "on")
-	if step.Flag == nil || !*step.Flag {
-		t.Fatalf("a two-way row stored on should mirror on: %+v", step)
+	step := Mirror(ArrowStepSetting, "attach")
+	if step.ArrowStep != ArrowStepAttach || step.Flag != nil {
+		t.Fatalf("the arrow row should mirror its value only: %+v", step)
+	}
+	if unknown := Mirror(ArrowStepSetting, ""); unknown.ArrowStep != ArrowStepFocus {
+		t.Fatalf("an unset arrow row should mirror the focus default: %+v", unknown)
+	}
+	notify := Mirror(NotificationsSetting, "on")
+	if notify.Flag == nil || !*notify.Flag {
+		t.Fatalf("a two-way row stored on should mirror on: %+v", notify)
 	}
 	// The mouse row's flag is MouseDisabled, so a stored on mirrors off.
 	mouse := Mirror(MouseSetting, "on")

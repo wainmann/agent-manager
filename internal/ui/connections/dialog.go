@@ -56,6 +56,13 @@ func field(placeholder string, limit int, value string) textinput.Model {
 
 func (d *Dialog) Gen() uint64 { return d.gen }
 
+// SyncWidths fits the fields to the card, so a long value scrolls.
+func (d *Dialog) SyncWidths(width int) {
+	presentation.FitInput(&d.name, width)
+	presentation.FitInput(&d.destination, width)
+	presentation.FitInput(&d.binary, width)
+}
+
 func (d *Dialog) Focus() int { return d.focus }
 
 // Editing is the name of the connection being edited; empty adds one.
@@ -167,9 +174,12 @@ type DialogView struct {
 }
 
 func (d *Dialog) View(view DialogView) uidialogs.Card {
-	title := "⇄ New SSH Connection"
+	title := "New SSH Connection"
 	if d.editing != "" {
-		title = "⇄ Edit SSH Connection"
+		title = "Edit SSH Connection"
+	}
+	if view.GlyphMode.Effective() == presentation.GlyphModeAdvanced {
+		title = presentation.GlyphsFor(view.GlyphMode).MoveGlyph + " " + title
 	}
 	body := view.Field("name", view.Input(d.name), d.focus == NameField) +
 		view.Field("ssh to", view.Input(d.destination), d.focus == DestinationField) +

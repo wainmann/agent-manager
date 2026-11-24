@@ -8,7 +8,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 
-	"github.com/charmbracelet/x/ansi"
 	"hash/fnv"
 )
 
@@ -29,8 +28,40 @@ import (
 // A missing prior hash (first observation, or post-resize rebaseline)
 // never invents working and never collapses finished/waiting to the tool
 // default: the stored status holds until the next poll has a baseline.
+//
+// Waiting can be acknowledged too, for a prompt the user means to leave or
+// a screen the rules misread: the acked session reads idle while the pane
+// still shows the screen it was waiting on, and any change to that screen
+// reads as waiting again, so a later prompt is never swallowed.
 func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
-	text := ansi.Strip(pane)
+	newStatus, err := p.paneVerdict(sess, pane, agentAlive, paneHashes)
+	if err != nil || newStatus != status.Waiting {
+		delete(p.waitingScreens, sess.ID)
+		return newStatus, err
+	}
+	screen := hashString(p.waitingScreen(sess.Tool, pane))
+	if held, ok := p.waitingScreens[sess.ID]; ok && held == screen && sess.Acked {
+		return status.Idle, nil
+	}
+	p.waitingScreens[sess.ID] = screen
+	return newStatus, nil
+}
+
+// waitingScreen is what a waiting session asks the user: the conversation
+// above the input box and the question of a dialog drawn below it. The rest
+// of the pane is the tool's frame, where a status line ticks on its own.
+func (p *Runner) waitingScreen(tool, pane string) string {
+	text := p.engine.Plain(tool, pane)
+	region, ok := p.engine.ActivityRegion(tool, text)
+	if !ok {
+		return text
+	}
+	question, _, _ := p.engine.LastMessage(tool, text)
+	return p.engine.RegionContent(tool, region) + "\x00" + question
+}
+
+func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
+	text := p.engine.Plain(sess.Tool, pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {
@@ -71,7 +102,7 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					var paneHash uint64
 					if stuck {
 						grace = stuckEndGrace
-						paneHash = hashString(text)
+						paneHash = hashString(pane)
 					}
 					now := time.Now()
 					timer, ok := p.quietSince[sess.ID]
@@ -101,6 +132,36 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 	return newStatus, nil
 }
 
+// turnMark is the newest prompt and reply a pane shows, as wrapped at its
+// width.
+type turnMark struct {
+	sum   uint64
+	width int
+}
+
+// unseenTurn reports a turn that ran between two polls: the newest prompt
+// or reply changed while the session rested at both. The region as a whole
+// is no signal at rest, because a tool redraws hint rows as the composer
+// changes and that moves the region's top edge.
+func (p *Runner) unseenTurn(sess store.Session, pane string, width int, verdict string, marks map[string]turnMark) bool {
+	text := p.engine.Plain(sess.Tool, pane)
+	echo, _ := p.engine.LastUserEcho(sess.Tool, text)
+	if echo == "" {
+		return false
+	}
+	prose, _, _ := p.engine.FullTurnText(sess.Tool, text)
+	mark := turnMark{sum: hashString(echo + "\x00" + prose), width: width}
+	marks[sess.ID] = mark
+	previous, seen := p.turnMarks[sess.ID]
+	return seen && previous.width == width && previous.sum != mark.sum && rested(sess.Status) && rested(verdict)
+}
+
+// rested is a status a turn leaves behind. Waiting is left out, because
+// working through a dialog changes the screen without a new turn.
+func rested(current string) bool {
+	return current == status.Finished || current == status.Idle
+}
+
 // turnInFlight reports whether a status means a turn is running or resting
 // unacknowledged. Only then can a quiet region mean the turn just ended;
 // finished and waiting stay in the set so the inferred status persists
@@ -122,6 +183,9 @@ func turnInFlight(current string) bool {
 // when they finish, so the file would otherwise stay pinned at working
 // forever. The pane only reports finished/waiting/errored once the newest
 // turn is quiet, so this never fires while the agent is still streaming.
+// An errored hook yields only to waiting or working: a failed turn draws
+// a summary under its error, so a finished pane would erase the failure,
+// and the next prompt's UserPromptSubmit or Stop replaces it anyway.
 func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) string {
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
@@ -140,10 +204,7 @@ func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) st
 			return paneStatus
 		}
 	case status.Errored:
-		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Working) {
-			if paneStatus == status.Finished && sess.Acked {
-				return status.Idle
-			}
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Working) {
 			return paneStatus
 		}
 	}

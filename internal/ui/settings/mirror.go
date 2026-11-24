@@ -7,10 +7,11 @@ import (
 )
 
 // Mirrored is what one stored row means for the live preferences: the
-// symbols mode, the editor line, or a two-way row's side.
+// symbols mode, the editor line, the ←→ value, or a two-way row's side.
 type Mirrored struct {
 	GlyphMode presentation.GlyphMode
 	Editor    string
+	ArrowStep string
 	Flag      *bool
 }
 
@@ -22,6 +23,8 @@ func Mirror(key, value string) Mirrored {
 		return Mirrored{GlyphMode: presentation.GlyphMode(value)}
 	case EditorSetting:
 		return Mirrored{Editor: value}
+	case ArrowStepSetting:
+		return Mirrored{ArrowStep: ArrowStep(value)}
 	}
 	if !slices.Contains(FlagKeys(), key) {
 		return Mirrored{}

@@ -39,11 +39,11 @@ type Frame struct {
 	Writes  uint64
 }
 
-// Sink receives what the watcher pushes: frames, and the loss of a client
-// it was serving. Either call may block, the way a Bubble Tea send does.
+// Sink callbacks receive watcher events and may block.
 type Sink struct {
-	Frame func(Frame)
-	Lost  func(error)
+	Frame     func(Frame)
+	Lost      func(error)
+	Clipboard func(sessionID, text string)
 }
 
 // frameBudget spaces captures that change the preview, so a stream
@@ -95,6 +95,11 @@ type Watcher struct {
 	// queued and landed count the writes to a polled pane in and out, so a
 	// frame can tell whether it shows them all.
 	queued, landed uint64
+	// fast streams a changing pane at the frame budget, for a focused
+	// session; a pane only previewed beside the list keeps the live tick.
+	fast bool
+	// paced wakes a capture waiting out the old pace when fast flips.
+	paced chan struct{}
 }
 
 // retryBackoff is how long a failed session sits before the watcher
@@ -109,7 +114,7 @@ const (
 // New returns a watcher on driver's server that pushes to sink. Its owner
 // points it with SetFocus and closes it on quit.
 func New(driver *tmux.Driver, liveTick time.Duration, sink Sink) *Watcher {
-	return &Watcher{driver: driver, sink: sink, liveTick: liveTick}
+	return &Watcher{driver: driver, sink: sink, liveTick: liveTick, paced: make(chan struct{}, 1)}
 }
 
 // SetFocus points the watcher at a session, replacing any previous one.
@@ -150,6 +155,30 @@ func (w *Watcher) SetFocus(id string) {
 		defer cancel()
 		w.watch(ctx, id, stop, input)
 	}()
+}
+
+// Pace sets how soon a pane that just changed is captured again: within the
+// frame budget while fast, on the live tick otherwise.
+func (w *Watcher) Pace(fast bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.fast == fast {
+		return
+	}
+	w.fast = fast
+	select {
+	case w.paced <- struct{}{}:
+	default:
+	}
+}
+
+func (w *Watcher) changedGap() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.fast {
+		return frameBudget
+	}
+	return w.liveTick
 }
 
 // InputSent tells the watcher a write just reached the pane, so it looks
@@ -398,6 +427,15 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		w.mu.Unlock()
 	}()
 	target := tmux.PaneTarget(id)
+	callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
+	paneID, err := control.CommandContext(callCtx, `display-message -p -t `+target+` "#{pane_id}"`)
+	cancelCall()
+	if err != nil {
+		w.clearIfCurrent(id, stop)
+		w.report(stop, fmt.Errorf("clipboard pane for %s: %w", id, err))
+		return
+	}
+	clipboardWrites := control.WatchClipboard(strings.TrimSpace(paneID))
 	capture := func() (string, bool) {
 		callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
 		pane, err := control.CommandContext(callCtx, "capture-pane -p -e -t "+target)
@@ -432,8 +470,16 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		return
 	}
 	lastCapture := time.Now()
-	nextCapture := lastCapture.Add(captureGap)
+	changed := false
 	var inputUntil time.Time
+	// A write that leaves the text unchanged, like the cursor move some TUIs
+	// send ahead of an echo, must not hold back that echo.
+	due := func() time.Time {
+		if changed && !time.Now().Before(inputUntil) {
+			return lastCapture.Add(w.changedGap())
+		}
+		return lastCapture.Add(captureGap)
+	}
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -449,15 +495,15 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			w.report(stop, lost)
 			return
 		case <-control.Events():
+		case write := <-clipboardWrites:
+			w.passClipboard(ctx, control, id, stop, write)
+			continue
 		case <-input:
 			inputUntil = time.Now().Add(frameBudget)
 			continue
 		}
-		captureAt := nextCapture
 		// Echo may arrive after a streaming paint or a cursor-only update.
-		if time.Now().Before(inputUntil) {
-			captureAt = lastCapture.Add(captureGap)
-		}
+		captureAt := due()
 		for wait := time.Until(captureAt); wait > 0; wait = time.Until(captureAt) {
 			timer.Reset(wait)
 			select {
@@ -465,7 +511,9 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 				return
 			case <-input:
 				inputUntil = time.Now().Add(frameBudget)
-				captureAt = lastCapture.Add(captureGap)
+				captureAt = due()
+			case <-w.paced:
+				captureAt = due()
 			case <-timer.C:
 			}
 			timer.Stop()
@@ -483,15 +531,9 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			w.clearIfCurrent(id, stop)
 			return
 		}
-		// A write that leaves the text unchanged, like the cursor move some
-		// TUIs send ahead of an echo, must not hold back that echo.
-		gap := captureGap
-		if pane != previous {
-			gap = frameBudget
-		}
+		changed = pane != previous
 		previous = pane
 		lastCapture = time.Now()
-		nextCapture = lastCapture.Add(gap)
 	}
 }
 
@@ -594,6 +636,25 @@ func (w *Watcher) push(stop <-chan struct{}, msg Frame) bool {
 	}
 	w.sink.Frame(msg)
 	return true
+}
+
+func (w *Watcher) passClipboard(ctx context.Context, control *tmux.Control, id string, stop <-chan struct{}, write tmux.ClipboardWrite) {
+	callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
+	state, err := control.CommandContext(callCtx, `display-message -p -t `+tmux.PaneTarget(id)+` "#{pane_id} #{set-clipboard}"`)
+	cancelCall()
+	if err != nil {
+		w.report(stop, fmt.Errorf("clipboard copy from %s: %w", id, err))
+		return
+	}
+	if strings.TrimSpace(state) != write.PaneID+" on" {
+		return
+	}
+	select {
+	case <-stop:
+		return
+	default:
+	}
+	w.sink.Clipboard(id, write.Text)
 }
 
 // report surfaces a client the watcher lost, so the preview dropping to

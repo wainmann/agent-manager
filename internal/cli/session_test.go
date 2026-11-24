@@ -2,14 +2,43 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
+
+type exitStatus int
+
+func (e exitStatus) Error() string { return "exit status " + strconv.Itoa(int(e)) }
+func (e exitStatus) ExitCode() int { return int(e) }
+
+// gpuMove is a move layer whose one SSH connection, gpu, answers through
+// answer and records the words each call ran there.
+func gpuMove(t *testing.T, local *fakeSessions, answer func(words []string) ([]byte, []byte, error)) (moveLayer, *[][]string) {
+	t.Helper()
+	var calls [][]string
+	client := remote.New(t.TempDir(), remote.WithRunner(func(_ context.Context, argv []string) ([]byte, []byte, error) {
+		words, err := remotetest.Words(argv)
+		if err != nil || words[0] != "agent-manager" {
+			t.Fatalf("remote command %q: %v", argv, err)
+		}
+		calls = append(calls, words[1:])
+		stdout, stderr, err := answer(words[1:])
+		return remotetest.Answer(stdout), stderr, err
+	}))
+	client.SetConnections([]remote.Connection{{Name: "gpu", Destination: "me@gpu"}})
+	return moveLayer{sessionCommands: local, hosts: func() (*remote.Client, error) { return client, nil }}, &calls
+}
 
 func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 	cases := []struct {
@@ -61,6 +90,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			want: "killed api-worker (id beef1234)",
 		},
 		{
+			name: "delete names what it removed",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runDelete(out, f, args, "cafe0001")
+			},
+			args: []string{"beef1234"},
+			want: "deleted api-worker (id beef1234) running claude in api",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || f.callerID != "cafe0001" {
+					t.Fatalf("delete got target %q as %q", f.targetID, f.callerID)
+				}
+			},
+		},
+		{
 			name: "revive names what it brought back",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runRevive(out, f, args, "cafe0001")
@@ -71,7 +113,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 		{
 			name: "move files the session under the group",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
-				return runMove(out, f, args, "cafe0001")
+				return runMove(out, moveLayer{sessionCommands: f}, args, "cafe0001")
 			},
 			args: []string{"beef1234", "api/web"},
 			want: "moved api-worker (id beef1234) running claude in api/web",
@@ -178,6 +220,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			},
 		},
 		{
+			name: "delete-group --with-sessions deletes them with the group",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runDeleteGroup(out, f, args, "")
+			},
+			args: []string{"fleet", "--with-sessions=a1,b2,c3"},
+			want: "deleted fleet, fleet/web and the 3 session(s) in them",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if !f.deleted || f.groupPath != "fleet" || !slices.Equal(f.confirmed, []string{"a1", "b2", "c3"}) {
+					t.Fatalf("delete-group --with-sessions got %q with %q, deleting %v", f.groupPath, f.confirmed, f.deleted)
+				}
+			},
+		},
+		{
 			name: "create-group takes a path and a directory",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runCreateGroup(out, f, args, "cafe0001")
@@ -206,6 +261,46 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				testCase.inspect(t, fake)
 			}
 		})
+	}
+}
+
+// The flag itself opts in, so an empty value is a group the user confirmed
+// holding nothing, not a plain delete-group that moves sessions to the root.
+func TestDeleteGroupWithSessionsTakesTheConfirmedIDs(t *testing.T) {
+	fake := &fakeSessions{}
+	if err := runDeleteGroup(&bytes.Buffer{}, fake, []string{"fleet", "--with-sessions="}, ""); err != nil || !fake.deleted || len(fake.confirmed) != 0 {
+		t.Fatalf("--with-sessions= = %v, deleting %v with %q", err, fake.deleted, fake.confirmed)
+	}
+	fake = &fakeSessions{}
+	var out bytes.Buffer
+	if err := runDeleteGroup(&out, fake, []string{"fleet"}, ""); err != nil || fake.deleted || !strings.Contains(out.String(), "moved") {
+		t.Fatalf("delete-group without the flag = %v, deleting %v, printing %q", err, fake.deleted, out.String())
+	}
+}
+
+// A delete that kept a shared worktree says so on its own line, and --json
+// carries the same notice for a script to read.
+func TestDeletePrintsTheNoticeAndTheRecord(t *testing.T) {
+	notice := "worktree kept (used by another session): /repo"
+	out := &bytes.Buffer{}
+	if err := runDelete(out, &fakeSessions{session: sampleSession(), notice: notice}, []string{"beef1234"}, "cafe0001"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 2 ||
+		!strings.HasPrefix(lines[0], "deleted api-worker (id beef1234)") || lines[1] != notice {
+		t.Fatalf("delete printed %q", out.String())
+	}
+
+	out.Reset()
+	if err := runDelete(out, &fakeSessions{session: sampleSession(), notice: notice}, []string{"beef1234", "--json"}, "cafe0001"); err != nil {
+		t.Fatalf("delete --json: %v", err)
+	}
+	var deleted sessioncmd.Deletion
+	if err := json.Unmarshal(out.Bytes(), &deleted); err != nil {
+		t.Fatalf("delete --json is not JSON: %v (%q)", err, out.String())
+	}
+	if deleted.ID != "beef1234" || deleted.Name != "api-worker" || deleted.Notice != notice {
+		t.Fatalf("delete --json = %+v", deleted)
 	}
 }
 
@@ -345,6 +440,44 @@ func TestTypeReachesTheLayerWithItsPrompt(t *testing.T) {
 	}
 }
 
+// The SSH client's form, like type's: the id and the name after a bare --,
+// so a name that starts with a dash stays the name.
+func TestRenameSessionReachesTheLayerWithItsName(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{session: sampleSession()}
+	if err := runRenameSession(out, fake, []string{"--json", "--", "beef1234", "-new name"}, ""); err != nil {
+		t.Fatalf("rename-session --json -- id name: %v", err)
+	}
+	if fake.callerID != "" || fake.targetID != "beef1234" || fake.message != "-new name" {
+		t.Fatalf("rename-session reached the layer as caller=%q target=%q name=%q", fake.callerID, fake.targetID, fake.message)
+	}
+	var renamed sessioncmd.Session
+	if err := json.Unmarshal(out.Bytes(), &renamed); err != nil || renamed.ID != "beef1234" {
+		t.Fatalf("rename-session --json = %q (%v)", out.String(), err)
+	}
+	if err := runRenameSession(&bytes.Buffer{}, &fakeSessions{}, []string{"beef1234"}, ""); err == nil || err.Error() != "usage: agent-manager "+usageRenameSession {
+		t.Fatalf("rename-session without a name = %v, want the usage", err)
+	}
+}
+
+func TestRenameGroupReachesTheLayerWithItsName(t *testing.T) {
+	out := &bytes.Buffer{}
+	fake := &fakeSessions{}
+	if err := runRenameGroup(out, fake, []string{"--json", "--", "-team/a", "b c"}, ""); err != nil {
+		t.Fatalf("rename-group --json -- path name: %v", err)
+	}
+	if fake.callerID != "" || fake.groupPath != "-team/a" || fake.message != "b c" {
+		t.Fatalf("rename-group reached the layer as caller=%q path=%q name=%q", fake.callerID, fake.groupPath, fake.message)
+	}
+	var renamed sessioncmd.Group
+	if err := json.Unmarshal(out.Bytes(), &renamed); err != nil || renamed.Path != "renamed" {
+		t.Fatalf("rename-group --json = %q (%v)", out.String(), err)
+	}
+	if err := runRenameGroup(&bytes.Buffer{}, &fakeSessions{}, []string{"web"}, ""); err == nil || err.Error() != "usage: agent-manager "+usageRenameGroup {
+		t.Fatalf("rename-group without a name = %v, want the usage", err)
+	}
+}
+
 func TestSnapshotPrintsOnlyJSON(t *testing.T) {
 	fake := &fakeSessions{session: sampleSession()}
 	err := runSnapshot(&bytes.Buffer{}, fake, nil, "")
@@ -378,5 +511,87 @@ func TestSpawnAcceptsSessionPreset(t *testing.T) {
 	}
 	if !strings.Contains(usageSpawn, "[--saved <name>]") || !strings.Contains(Help("test", false), "[--saved <name>]") {
 		t.Fatalf("spawn usage omits preset: %s", usageSpawn)
+	}
+}
+
+func TestMoveRunsAHostIDOnThatHost(t *testing.T) {
+	local := &fakeSessions{session: sampleSession()}
+	layer, calls := gpuMove(t, local, func([]string) ([]byte, []byte, error) {
+		return []byte(`{"id":"r1","name":"remote-worker","tool":"claude","group":"work","directory":"/srv","running":true}`), nil, nil
+	})
+	var out bytes.Buffer
+	if err := runMove(&out, layer, []string{"gpu::r1", "work"}, "cafe0001"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{"move", "--json", "--", "r1", "work"}) {
+		t.Fatalf("remote calls = %q", *calls)
+	}
+	if got := out.String(); !strings.HasPrefix(got, "moved remote-worker (id gpu::r1) running claude in work") {
+		t.Fatalf("output = %q", got)
+	}
+	if local.targetID != "" {
+		t.Fatalf("a remote move also ran here: %+v", local)
+	}
+}
+
+func TestARemoteMoveRefusalNamesTheHostAndMovesNothingHere(t *testing.T) {
+	local := &fakeSessions{session: sampleSession()}
+	layer, _ := gpuMove(t, local, func([]string) ([]byte, []byte, error) {
+		return nil, []byte("agent-manager: group \"nope\" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it\n"), exitStatus(1)
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"gpu::r1", "nope"}, "cafe0001")
+	if err == nil || err.Error() != `gpu: group "nope" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it` {
+		t.Fatalf("err = %v", err)
+	}
+	if local.targetID != "" {
+		t.Fatalf("a refused remote move ran here: %+v", local)
+	}
+}
+
+func TestAMoveToAnUnknownConnectionNeverReachesSSH(t *testing.T) {
+	layer, calls := gpuMove(t, &fakeSessions{session: sampleSession()}, func([]string) ([]byte, []byte, error) {
+		t.Error("an unknown connection reached ssh")
+		return nil, nil, nil
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"box::r1", "work"}, "cafe0001")
+	if err == nil || !strings.Contains(err.Error(), "no connection has that name") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("remote calls = %q", *calls)
+	}
+}
+
+func TestStoredHostsReadsTheConnectionsSavedInTheManager(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddConnection(store.Connection{Name: "gpu", Destination: "me@gpu", Binary: "~/bin/agent-manager"}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	client, err := storedHosts(dir)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []remote.Connection{{Name: "gpu", Destination: "me@gpu", Binary: "~/bin/agent-manager"}}
+	if got := client.Connections(); !slices.Equal(got, want) {
+		t.Fatalf("connections = %+v, want %+v", got, want)
+	}
+}
+
+func TestARemoteMoveNeedsACallerInsideAgentManager(t *testing.T) {
+	layer, calls := gpuMove(t, &fakeSessions{session: sampleSession()}, func([]string) ([]byte, []byte, error) {
+		t.Error("a caller outside Agent Manager reached ssh")
+		return nil, nil, nil
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"gpu::r1", "work"}, "")
+	if err == nil || !strings.HasPrefix(err.Error(), "not inside an Agent Manager session or terminal") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("remote calls = %q", *calls)
 	}
 }

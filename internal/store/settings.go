@@ -43,6 +43,17 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
+// ArrowStepSetting is the ←→ pair. Its "attach" value binds ← inside an
+// attached session, in every process that installs the bindings.
+const ArrowStepSetting = "arrow_step_keys"
+
+const ArrowStepAttach = "attach"
+
+func (s *Store) ArrowStepAttaches() (bool, error) {
+	value, err := s.Setting(ArrowStepSetting)
+	return value == ArrowStepAttach, err
+}
+
 const CoordinationSetting = "coordination"
 
 const coordinationProactive = "proactive"

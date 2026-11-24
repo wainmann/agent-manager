@@ -9,6 +9,8 @@ const (
 	LeaveFocus
 	OpenEditor
 	OpenReview
+	// OpenResize arms the split's divider gesture without leaving focus.
+	OpenResize
 	// ScrollPane pages a normal-screen pane's history instead of
 	// forwarding the key; Region carries the capture to fetch, if any.
 	ScrollPane
@@ -18,6 +20,7 @@ type KeyContext struct {
 	SessionID   string
 	Rows        int
 	Detach      bool
+	Resize      bool
 	Editor      bool
 	Review      bool
 	ArrowStep   bool
@@ -36,6 +39,9 @@ type KeyResult struct {
 func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	if ctx.Detach {
 		return m.leaveResult()
+	}
+	if ctx.Resize {
+		return KeyResult{Action: OpenResize}
 	}
 	// A normal-screen pane leaves scrolling to tmux history. Page keys take
 	// the wheel's path while that history exists; an app-owned screen keeps
@@ -59,16 +65,22 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 		return m.leaveResult()
 	}
 
-	m.cursorOn = true
-	result := KeyResult{
+	return KeyResult{
 		Action: ForwardKey,
 		Submit: msg.Type == tea.KeyEnter && !msg.Alt,
+		Region: m.resumeLive(ctx.SessionID, ctx.Rows),
 	}
-	if m.scroll != 0 {
-		m.scroll = 0
-		result.Region = m.requestRegion(ctx.SessionID, ctx.Rows)
+}
+
+// resumeLive shows the caret and brings a scrolled pane back to its live
+// screen, as every key the agent reads does.
+func (m *Model) resumeLive(sessionID string, rows int) *RegionRequest {
+	m.cursorOn = true
+	if m.scroll == 0 {
+		return nil
 	}
-	return result
+	m.scroll = 0
+	return m.requestRegion(sessionID, rows)
 }
 
 func (m *Model) leaveResult() KeyResult {

@@ -26,8 +26,9 @@ import (
 const Binary = "psmux"
 
 // psmuxMinimum is the oldest psmux the manager works with: 3.4.0 carries
-// the behaviour the suite runs against and is the first tagged release with
-// one (earlier winget builds, 3.3.x, misbehave and print no psmux version).
+// the behaviour the suite runs against, a command list run in one
+// invocation among it, and is the first tagged release with one (earlier
+// winget builds, 3.3.x, misbehave and print no psmux version).
 const psmuxMinimum = "3.4.0"
 
 // checkVersion refuses a psmux older than the floor. A pass is cached, since
@@ -173,44 +174,63 @@ func sessionRoute(id string) []string {
 	return []string{"-t", sessionName(id)}
 }
 
-// splitCommandList breaks a command list into the separate invocations
-// psmux needs: its command line takes one command and reads a ";" as part
-// of it. A leading session route goes on every command, and a trailing \;
-// a value carries for tmux's sake is a plain ";" here.
-func splitCommandList(args []string) [][]string {
-	var route []string
-	if len(args) >= 2 && args[0] == "-t" {
-		route, args = args[:2], args[2:]
-	}
-	var commands [][]string
-	start := 0
-	for i := 0; i <= len(args); i++ {
-		if i < len(args) && args[i] != ";" {
-			continue
-		}
-		command := make([]string, 0, len(route)+i-start)
-		command = append(command, route...)
-		for _, arg := range args[start:i] {
-			if strings.HasSuffix(arg, `\;`) {
-				arg = strings.TrimSuffix(arg, `\;`) + ";"
-			}
-			command = append(command, arg)
-		}
-		commands = append(commands, command)
-		start = i + 1
-	}
-	return commands
+const promptHeadHint = ""
+
+// AttachedPromptHead is false: psmux leaves an attached ← to the agent.
+const AttachedPromptHead = false
+
+// promptHeadBinding is nil: a psmux binding cannot hand the key on to the
+// pane (see rootBinding), so binding ← would take it from the agent
+// everywhere in the prompt.
+func promptHeadBinding(string) [][]string {
+	return nil
 }
 
-// bindingArg wire-quotes one word of a binding's command. psmux forwards
-// bind-key to its server as the arguments joined by spaces, which the
-// server splits again, so a word with spaces in it would fall apart; the
-// server decodes this double-quoted form back to the word. Quoting a bare
-// word matters too: an argument that is literally detach-client turns off
-// psmux's -t routing, sending the binding to whichever server the
-// namespace used last.
-func bindingArg(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`).Replace(s) + `"`
+// listArgs is a command list as psmux reads it: only a lone ";" separates
+// there, and an argument ending in one keeps it, so the \; a value carries
+// for tmux's sake is a plain ";" here.
+func listArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, arg := range args {
+		if strings.HasSuffix(arg, `\;`) {
+			arg = strings.TrimSuffix(arg, `\;`) + ";"
+		}
+		out[i] = arg
+	}
+	return out
+}
+
+// displayAndCapture runs the two commands apart. psmux reads a line of a
+// list's reply that starts with ERROR as a failed command, so a pane showing
+// one would fail the capture and lose the line.
+func (d *Driver) displayAndCapture(target, format string) (string, error) {
+	expanded, err := d.run("display-message", "-p", "-t", target, format)
+	if err != nil {
+		return "", err
+	}
+	pane, err := d.run("capture-pane", "-p", "-e", "-t", target)
+	return expanded + pane, err
+}
+
+// bindingAction is a binding's command as a psmux command list carries it.
+// A lone word goes as it is: psmux quotes each argument of a list itself,
+// and a second pair of quotes is bound as part of the command, leaving a
+// key that is no longer bound to detach-client. An action of several words
+// is wire-quoted word by word, since psmux's server splits the bound
+// command again and a word with spaces in it would fall apart.
+//
+// A lone detach-client is safe only behind another command: as the first
+// command of an invocation it turns off psmux's -t routing, sending the
+// binding to whichever server the namespace used last.
+func bindingAction(action ...string) []string {
+	if len(action) == 1 {
+		return action
+	}
+	quoted := make([]string, len(action))
+	for i, word := range action {
+		quoted[i] = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`).Replace(word) + `"`
+	}
+	return quoted
 }
 
 // rootBinding binds a key straight to its action, one argument per word.
@@ -219,11 +239,7 @@ func bindingArg(s string) string {
 // psmux's client quits only for a binding whose whole command is
 // detach-client, not for one inside an if-shell branch.
 func rootBinding(key keybind.Key, action ...string) []string {
-	command := []string{"bind-key", "-n", key.Tmux()}
-	for _, word := range action {
-		command = append(command, bindingArg(word))
-	}
-	return command
+	return append([]string{"bind-key", "-n", key.Tmux()}, bindingAction(action...)...)
 }
 
 // requestAction leaves the request marker and detaches. psmux runs a

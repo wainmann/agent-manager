@@ -110,6 +110,10 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.Kill(ctx, ref)
 			return err
 		}, []string{"kill", "--json", "--", "a1b2c3d4"}},
+		{"delete", func(ctx context.Context, c *Client) error {
+			_, err := c.Delete(ctx, ref)
+			return err
+		}, []string{"delete", "--json", "--", "a1b2c3d4"}},
 		{"revive", func(ctx context.Context, c *Client) error {
 			_, err := c.Revive(ctx, ref)
 			return err
@@ -122,6 +126,18 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.Archive(ctx, ref, true)
 			return err
 		}, []string{"archive", "--restore", "--json", "--", "a1b2c3d4"}},
+		{"move", func(ctx context.Context, c *Client) error {
+			_, err := c.Move(ctx, ref, "-team/a b")
+			return err
+		}, []string{"move", "--json", "--", "a1b2c3d4", "-team/a b"}},
+		{"rename", func(ctx context.Context, c *Client) error {
+			_, err := c.Rename(ctx, ref, "-new name")
+			return err
+		}, []string{"rename-session", "--json", "--", "a1b2c3d4", "-new name"}},
+		{"rename group", func(ctx context.Context, c *Client) error {
+			_, err := c.RenameGroup(ctx, "gpu", "-team/a", "b c")
+			return err
+		}, []string{"rename-group", "--json", "--", "-team/a", "b c"}},
 		{"create group", func(ctx context.Context, c *Client) error {
 			_, err := c.CreateGroup(ctx, "gpu", "-team/a", "/srv/team")
 			return err
@@ -134,6 +150,14 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.DeleteGroup(ctx, "gpu", "--")
 			return err
 		}, []string{"delete-group", "--json", "--", "--"}},
+		{"delete group with its sessions", func(ctx context.Context, c *Client) error {
+			_, err := c.DeleteGroupWithSessions(ctx, "gpu", "--", []string{"a1b2c3d4", "t9"})
+			return err
+		}, []string{"delete-group", "--json", "--with-sessions=a1b2c3d4,t9", "--", "--"}},
+		{"delete an empty group with its sessions", func(ctx context.Context, c *Client) error {
+			_, err := c.DeleteGroupWithSessions(ctx, "gpu", "web", nil)
+			return err
+		}, []string{"delete-group", "--json", "--with-sessions=", "--", "web"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,6 +194,14 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	_, err = c.Revive(ctx, bad)
 	errs = append(errs, err)
 	_, err = c.Archive(ctx, bad, true)
+	errs = append(errs, err)
+	_, err = c.Move(ctx, bad, "work")
+	errs = append(errs, err)
+	for _, ids := range [][]string{{"a1", bad.ID}, {"a1,b2"}, {""}} {
+		_, err = c.DeleteGroupWithSessions(ctx, "gpu", "web", ids)
+		errs = append(errs, err)
+	}
+	_, err = c.Rename(ctx, bad, "work")
 	errs = append(errs, err)
 	for i, err := range errs {
 		if err == nil {
@@ -211,6 +243,11 @@ func TestOperationsDecodeTheRemoteJSON(t *testing.T) {
 	want := sessioncmd.GroupRemoval{Removed: []string{"a", "a/b"}, Moved: []string{"a1"}}
 	if got, err := c.DeleteGroup(ctx, "gpu", "a"); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("DeleteGroup = %+v, %v", got, err)
+	}
+	c, _ = recorder(t, `{"removed":["a","a/b\u001b[31m"],"deleted":["s1","s2; rm -rf ~"],"notice":"worktree kept (has work): /w\u001b[2J"}`)
+	deletion := sessioncmd.GroupDeletion{Removed: []string{"a", "a/b"}, Deleted: []string{"s1"}, Notice: "worktree kept (has work): /w"}
+	if got, err := c.DeleteGroupWithSessions(ctx, "gpu", "a", []string{"s1", "s2"}); err != nil || !reflect.DeepEqual(got, deletion) {
+		t.Fatalf("DeleteGroupWithSessions = %+v, %v", got, err)
 	}
 	c, _ = recorder(t, "closed terminal a1\n")
 	if err := c.TerminalClose(ctx, ref); err != nil {
@@ -299,6 +336,25 @@ func TestLoginProfileOutputIsSkipped(t *testing.T) {
 	}
 }
 
+// A host that predates --with-sessions refuses the flag before it reads the
+// path, having deleted nothing; the user is told to update it rather than
+// shown the usage. Its own refusals pass through.
+func TestDeleteGroupWithSessionsOnAnOlderHostSaysToUpdateIt(t *testing.T) {
+	for _, tc := range []struct{ stderr, want string }{
+		{"agent-manager: flag provided but not defined: -with-sessions; usage: agent-manager delete-group <path> [--json]\n",
+			"gpu: agent-manager there is too old to delete a group with its sessions; update agent-manager on that host"},
+		{"agent-manager: sessions in web changed since confirmation; review them and try again\n",
+			"gpu: sessions in web changed since confirmation; review them and try again"},
+	} {
+		c := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+			return nil, []byte(tc.stderr), exitStatus(1)
+		})
+		if _, err := c.DeleteGroupWithSessions(context.Background(), "gpu", "web", []string{"s1"}); err == nil || err.Error() != tc.want {
+			t.Fatalf("answer %q = %v, want %q", tc.stderr, err, tc.want)
+		}
+	}
+}
+
 // A command an older agent-manager does not know falls through to its
 // interactive manager, which fails without a terminal after printing escape
 // sequences.
@@ -312,6 +368,18 @@ func TestUnknownCommandIsTooOldNotUnreadable(t *testing.T) {
 	}
 	if _, err := c.Type(context.Background(), Ref{Host: "gpu", ID: "a1"}, "yes"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
 		t.Fatalf("type on a host that predates it = %v", err)
+	}
+	if _, err := c.Delete(context.Background(), Ref{Host: "gpu", ID: "a1"}); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("delete on a host that predates it = %v", err)
+	}
+	if _, err := c.Rename(context.Background(), Ref{Host: "gpu", ID: "a1"}, "api"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("rename on a host that predates it = %v", err)
+	}
+	if _, err := c.RenameGroup(context.Background(), "gpu", "web", "api"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("rename-group on a host that predates it = %v", err)
+	}
+	if _, err := c.Move(context.Background(), Ref{Host: "gpu", ID: "a1"}, "ops"); err == nil || err.Error() != "gpu: agent-manager there is too old for SSH connections; update agent-manager on that host" {
+		t.Fatalf("move on a host that predates it = %v", err)
 	}
 	c = newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
 		return []byte("closed terminal a1\n"), nil, nil

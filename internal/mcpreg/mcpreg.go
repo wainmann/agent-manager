@@ -92,6 +92,8 @@ var knownStyles = map[string]bool{
 	"muse":         true,
 	"antigravity":  true,
 	"cursor":       true,
+	"kiro":         true,
+	"copilot":      true,
 	StyleNone:      true,
 }
 
@@ -178,6 +180,17 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 			return "", err
 		}
 		return command, nil
+	case "kiro":
+		if err := ensureKiroRegistered(ctx, exe, hooksDir); err != nil {
+			return "", err
+		}
+		return command, nil
+	case "copilot":
+		path := filepath.Join(hooksDir, "mcp-copilot.json")
+		if err := atomicfile.WriteIfChanged(path, copilotConfig(exe), 0o644); err != nil {
+			return "", err
+		}
+		return command + " --additional-mcp-config " + tmux.ShellQuote("@"+path), nil
 	default:
 		return command, nil
 	}
@@ -192,6 +205,22 @@ func claudeConfig(exe string) []byte {
 				"env": map[string]string{
 					hooks.EnvSessionID: "${" + hooks.EnvSessionID + "}",
 				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(config, "", "  ")
+	return data
+}
+
+// Copilot starts a local server with the session's environment, so the
+// server finds its session id there.
+func copilotConfig(exe string) []byte {
+	config := map[string]any{
+		"mcpServers": map[string]any{
+			serverName: map[string]any{
+				"type":    "local",
+				"command": exe,
+				"args":    []string{"mcp"},
 			},
 		},
 	}
@@ -514,6 +543,20 @@ func ensureGeminiRegistered(ctx context.Context, exe, hooksDir string) error {
 func ensureAntigravityRegistered(ctx context.Context, exe, hooksDir string) error {
 	add := command{name: "agy", args: []string{"mcp", "add", serverName, "--", exe, "mcp"}}
 	return ensureRegisteredOnce(ctx, "antigravity", exe, hooksDir, add)
+}
+
+// Kiro expands ${VAR} in a server's env block when it starts the server.
+// A plain add exits 1 on an existing entry, so --force replaces the one an
+// earlier binary path registered.
+func ensureKiroRegistered(ctx context.Context, exe, hooksDir string) error {
+	add := command{name: "kiro-cli", args: []string{"mcp", "add",
+		"--scope", "global",
+		"--name", serverName,
+		"--command", exe,
+		"--args", "mcp",
+		"--env", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		"--force"}}
+	return ensureRegisteredOnce(ctx, "kiro", exe, hooksDir, add)
 }
 
 type hermesMCPEntry struct {

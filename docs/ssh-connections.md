@@ -26,8 +26,8 @@ The protocol is the remote host's own CLI, run over SSH as `agent-manager <comma
 | Message an agent | `send --from=<sender> --json -- <id> <text>` |
 | Answer an agent from the quick bar | `type --json -- <id> <text>` |
 | Spawn | `spawn --json ...`, `terminal create --json ...` |
-| Lifecycle | `kill`, `revive`, `archive [--restore]`, `terminal close` |
-| Groups | `create-group`, `delete-group` |
+| Lifecycle | `kill`, `delete`, `revive`, `archive [--restore]`, `move`, `rename-session`, `terminal close` |
+| Groups | `create-group`, `delete-group`, `rename-group`, and `delete-group --with-sessions=<id,...>` for `d` on a group |
 | Attach | `ssh -t <dest>` running `tmux -L agentmgr attach-session -t <session>`, then taking back any review or editor request the host's keys left on its tmux server |
 
 The snapshot envelope carries `version`. A remote that does not know `snapshot`, or answers with an older version, says to update agent-manager on that host. One that answers with a newer version says to update it on this machine.
@@ -37,13 +37,15 @@ Flags are written as `--flag=value` and operands follow a bare `--`, so a messag
 Once a connection is saved, every agent on this machine can reach that host through MCP: any session can open a terminal there with `create_terminal` and run commands in it as the remote user. Add a connection only for a host you would let all of them use.
 
 An SSH call has no calling session on the remote host. The commands it uses run without one:
-- `kill`, `revive`, `archive`, `create-group` and `delete-group` act as the user would.
+- `kill`, `delete`, `revive`, `archive`, `move`, `create-group` and `delete-group` act as the user would.
+- `delete-group --with-sessions=<id,...>` deletes the group with every session in it, the way `d` does on that host, and runs only with no calling session. The ids are the sessions the confirm counted from the last snapshot, none for an empty group, and the host refuses when the sessions it now holds there are not exactly those. A host too old to know the flag refuses it, and the status line says to update agent-manager there.
+- `rename-session` and `rename-group` rename a row the way the user's rename key does, and are refused from inside a session, which names itself with `rename` through its manager. They write the host's store directly, as `kill` and `move` do.
 - `terminal create` opens a terminal that belongs to no session. `terminal send`, `read` and `close` drive only such terminals. A terminal nested under a session stays that session's.
 - Every SSH call is the same caller there, so the local MCP server tells them apart: it records which session's `create_terminal` opened a remote terminal, and `send_terminal` and `close_terminal` on a `host::id` refuse any other session before calling ssh. A terminal opened with `T` on the connection row has no such record, so only the user drives it. The record goes when the terminal is closed through MCP or its session is deleted.
 - `send --from` names the sender, at most 64 bytes. The delivered message says it came from another of the user's machines and that a reply cannot reach it. Every `--from` sender shares one rate limit per target.
 - `type` submits the user's quick bar prompt in an agent's pane at once, as the local quick bar does. It is refused from inside a session. It carries no envelope and no rate limit, so it sits outside the guardrail the other commands keep: anything that escapes caller detection can type into any agent as the user. Each pane's send holds a lock file beside the tmux socket, so a typed prompt and the host manager's own delivery never interleave. When the host's paste started before the send failed, `type` exits with status 3; that, or a call cut off after agent-manager started there, means the prompt may sit in the pane, so the quick bar drops it rather than type it again, as it does on this machine.
 
-Tasks, file reservations, rename and review still need a calling session.
+Tasks, file reservations, `rename` and review still need a calling session.
 
 ### SSH invocation
 
@@ -75,11 +77,11 @@ The local machine can be Linux, macOS or Windows. The remote host must be Linux 
 ## Not in scope
 
 These are refused on a remote row with a message naming the gap:
-- Rename, move, delete, restart and fork.
+- Moving a group, deleting a group in the archived view, moving or nesting a terminal, restart and fork.
 - Diff review.
 - The editor.
 - Copying a reply, marking idle, cancelling an after-turn end, reordering.
 - Kill all and revive all.
 - File reservations and tasks, which stay per host.
 
-Focus and attach on a remote row open an SSH attach in the terminal, not the embedded focus view. Inside it, the host's review and editor keys detach like its back key does, and the manager says they work only for sessions on this machine. The host's own manager never sees the request, since the attach takes it back off that host's tmux server.
+Focus and attach on a remote row open an SSH attach in the terminal, not the embedded focus view. Inside it, `←` belongs to the agent by default. Set the host's ←→ setting to `attach` (`agent-manager settings set arrow_step_keys attach` on the host) and `←` at the start of the agent's prompt goes back to the list as it does on this machine. The host's sessions pick the change up when the manager next starts on the host, or when a session is next created there from a shell or by an agent. The host's review and editor keys detach like its back key does, and the manager says they work only for sessions on this machine. The host's own manager never sees the request, since the attach takes it back off that host's tmux server.

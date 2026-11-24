@@ -82,9 +82,11 @@ user_echo = "^❯ "
 # wording reads back as a typed draft
 input_placeholder = "^Press up to (?:edit queued messages|select a queued message)"
 rules = [
-  # selection dialogs (trust prompt, permission asks, questions) block on the user
-  { state = "waiting", pattern = "Enter to confirm" },
-  { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # selection dialogs (trust prompt, permission asks, questions) block on the user;
+  # a live dialog indents at most one column, while a message quoting one sits
+  # under its bullet at two or more
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]?Enter to confirm" },
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]?❯[ \\x{A0}]+\\d+\\." },
   # a multi-select or multi-question dialog keeps this tab bar on every
   # screen, its Submit row and review screen included, which carry neither
   # a numbered selected option nor always a footer
@@ -223,9 +225,8 @@ rules = [
   { state = "waiting", pattern = "(?m)^[ \\t]*enter [a-z]+(?: [a-z]+)* · esc [a-z][^\\n]*\\s*\\z" },
   { state = "waiting", pattern = "(?m)^[ \\t]*Hooks need review\\b" },
   { state = "waiting", pattern = "(?m)^[ \\t]*enter(?:/esc)? (?:confirm|continue)\\b[^\\n]*\\s*\\z" },
-  # active status row is the final row above the input box; anchoring its full
-  # shape keeps an answer that quotes "esc to interrupt" from looking active
-  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },
+  # A cut status row keeps its spinner or timer prefix above the composer.
+  { state = "working", pattern = "(?m)^(?:[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?|[ \\t]*[^\\n]*\\(\\d[\\dhms. ]*(?: [•·][^\\n]*)?…|[•◦] [^\\n]*…)[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)*(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied |\\d+ background terminals? running · )[^\\n]*\\n|• (?:Queued(?: |\\n[ \\t]+)follow-up|Messages(?: |\\n[ \\t]+)to)\\b[^\\n]*\\n(?:[ \\t]+[^\\n]*\\n)*)*[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
@@ -624,5 +625,83 @@ rules = [
   { state = "waiting", pattern = "(?m)^[ \\t]*(?:Run this command|Run this MCP tool|Write to this file|Delete this file|Read this file|Allow this web search|Allow this web fetch|Proceed with this edit)\\?(?:\\n[^\\n]*){0,6}\\n[ \\t]*→ [^\\n]*\\([yn]\\)(?:\\n[^\\n]*){0,6}(?:\\n[ \\t]*)*\\z" },
   { state = "working", pattern = "(?m)^[ \\t]*│[ \\t]*⏳ Trusting workspace" },
   { state = "working", pattern = "(?m)(?:^[ \\t]*\\p{Braille}{2}\\s+(?:Working|Running)\\b|^[ \\t]*→ [^\\n]*ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
+]
+
+[tools.kiro]
+command = "kiro-cli chat"
+# 3.x runs the V3 terminal UI these rules read.
+minimum_version = "3.1.0"
+session_report = "none"
+# Kiro mints the session id. The capturer reads it from --list-sessions.
+session_store = "kiro"
+resume_by_id_command = "kiro-cli chat --resume-id {id}"
+resume_picker_command = "kiro-cli chat --resume-picker"
+revive_command = "kiro-cli chat --resume"
+mcp = "kiro"
+# The busy timer lives on the composer row, which a turn_end scope would
+# cut from what the rules read, so a closed turn rests on the default.
+default_status = "idle"
+activity_cutoff = "(?m)^› "
+input_placeholder = "^(?:ask a question or describe a task ↵|Kiro is working · .+)$"
+message_start = "^• "
+user_echo = "^  › (.+)$"
+# rules, the status bar, the credits row closing a turn, the banner and the hint row
+chrome_line = "^─{8,}$|^\\S[^·\\n]* · [^·\\n]+ · \\S+ \\d+%|^▸ Credits: .+ \\| Time: .+$|^[ \\t]*\\p{Braille}{2,}|^[ \\t]*(?:Welcome to Kiro CLI V\\d+|Learn more: https://kiro\\.dev/\\S*|kiro-cli --v2 +Launch the previous experience instead)$|^KIRO$|^▸ What's new(?:[ \\t]+ctrl\\+o to expand)?$|^[ \\t]+/sessions to resume · /copy to clipboard$"
+# The dialogs replace the composer, so a live one has no composer row and
+# no column-zero rule below its footer. A quoted one always has both.
+rules = [
+  { state = "waiting", pattern = "(?m)^ Trust this workspace\\?[ \\t]*\\n(?:[^\\n]*\\n){1,24}? esc to exit · ↑↓ to navigate · ↵ to select[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "waiting", pattern = "(?m)^ [^\\n]*\\S requires approval[ \\t]*\\n(?:[^\\n]*\\n){1,16}? esc to close · ↑↓ to navigate · ↵ to select[^\\n]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "waiting", pattern = "(?m)^ /sessions[ \\t]*\\n(?:[^\\n]*\\n)*? ↑↓ to navigate · ↵ to select · ctrl\\+p to preview · \\+ to view all controls[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "working", pattern = "(?m)^›[ \\t]+Kiro is working · [^\\n]*(?:\\n(?:[^›\\n][^\\n]*)?)*\\z" },
+]
+
+[tools.copilot]
+command = "copilot"
+# 1.0.51 is the first release whose --session-id starts a new session under
+# the id it is given.
+minimum_version = "1.0.51"
+# a plugin of the manager's own reports each conversation at its next prompt
+session_report = "copilot"
+session_id_flag = "--session-id"
+resume_by_id_command = "copilot --resume {id}"
+resume_picker_command = "copilot --resume"
+revive_command = "copilot --continue"
+prompt_flag = "-i"
+# ACP lists the models a plan offers, each with its reasoning levels. A plan
+# with only Copilot Fusion (Copilot Free) lists none.
+catalog = "acp"
+catalog_command = "copilot --acp"
+model_args = "--model {model}"
+effort_args = "--reasoning-effort {effort}"
+default_status = "idle"
+# The composer is the only "❯" row at column zero: an echoed prompt, a
+# thought summary and a dialog's selected option are all indented.
+activity_cutoff = "(?m)^❯"
+# the transcript's scrollbar, in the pane's last column
+scrollbar = "[ \\t]+┃$"
+# The workspace row above the composer counts the session's AI credits,
+# which tick after every turn. The header box, its blinking mascot and the
+# tab bar are frame too; the box starts at the left edge, where a table in a
+# reply is indented under its bullet.
+chrome_line = "^\\s*[│─╭╮╰╯├┤]*\\s*$|^│.*│\\s*$|^ \\S.*\\s(?:Run on: .+|Session: [\\d.]+ AIC used)$|^\\s*\\[?Current\\]?\\s+\\[?Sessions\\]?\\s"
+message_start = "^ [●✗$] "
+# a submitted prompt echoes indented, with the time it was sent at the
+# right edge of its first row, one space after the text when the prompt wraps
+user_echo = "^ ❯ (.*?)\\s+\\d{1,2}:\\d{2}$"
+# the trust prompt and the permission asks replace the composer with a box
+dialog_question = "(?m)^│ ((?:Do you want|Do you trust)[^?\\n]*\\?)"
+rules = [
+  # the trust prompt and every permission ask draw this footer as the last
+  # row of a box that replaces the composer
+  { state = "waiting", pattern = "(?m)^│ ↑/↓ to navigate · enter to select · esc to cancel[ \\t]*│[ \\t]*\\n╰─+╯[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  # the ask_user form replaces the composer, its own input indented
+  { state = "waiting", pattern = "(?m)^ Copilot needs information\\.[ \\t]*(?:\\n(?:[^❯\\n][^\\n]*)?)*\\z" },
+  # the session picker that --resume opens
+  { state = "waiting", pattern = "(?m)^ / search · ↑/↓ navigate\\b" },
+  # the footer under the composer while a turn runs, its spinner first
+  { state = "working", pattern = "(?m)^ \\S Working\\b[^\\n]*(?:\\n[ \\t]*)*\\z" },
+  # a failed turn leaves its "✗" row as the last thing above the composer
+  { state = "errored", pattern = "(?m)^ ✗ [^\\n]*(?:\\n   \\S[^\\n]*)*(?:\\n[ \\t]*)*\\n \\S[^\\n]*\\n─{8,}[ \\t]*\\n❯[^\\n]*(?:\\n[^─\\n][^\\n]*)*\\n─{8,}[ \\t]*\\n[^\\n]*(?:\\n[ \\t]*)*\\z" },
 ]
 `

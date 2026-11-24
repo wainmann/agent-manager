@@ -566,6 +566,38 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 	}
 }
 
+// A comment may take the line another comment left earlier in the same pass.
+func TestReanchorTakesALineAnotherCommentLeft(t *testing.T) {
+	m := &Model{}
+	lineOf := func(num int, text string) diff.Line {
+		return diff.Line{Kind: diff.Same, NewNum: num, Text: text}
+	}
+	set := diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{
+		File: git.ChangedFile{Path: "f.go"},
+	}}}
+	request := seedReviewStateForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo", set, uireview.SavedState{Comments: []uireview.Comment{
+		{File: "f.go", Line: 1, Excerpt: "alpha()", Text: "moves down"},
+		{File: "f.go", Line: 4, Excerpt: "beta()", Text: "moves to the top"},
+	}})
+	m.review.ApplyFile(uireview.FileResult{
+		TargetID: "s1", Scope: git.ScopeUncommitted, Generation: request.Generation,
+		RepoRoot: "/repo", Index: 0, Path: "f.go", File: diff.FileDiff{
+			File:     git.ChangedFile{Path: "f.go"},
+			IsLoaded: true,
+			Lines: []diff.Line{
+				lineOf(1, "beta()"),
+				lineOf(2, ""),
+				lineOf(3, ""),
+				lineOf(4, ""),
+				lineOf(5, "alpha()"),
+			},
+		}})
+	notes := m.review.Annotations()
+	if notes[0].Line != 5 || notes[1].Line != 1 {
+		t.Fatalf("lines = %d, %d, want 5, 1", notes[0].Line, notes[1].Line)
+	}
+}
+
 // Sending review comments writes into the pane the same way the quick
 // prompt does, so it refuses a shell for the same reason: the prompt is an
 // English sentence, and a shell would run it.

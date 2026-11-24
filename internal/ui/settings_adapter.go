@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
@@ -13,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -110,7 +112,7 @@ func (m *Model) runSettingsResult(d *uisettings.State, result uisettings.Result)
 	switch {
 	case result.Palette:
 		if result.DetectTheme {
-			d.ShowTheme(uitheme.Auto(d.ManualTheme, systheme.Detect()))
+			d.ShowTheme(uitheme.Auto(d.ManualTheme, m.liveScheme(systheme.Detect)))
 		}
 		applyTheme(uitheme.Palettes[d.ThemeIndex])
 		SyncTerminalColors()
@@ -158,6 +160,13 @@ func (m *Model) queueSettingsSave(d *uisettings.State, includeHidden, followUpda
 	}
 	d.AdvanceBaseline(request.Values, request.Hidden)
 	s.Cache.ApplyValues(request.Values)
+	for _, value := range request.Values {
+		if _, saving := s.ChoiceGen[value.Key]; saving {
+			// Supersede any earlier picker save for this key, so its failure
+			// cannot reconcile the cache back over this value.
+			s.AdvanceChoice(value.Key)
+		}
+	}
 	if request.Hidden != nil {
 		s.Cache.ApplyHidden(request.Hidden)
 	}
@@ -243,6 +252,7 @@ func (m *Model) reconcileSettingsPrefs(restored []uisettings.Readback) string {
 func (m *Model) applySettingsPrefs(d *uisettings.State) {
 	m.prefs.glyphMode = d.GlyphMode
 	m.services.editor = d.Editor.Line()
+	m.mirrorArrowStep(d.ArrowStep)
 	for _, key := range uisettings.FlagKeys() {
 		m.mirrorFlag(key, d.Flag(key))
 	}
@@ -279,6 +289,9 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case uilaunch.BaseFetchedMsg:
 		return routed(m, m.recordBaseFetch(msg))
+
+	case uiterminal.SchemeMsg:
+		return routed(m, m.followColorScheme(msg))
 
 	case uisettings.EditorsProbe:
 		m.applyEditorsProbe(msg)
@@ -338,7 +351,23 @@ func (m *Model) mirrorPreference(key, value string) {
 		m.services.editor = mirrored.Editor
 	case key == uisettings.GlyphModeSetting:
 		m.prefs.glyphMode = mirrored.GlyphMode
+	case key == uisettings.ArrowStepSetting:
+		m.mirrorArrowStep(mirrored.ArrowStep)
 	}
+}
+
+func (m *Model) mirrorArrowStep(step string) {
+	m.prefs.arrowStep = step != uisettings.ArrowStepOff
+	m.prefs.arrowAttach = step == uisettings.ArrowStepAttach
+}
+
+// rebindSessions installs the in-session bindings again from the stored
+// settings, since the ←→ attach value is what binds ← there.
+func (s effectServices) rebindSessions() error {
+	if err := sessioncmd.ApplyBindingSettings(s.store, s.driver); err != nil {
+		return err
+	}
+	return s.driver.EnsureBindings()
 }
 
 // mirrorFlag is the one place a two-way row meets its preferences field.
@@ -346,8 +375,6 @@ func (m *Model) mirrorFlag(key string, on bool) {
 	switch key {
 	case uisettings.FocusKeySetting:
 		m.prefs.focusOnEnter = on
-	case uisettings.ArrowStepSetting:
-		m.prefs.arrowStep = on
 	case uisettings.ListDensitySetting:
 		m.prefs.comfortableRows = on
 	case uisettings.SessionLayoutSetting:

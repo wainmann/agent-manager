@@ -9,6 +9,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// fakePaths stands in for the root's path completion.
+type fakePaths struct {
+	active, chosen bool
+	moves, resets  int
+}
+
+func (p *fakePaths) Active() bool { return p.active }
+func (p *fakePaths) Chosen() bool { return p.chosen }
+func (p *fakePaths) Move(delta int) bool {
+	p.moves++
+	return false
+}
+func (p *fakePaths) Reset() { p.resets++ }
+
 // The group form validates its name and builds the group under the picked
 // parent; the parent and base steps go to the root.
 func TestGroupFormWalksItsFields(t *testing.T) {
@@ -246,5 +260,50 @@ func TestGroupFormLeavesTheEnvRowOffWithNothingToPick(t *testing.T) {
 	}
 	if d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 1); d.Focus() != GroupFormNameField {
 		t.Fatalf("tab past base focused %d, want the name", d.Focus())
+	}
+}
+
+// Editing a group opens on its saved values, keeps its parent fixed and
+// submits the group it replaces.
+func TestGroupEditKeepsItsParentAndSubmitsTheGroupItReplaces(t *testing.T) {
+	d := NewGroupEdit("work/old", "/srv/old", 1, 5)
+	paths := &fakePaths{}
+	if d.Name() != "old" || d.Dir() != "/srv/old" || d.DirAuto() || d.Worktree() != 1 || d.Edit() != "work/old" {
+		t.Fatalf("opened name %q dir %q auto %v worktree %d edit %q", d.Name(), d.Dir(), d.DirAuto(), d.Worktree(), d.Edit())
+	}
+	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "work", 3)
+	if got := d.Key(tea.KeyMsg{Type: tea.KeyRight}, paths, "work", 3); got.Action != GroupFormStay {
+		t.Fatalf("right on the parent row = %+v, want the parent fixed", got)
+	}
+	d.SetName("new")
+	got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, "work", 3)
+	want := GroupFormRequest{Parent: "work", Edit: "work/old", Path: "work/new", Worktree: 1, Name: "new", Dir: "/srv/old", Gen: 5}
+	if got.Action != GroupFormSubmit || got.Request != want {
+		t.Fatalf("enter = %+v, want %+v", got.Request, want)
+	}
+}
+
+func TestGroupEditViewSavesWithoutAPicker(t *testing.T) {
+	d := NewGroupEdit("work/old", "", 0, 1)
+	paths := &fakePaths{}
+	plain := lipgloss.NewStyle()
+	view := GroupFormView{
+		Field:     func(label, value string, focused bool) string { return label + "=" + value + "\n" },
+		Input:     func(textinput.Model) string { return "input" },
+		Badge:     func(group string) string { return "[" + group + "]" },
+		Picker:    func() string { return "picker" },
+		Parent:    "work",
+		Subtle:    plain,
+		Value:     plain,
+		Worktrees: []string{"inherit", "on", "off"},
+		Base:      "auto",
+	}
+	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "work", 3)
+	card := d.View(view)
+	if card.Title != "▾ Edit Group" || strings.Contains(card.Body, "picker") {
+		t.Fatalf("card = %+v, want the edit title and no parent picker", card)
+	}
+	if card.Hints[1] != [2]string{"↵", "save"} {
+		t.Fatalf("hints = %v, want enter to save", card.Hints)
 	}
 }

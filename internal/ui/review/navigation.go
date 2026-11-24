@@ -214,9 +214,9 @@ func (m *Model) Wheel(delta, height int) {
 }
 
 // PrepareViewport applies the wrapped-row visibility policy before the frame
-// is painted. spans contains the rendered row height for every logical row.
-func (m *Model) PrepareViewport(spans []int, height int) {
-	total := len(spans)
+// is painted. span renders one logical row to count its painted rows, so it
+// is asked only for the rows from the scroll through the cursor, each once.
+func (m *Model) PrepareViewport(total int, span func(int) int, height int) {
 	cursor := m.cursorLine
 	if cursor > total-1 {
 		cursor = total - 1
@@ -230,6 +230,15 @@ func (m *Model) PrepareViewport(spans []int, height int) {
 	if m.scroll < 0 {
 		m.scroll = 0
 	}
+	spans := make(map[int]int, min(cursor-m.scroll+1, height+2))
+	spanAt := func(i int) int {
+		rows, ok := spans[i]
+		if !ok {
+			rows = span(i)
+			spans[i] = rows
+		}
+		return rows
+	}
 	for m.scroll < cursor {
 		used := 0
 		if m.scroll > 0 {
@@ -240,7 +249,7 @@ func (m *Model) PrepareViewport(spans []int, height int) {
 		}
 		fits := true
 		for i := m.scroll; i <= cursor; i++ {
-			used += spans[i]
+			used += spanAt(i)
 			if used > height {
 				fits = false
 				break

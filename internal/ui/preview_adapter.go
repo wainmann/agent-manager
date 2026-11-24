@@ -53,6 +53,8 @@ func (r previewCaptures) CaptureWanted(sess store.Session) bool {
 
 func (r previewCaptures) WatchSelection() { r.watchSelection() }
 
+func (r previewCaptures) KeepFrame() { r.layout.keepFrame = true }
+
 func (r previewCaptures) ArmTick(withRemote bool) tea.Cmd {
 	if !withRemote {
 		return r.workspace.capture.Tick(r)
@@ -302,7 +304,7 @@ func (m *Model) viewDetail(width int) string {
 		return uitheme.MutedStyle().Render("Select a session to inspect it.")
 	}
 	tool := sess.Tool
-	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && !s.IsGroup() && s.SessionID() == sess.ID {
+	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && s.SessionID() == sess.ID {
 		if picked := s.Tool(); picked != "" {
 			tool = picked
 		}
@@ -357,10 +359,6 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	}
 	title := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render(uiframe.DisplayGroup(group))
 	head := uipreview.FitColumns([]string{title + "  " + uitheme.ChipStyle().Render(countLabel), title}, []string{""}, width)
-
-	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && s.IsGroup() && s.Path() == group {
-		return head + "\n" + m.viewRenameGroupFields(s, group, width)
-	}
 
 	path := m.workspace.groupPaths[group]
 	source := ""

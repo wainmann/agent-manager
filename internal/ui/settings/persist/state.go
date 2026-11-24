@@ -62,6 +62,20 @@ type State struct {
 	Pending int
 	// Gen is the latest Settings visit or accepted save.
 	Gen uint64
+	// ChoiceGen tracks the last pick written for each choice key, so a
+	// failed write only reconciles the cache when no newer pick for that
+	// key has replaced it.
+	ChoiceGen map[string]uint64
+}
+
+// AdvanceChoice starts a new save generation for a choice key and returns
+// it for the request that will carry it.
+func (s *State) AdvanceChoice(key string) uint64 {
+	if s.ChoiceGen == nil {
+		s.ChoiceGen = make(map[string]uint64)
+	}
+	s.ChoiceGen[key]++
+	return s.ChoiceGen[key]
 }
 
 func New(st Writer, extra []string) State {
