@@ -314,18 +314,21 @@ default_status = "idle"
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "started")
 	waitForAgentGone(t, h.driver, created.ID)
-	agent, found, err := conversation.ReadAgent(hooks.NewManager(h.sessions.configDir).AgentFile(created.ID))
-	if err != nil || !found {
-		t.Fatalf("agent record = %v, %v", found, err)
+	agentFile := hooks.NewManager(h.sessions.configDir).AgentFile(created.ID)
+	agent, found, err := conversation.ReadAgent(agentFile)
+	if err != nil || !found || !agent.Ended {
+		t.Fatalf("agent record = %+v, %v, %v", agent, found, err)
 	}
 	stored, err := h.store.Get(created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stored.CreatedAt.Before(agent.Recorded) {
-		t.Fatal("the launch ended before its row's creation time")
+	// The record's mtime comes from the kernel's coarse clock, which can trail a launch this short.
+	ended := stored.CreatedAt.Add(time.Second)
+	if err := os.Chtimes(agentFile, ended, ended); err != nil {
+		t.Fatal(err)
 	}
-	logLine := fmt.Sprintf(`{"ts":%q,"pid":%d,"sid":"conv-logged","msg":"session.create.done"}`+"\n", agent.Recorded.Add(-time.Millisecond).Format(time.RFC3339Nano), agent.PID)
+	logLine := fmt.Sprintf(`{"ts":%q,"pid":%d,"sid":"conv-logged","msg":"session.create.done"}`+"\n", ended.Add(-time.Millisecond).Format(time.RFC3339Nano), agent.PID)
 	if err := os.MkdirAll(filepath.Join(grokHome, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
