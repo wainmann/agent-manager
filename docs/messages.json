@@ -4,8 +4,9 @@
     "banner": "Lifecycle hooks are here",
     "title": "v0.50.0: lifecycle hooks, and more you can do over SSH",
     "body": [
-      "hooks.toml in your config folder runs your own commands when a session starts, changes status, is archived, restored or killed.",
+      "hooks.toml in your config folder runs commands when a session starts, changes status, is archived, restored or killed.",
       "A notify_command you had moves into hooks.toml and now runs with banners off too.",
+      "If hooks.toml already exists, Messages shows the block to paste instead.",
       "On your other machines you can now move, rename and delete sessions, and rename and delete groups.",
       "GitHub Copilot CLI is a built-in tool, and the theme follows your system light and dark mode without a restart.",
       "agent-manager update checks build provenance before it replaces the binary, and ctrl+] resizes the split everywhere.",
@@ -21,8 +22,8 @@
     "banner": "Two things work differently in v0.50.0",
     "title": "v0.50.0: notify_command moves to hooks.toml, and resize is ctrl+]",
     "body": [
-      "The next time the manager or serve starts, your notify_command moves into hooks.toml as a [[hooks.notification]] block.",
-      "It used to run only when the banner showed. Now it runs on every banner trigger, even with the notifications row off in Settings.",
+      "After you update to v0.50.0, the next start moves your notify_command into hooks.toml as a [[hooks.notification]] block.",
+      "It used to run only when a banner showed. Now it runs on every banner trigger, even with the notifications row off.",
       "If you turned notifications off to keep it quiet, delete that block from hooks.toml.",
       "Run agent-manager hooks to see what the file holds.",
       "The split's resize key is now ctrl+] instead of |, in the list and with a session focused.",
