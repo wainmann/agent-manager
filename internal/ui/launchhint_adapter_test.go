@@ -417,11 +417,19 @@ func TestQuickSpawnRefusedByTheHintKeepsANewerPromptOnTheBar(t *testing.T) {
 	m.selectGroupRow(t, "backend")
 	m.openQuickMode()
 	m.quick().SetTools([]string{"hermes"}, 0)
+	path := tempImage(t, "refused.png")
+	m.quick().Input.SetValue("fix the tests " + composer.Token(1))
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
 
-	updated, cmd := m.quickSpawn("backend", "fix the tests")
+	updated, cmd := m.quickSpawn("backend", m.quick().Input.Value())
 	m = updated.(*Model)
 	m.quick().Input.SetValue("newer prompt")
-	m.applyCmd(t, cmd)
+	updated, cleanup := m.Update(cmd())
+	m = updated.(*Model)
+	if cleanup == nil {
+		t.Fatal("the refused images were neither returned nor dropped")
+	}
+	m.applyTestMsg(t, cleanup())
 
 	if hintOpen(m) {
 		t.Fatal("a stale refusal replaced the bar holding a newer prompt")
@@ -431,6 +439,12 @@ func TestQuickSpawnRefusedByTheHintKeepsANewerPromptOnTheBar(t *testing.T) {
 	}
 	if m.errBar.text == "" {
 		t.Fatal("the refusal was not reported")
+	}
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("refused images joined the newer prompt: %v", m.quick().Attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("refused image kept on disk, stat err = %v", err)
 	}
 }
 
