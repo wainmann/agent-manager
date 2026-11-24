@@ -494,9 +494,9 @@ func (m *Model) applySpawn(request uilaunch.Request, result uilaunch.Result, err
 	// dialog's place, the same way the synchronous submit did; a dialog the
 	// user opened since the dispatch is newer and keeps the screen.
 	if !m.spawnTakesOver(request) {
-		cleanup := m.returnSpawnImages(request)
+		m.returnSpawnImages(request)
 		m.reportErr(err.Error())
-		return cleanup
+		return nil
 	}
 	m.reportLaunchError(err)
 	if fix, ok := m.launchHintFix(); ok {
@@ -509,7 +509,7 @@ func (m *Model) applySpawn(request uilaunch.Request, result uilaunch.Result, err
 		}
 	} else {
 		// A plain error left the composer on screen; its images go back.
-		return m.returnSpawnImages(request)
+		m.returnSpawnImages(request)
 	}
 	return nil
 }
@@ -577,24 +577,21 @@ func (m *Model) spawnTakesOver(request uilaunch.Request) bool {
 // returnSpawnImages gives the prompt's images back to the composer that is
 // still on screen, so the user can fix and resubmit; when no such composer
 // remains, the files are dropped.
-func (m *Model) returnSpawnImages(request uilaunch.Request) tea.Cmd {
+func (m *Model) returnSpawnImages(request uilaunch.Request) {
 	switch request.Kind {
 	case uilaunch.Form:
 		if prompt, ok := m.formPromptForGen(request.ComposerGen); ok {
 			prompt.Attachments = append(request.Images, prompt.Attachments...)
-			return nil
+			return
 		}
 	case uilaunch.Quick:
 		if m.restoreRefused(request.ComposerGen, request.Submission) {
 			q := m.quick()
 			q.Attachments = append(request.Images, q.Attachments...)
-			return nil
+			return
 		}
 	}
-	if len(request.Images) == 0 {
-		return nil
-	}
-	return uiinstall.CleanupImages(request.Images)
+	uiinstall.DropImages(request.Images)
 }
 
 // formWorktreeOn is the worktree state the form shows and spawns with: the

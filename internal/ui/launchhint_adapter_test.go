@@ -424,12 +424,7 @@ func TestQuickSpawnRefusedByTheHintKeepsANewerPromptOnTheBar(t *testing.T) {
 	updated, cmd := m.quickSpawn("backend", m.quick().Input.Value())
 	m = updated.(*Model)
 	m.quick().Input.SetValue("newer prompt")
-	updated, cleanup := m.Update(cmd())
-	m = updated.(*Model)
-	if cleanup == nil {
-		t.Fatal("the refused images were neither returned nor dropped")
-	}
-	m.applyTestMsg(t, cleanup())
+	m.applyCmd(t, cmd)
 
 	if hintOpen(m) {
 		t.Fatal("a stale refusal replaced the bar holding a newer prompt")
