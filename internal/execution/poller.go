@@ -481,9 +481,10 @@ func (p *Runner) step(ctx context.Context) Result {
 			// taken at the start of the pass still names the previous one,
 			// and the quote read next is that conversation's.
 			sess = sessions[i]
-			// A delivery ends in Enter, so a row with something to deliver
-			// is read as it is now, not as it was when the pass began.
-			fresh := !readAhead || len(sess.PendingInputs) > 0 || awaiting[sess.ID] > 0
+			// A delivery ends in Enter and an end asked for after the turn
+			// acts on the rest read here, so a row with either pending is
+			// read as it is now, not as it was when the pass began.
+			fresh := !readAhead || len(sess.PendingInputs) > 0 || awaiting[sess.ID] > 0 || sess.AfterTurn != ""
 			pane, readable := captured[sess.ID]
 			if fresh {
 				current, err := p.tmux.CapturePane(sess.ID)

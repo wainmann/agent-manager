@@ -3,6 +3,7 @@ package execution
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -173,4 +174,39 @@ func useScrollingTool(t *testing.T, m *harness) {
 		t.Fatal(err)
 	}
 	m.poller.engine = engine
+}
+
+// An archive or a kill asked for after the turn acts on the rest this pass
+// reports, so the row is read when it is reached: a turn begun since the pass
+// started is not a rest.
+func TestAnEndAfterTheTurnWaitsOnATurnBegunAfterThePassBegan(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "ready-tool")
+	settledPane(t, m, sess.ID, "❯")
+	for deadline := time.Now().Add(30 * time.Second); m.poller.Step().Snapshot.Sessions[0].Status != status.Finished; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the session never came to rest")
+		}
+	}
+	if err := m.store.RequestAfterTurn(sess.ID, store.AfterTurnArchive, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	grace := quietEndGrace
+	quietEndGrace = 0
+	t.Cleanup(func() { quietEndGrace = grace })
+
+	prev := followDuringPoll
+	t.Cleanup(func() { followDuringPoll = prev })
+	followDuringPoll = func(p *Runner, row *store.Session, agentAlive, paneGone bool) error {
+		waitForPane(t, m, row.ID, "a-turn-begun-since")
+		return nil
+	}
+
+	result := m.poller.Step()
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if slices.Contains(result.Snapshot.TurnsEnded, sess.ID) {
+		t.Fatalf("the turn was reported ended as %s, with a new one on screen", result.Snapshot.Sessions[0].Status)
+	}
 }
