@@ -432,8 +432,10 @@ func (p *Runner) step(ctx context.Context) Result {
 				agents.Count++
 				agents.RSS += stat.RSS
 				var hostCPU float64
-				if haveDelta {
-					delta := stat.CPUSeconds - p.prevTreeCPU[pid]
+				// A pid the last pass skipped (held, or new) has no baseline for
+				// this interval, and its whole cumulative time is no delta.
+				if prev, seen := p.prevTreeCPU[pid]; haveDelta && seen {
+					delta := stat.CPUSeconds - prev
 					if delta < 0 {
 						delta = 0
 					}
@@ -574,7 +576,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	}
 	if preview == "" && selectedID != "" {
 		for _, sess := range sessions {
-			if sess.ID == selectedID && (sess.Archived || panes[sess.ID].PID == 0) {
+			if sess.ID == selectedID && !held[sess.ID] && (sess.Archived || panes[sess.ID].PID == 0) {
 				snapshot, err := StoredPreview(p.store, p.tmux, sess.ID)
 				if err != nil {
 					return Result{Err: err}

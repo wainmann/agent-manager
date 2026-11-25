@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -86,5 +87,20 @@ func TestGroupActionWithAMemberInFlightIsIgnored(t *testing.T) {
 	m.archiveSelected()
 	if confirmOpen(m) {
 		t.Fatal("a group archive over a row with a kill in flight opened a card")
+	}
+}
+
+func TestAfterTurnEndLeavesAQueuedActionPending(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "agent", t.TempDir(), "")
+	m.selectSessionRow(t, "agent")
+	agent, _ := m.selected()
+	target := uilifecycle.Target{Action: uilifecycle.Restart, Sessions: []store.Session{agent}}
+	m.ledger.lifecycle.MarkPending(target)
+	ended := uilifecycle.Target{Action: uilifecycle.Kill, Sessions: []store.Session{agent}}
+	m.applyAfterTurn(uilifecycle.AfterTurnRequest{ID: agent.ID}, uilifecycle.AfterTurnResult{Target: ended}, nil)
+	if m.ledger.lifecycle.Pending[agent.ID] != uilifecycle.Restart {
+		t.Fatalf("an after-turn kill cleared the restart still running, pending = %v", m.ledger.lifecycle.Pending)
 	}
 }

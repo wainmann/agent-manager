@@ -156,6 +156,7 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 	case uitheme.PaneRequest:
 		return uitheme.ApplyPane(themeHost{m}, err)
 	case uilifecycle.Request:
+		m.ledger.lifecycle.ClearPending(request.Target)
 		return m.applyLifecycleEffect(request, as[uilifecycle.Result](result), err)
 	case uilifecycle.AfterTurnRequest:
 		return m.applyAfterTurn(request, as[uilifecycle.AfterTurnResult](result), err)

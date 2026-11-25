@@ -122,7 +122,6 @@ func (m *Model) applyAfterTurn(request uilifecycle.AfterTurnRequest, result uili
 // did: the statuses that changed, the rows that left or came back, the panes
 // this run launched, and what the completion reports.
 func (m *Model) applyLifecycleEffect(request uilifecycle.Request, result uilifecycle.Result, err error) tea.Cmd {
-	m.ledger.lifecycle.ClearPending(request.Target)
 	change := uilifecycle.Changes(request, result, err)
 	for _, each := range change.Statuses {
 		m.setSessionStatus(each.ID, each.Status)
