@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/catalog"
@@ -124,6 +125,16 @@ var remotePendingAction = map[uilink.Op]uilifecycle.Action{
 	uilink.Archive:       uilifecycle.Archive,
 	uilink.Restore:       uilifecycle.Restore,
 	uilink.Delete:        uilifecycle.Remove,
+	uilink.DeleteGroup:   uilifecycle.Remove,
+}
+
+// remoteLifecycleTargets are the session ids a remote call acts on: a group
+// delete's confirmed members, or the one row of any other call.
+func remoteLifecycleTargets(call uilink.Call) []string {
+	if call.Op == uilink.DeleteGroup {
+		return call.Sessions
+	}
+	return []string{call.Ref.ID}
 }
 
 // remoteLifecycleInFlight finds a lifecycle call queued or running for the
@@ -134,7 +145,7 @@ func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bo
 			continue
 		}
 		call, ok := job.Request.(uilink.Call)
-		if !ok || call.Host != host || call.Ref.ID != id {
+		if !ok || call.Host != host || !slices.Contains(remoteLifecycleTargets(call), id) {
 			continue
 		}
 		if action, lifecycle := remotePendingAction[call.Op]; lifecycle {
@@ -142,6 +153,15 @@ func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bo
 		}
 	}
 	return "", false
+}
+
+func (m *Model) remoteAnyInFlight(host string, ids []string) bool {
+	for _, id := range ids {
+		if _, busy := m.remoteLifecycleInFlight(host, id); busy {
+			return true
+		}
+	}
+	return false
 }
 
 // openRemoteRename types a remote agent's, terminal's or group's new name
@@ -208,6 +228,9 @@ func (m *Model) confirmRemoteGroupDelete(row uiconnections.Row) tea.Cmd {
 		return nil
 	}
 	subgroups, sessions := m.ssh.Subtree(row.Host, row.Group)
+	if m.remoteAnyInFlight(row.Host, sessions) {
+		return nil
+	}
 	request := uilink.Call{Op: uilink.DeleteGroup, Host: row.Host, Name: row.Group, Sessions: sessions}
 	m.openConfirm(confirmTarget{
 		prompt: uidialogs.Confirm{Action: uidialogs.ConfirmDelete, Group: true,
@@ -276,7 +299,7 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 		return nil
 	}
 	if _, lifecycle := remotePendingAction[request.Op]; lifecycle {
-		if _, busy := m.remoteLifecycleInFlight(request.Host, request.Ref.ID); busy {
+		if m.remoteAnyInFlight(request.Host, remoteLifecycleTargets(request)) {
 			return nil
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1280,5 +1281,33 @@ func TestRemoteArchiveShowsOnTheRowAndRefusesARepeat(t *testing.T) {
 	}
 	if jobs != 1 {
 		t.Fatalf("remote jobs after a repeat archive = %d, want 1", jobs)
+	}
+}
+
+func TestRemoteGroupDeleteAndAMemberActionRefuseEachOther(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s1")})
+	m.answerRemote(t, fake, cmd, "y")
+	m.rail.Focus(boxGroup)
+	m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup})
+	if confirmOpen(m) {
+		t.Fatal("a group delete over a member in flight opened a confirm")
+	}
+
+	fake = &fakeSSH{}
+	m = connectedModel(t, fake)
+	m.rail.Focus(boxGroup)
+	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxGroup})
+	m.answerRemote(t, fake, cmd, "y")
+	if m.remoteIdle() {
+		t.Fatal("the confirmed group delete was not queued")
+	}
+	if action, busy := m.remoteLifecycleInFlight("box", "s2"); !busy || action != uilifecycle.Remove {
+		t.Fatalf("member s2 in flight = %q %t, want remove", action, busy)
+	}
+	m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s2")})
+	if confirmOpen(m) {
+		t.Fatal("a member archive during a group delete opened a confirm")
 	}
 }
