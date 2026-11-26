@@ -416,6 +416,22 @@ func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
 		}
 	}
 
+	unreadableAnswer := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+		return []byte(`{"id":"../x"}`), nil, nil
+	})
+	if _, err := unreadableAnswer.Type(context.Background(), ref, "hi"); !MayHaveReached(err) {
+		t.Errorf("a type with an unreadable answer = %v, want one that may have reached the agent", err)
+	}
+	if _, err := unreadableAnswer.Spawn(context.Background(), "gpu", sessioncmd.CreateSessionOptions{Prompt: "hi"}); !MayHaveReached(err) {
+		t.Errorf("a spawn with an unreadable answer = %v, want one that may have reached the agent", err)
+	}
+	if _, err := newTestClient(t, failing(255, "Connection to gpu closed by remote host.")).Spawn(context.Background(), "gpu", sessioncmd.CreateSessionOptions{Prompt: "hi"}); !MayHaveReached(err) {
+		t.Errorf("a spawn cut off after agent-manager started = %v, want one that may have started the agent", err)
+	}
+	if _, err := newTestClient(t, failing(1, "agent-manager: no such tool")).Spawn(context.Background(), "gpu", sessioncmd.CreateSessionOptions{Prompt: "hi"}); err == nil || MayHaveReached(err) {
+		t.Errorf("a refused spawn = %v, want a plain refusal", err)
+	}
+
 	slow := newTestClient(t, func(ctx context.Context, _ []string) ([]byte, []byte, error) {
 		<-ctx.Done()
 		return nil, nil, ctx.Err()

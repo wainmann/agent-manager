@@ -109,7 +109,7 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 	if err != nil {
 		// As on this machine, a prompt that may sit in the pane stays off
 		// the bar, so the next enter cannot type it a second time.
-		if call.FromQuick() && !(call.Op == Type && remote.MayHaveReached(err)) {
+		if call.FromQuick() && !remote.MayHaveReached(err) {
 			root.RestoreRefused(call.ComposerGen, call.Submission)
 		}
 		root.ReportErr(err.Error())

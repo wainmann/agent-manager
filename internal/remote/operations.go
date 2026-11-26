@@ -120,10 +120,19 @@ func (c *Client) Type(ctx context.Context, ref Ref, prompt string) (sessioncmd.S
 		return typed, typeLost(err)
 	}
 	typed, err := cleanSession(typed)
-	return typed, unreadable(ref.Host, "type", err)
+	return typed, ranUnreadable(ref.Host, "type", err)
 }
 
-// typeLost marks a type cut off after agent-manager started on the host,
+// ranUnreadable is an answer that came back after the command ran there,
+// so its prompt may already be in a pane.
+func ranUnreadable(host, command string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &Error{Host: host, Err: fmt.Errorf("unreadable answer to %s: %w", command, err), ran: true, mayHaveReached: true}
+}
+
+// typeLost marks a type or spawn cut off after agent-manager started on the host,
 // by the deadline or a dropped connection, as one that may have reached the
 // agent: the paste may have run before the answer was lost.
 func typeLost(err error) error {
@@ -161,10 +170,10 @@ func (c *Client) Spawn(ctx context.Context, host string, opts sessioncmd.CreateS
 	}
 	var created sessioncmd.Session
 	if err := c.decode(ctx, host, createTimeout, &created, args...); err != nil {
-		return created, err
+		return created, typeLost(err)
 	}
 	created, err := cleanSession(created)
-	return created, unreadable(host, "spawn", err)
+	return created, ranUnreadable(host, "spawn", err)
 }
 
 func (c *Client) CreateTerminal(ctx context.Context, host string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error) {

@@ -230,7 +230,7 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// MayHaveReached reports a failed Type whose prompt may sit in the pane:
+// MayHaveReached reports a failed Type or Spawn whose prompt may sit in a pane:
 // the host said its paste had started, or the call was cut off after
 // agent-manager started there. Such a prompt is not offered again.
 func MayHaveReached(err error) bool {
