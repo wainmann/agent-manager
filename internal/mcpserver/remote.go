@@ -324,7 +324,8 @@ func (h *remoteHosts) sender() (string, error) {
 }
 
 func (h *remoteHosts) callerName() (string, error) {
-	listed, err := h.sessions.List(h.sessionID, false)
+	// An archived agent's pane keeps running, so its own row may be archived.
+	listed, err := h.sessions.List(h.sessionID, true)
 	if err != nil {
 		return "", err
 	}

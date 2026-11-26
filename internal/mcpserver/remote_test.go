@@ -286,6 +286,33 @@ func TestListSessionsLeavesArchivedRemoteRowsOutUnlessAsked(t *testing.T) {
 	}
 }
 
+// Archiving leaves the pane running, so an archived agent still sends and is
+// named by its own row.
+func TestAnArchivedCallerStillSendsToAHost(t *testing.T) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostname, _, _ = strings.Cut(hostname, ".")
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		if words[0] == "send" {
+			return mustJSON(t, sessioncmd.SendResult{QueuePosition: 1, ManagerAwake: true}), nil, nil
+		}
+		return mustJSON(t, gpuSnapshot()), nil, nil
+	})
+	f.local.listed[0].Archived = true
+	f.hosts.reset()
+
+	text, isError := callText(t, f.session, "send_session", map[string]any{"session_id": "gpu::r1", "message": "done"})
+	if isError {
+		t.Fatalf("send_session = %q", text)
+	}
+	want := []string{"send", "--from=" + senderName("lead", hostname), "--json", "--", "r1", "done"}
+	if calls := f.hosts.recorded(); len(calls) != 1 || !reflect.DeepEqual(calls[0].words, want) {
+		t.Fatalf("remote calls = %+v, want one running %q", calls, want)
+	}
+}
+
 func TestListingsWithNoConnectionsKeepTheirOutput(t *testing.T) {
 	f := newRemoteFixture(t, "cafe", nil)
 	f.connections = nil
