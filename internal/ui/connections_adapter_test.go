@@ -1311,3 +1311,55 @@ func TestRemoteGroupDeleteAndAMemberActionRefuseEachOther(t *testing.T) {
 		t.Fatal("a member archive during a group delete opened a confirm")
 	}
 }
+
+func remotePendingWord(m *Model, id string) string {
+	for _, host := range m.railSnapshot().Hosts {
+		for _, session := range host.Sessions {
+			if host.Name == "box" && session.ID == id {
+				return session.Pending
+			}
+		}
+	}
+	return ""
+}
+
+func TestFailedRemoteArchiveClearsTheMarkAndAllowsARetry(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	fake.mu.Lock()
+	fake.stderr, fake.code = "agent-manager: no session named s1\n", 1
+	fake.mu.Unlock()
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s1")})
+	cmd = m.answerRemote(t, fake, cmd, "y")
+	if !m.needsLoaderTick() {
+		t.Fatal("a queued remote archive did not keep the row's spinner ticking")
+	}
+	m.runRemoteCmd(t, cmd)
+	if !m.remoteIdle() || remotePendingWord(m, "s1") != "" {
+		t.Fatalf("after the failure: idle %t, pending %q", m.remoteIdle(), remotePendingWord(m, "s1"))
+	}
+	if !strings.Contains(m.errBar.text, "no session named s1") {
+		t.Fatalf("error bar = %q", m.errBar.text)
+	}
+	m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s1")})
+	if !confirmOpen(m) {
+		t.Fatal("a retry after the failure opened no confirm")
+	}
+}
+
+func TestRemoteDeleteMarksTheTerminalsItTakes(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	fake.snapshot.Terminals = append(fake.snapshot.Terminals,
+		sessioncmd.Terminal{ID: "t2", Name: "api-sh", Group: "web", Status: "idle", Running: true, ParentID: "s1"})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: boxSession("s1")})
+	m.answerRemote(t, fake, cmd, "y")
+	if action, busy := m.remoteLifecycleInFlight("box", "t2"); !busy || action != uilifecycle.Remove {
+		t.Fatalf("nested terminal in flight = %q %t, want remove", action, busy)
+	}
+	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("t2")})
+	if confirmOpen(m) {
+		t.Fatal("a kill on a terminal its agent's delete takes opened a confirm")
+	}
+}

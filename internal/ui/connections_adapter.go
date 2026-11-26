@@ -107,12 +107,12 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	if call.Op == uiconnections.OpNone {
 		return nil, true
 	}
-	if _, busy := m.remoteLifecycleInFlight(row.Host, row.Ref.ID); busy {
-		return nil, true
-	}
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
+	if m.remoteAnyInFlight(row.Host, m.remoteLifecycleTargets(request)) {
+		return nil, true
+	}
 	return m.confirmRemote(request, call, row.Terminals), true
 }
 
@@ -129,27 +129,39 @@ var remotePendingAction = map[uilink.Op]uilifecycle.Action{
 }
 
 // remoteLifecycleTargets are the session ids a remote call acts on: a group
-// delete's confirmed members, or the one row of any other call.
-func remoteLifecycleTargets(call uilink.Call) []string {
-	if call.Op == uilink.DeleteGroup {
+// delete's confirmed members, an agent's delete with its nested terminals,
+// or the one row of any other call.
+func (m *Model) remoteLifecycleTargets(call uilink.Call) []string {
+	switch call.Op {
+	case uilink.DeleteGroup:
 		return call.Sessions
+	case uilink.Delete:
+		return append([]string{call.Ref.ID}, m.ssh.Nested(call.Host, call.Ref.ID)...)
 	}
 	return []string{call.Ref.ID}
+}
+
+// remoteLifecycleJobs are the lifecycle calls queued or running on the
+// remote lane.
+func (m *Model) remoteLifecycleJobs() []uilink.Call {
+	var calls []uilink.Call
+	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
+		if job == nil {
+			continue
+		}
+		if call := job.Request.(uilink.Call); remotePendingAction[call.Op] != "" {
+			calls = append(calls, call)
+		}
+	}
+	return calls
 }
 
 // remoteLifecycleInFlight finds a lifecycle call queued or running for the
 // session id on host.
 func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bool) {
-	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
-		if job == nil {
-			continue
-		}
-		call, ok := job.Request.(uilink.Call)
-		if !ok || call.Host != host || !slices.Contains(remoteLifecycleTargets(call), id) {
-			continue
-		}
-		if action, lifecycle := remotePendingAction[call.Op]; lifecycle {
-			return action, true
+	for _, call := range m.remoteLifecycleJobs() {
+		if call.Host == host && slices.Contains(m.remoteLifecycleTargets(call), id) {
+			return remotePendingAction[call.Op], true
 		}
 	}
 	return "", false
@@ -299,7 +311,7 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 		return nil
 	}
 	if _, lifecycle := remotePendingAction[request.Op]; lifecycle {
-		if m.remoteAnyInFlight(request.Host, remoteLifecycleTargets(request)) {
+		if m.remoteAnyInFlight(request.Host, m.remoteLifecycleTargets(request)) {
 			return nil
 		}
 	}
@@ -309,7 +321,7 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 	if request.FromQuick() {
 		m.acceptQuick(request.Submission)
 	}
-	return m.nextEffectCmd()
+	return tea.Batch(m.nextEffectCmd(), m.startStartupTick())
 }
 
 // remoteRepeat refuses a second enter on a New Session form or a name field

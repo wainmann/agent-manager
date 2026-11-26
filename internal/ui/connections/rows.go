@@ -67,6 +67,18 @@ func (c *Connections) Row(target Target) (Row, bool) {
 	return Row{}, false
 }
 
+// Nested are the ids of the host's terminals nested under an agent, which
+// its delete takes with it.
+func (c *Connections) Nested(host, id string) []string {
+	var ids []string
+	for _, term := range c.hosts[host].Terminals {
+		if term.ParentID == id {
+			ids = append(ids, term.ID)
+		}
+	}
+	return ids
+}
+
 // Subtree is what deleting a group on a host takes, from its last snapshot:
 // how many groups are nested under it, and the ids of every agent and
 // terminal filed in it or them, archived ones included, as the host's
