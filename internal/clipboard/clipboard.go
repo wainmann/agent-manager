@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 
@@ -362,24 +363,25 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 	return file.Name(), nil
 }
 
+var linkCount atomic.Uint64
+
 // LinkPaste gives a pasted image a second name beside the first, so each
 // holder can delete its own name without taking the image from the other.
+// It is one link call, cheap enough for the UI thread.
 func LinkPaste(path string) (string, error) {
-	file, err := os.CreateTemp(filepath.Dir(path), "paste-*"+filepath.Ext(path))
-	if err != nil {
-		return "", err
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	for {
+		name := fmt.Sprintf("%s-%d-%d%s", stem, os.Getpid(), linkCount.Add(1), ext)
+		err := os.Link(path, name)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		return name, nil
 	}
-	name := file.Name()
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Remove(name); err != nil {
-		return "", err
-	}
-	if err := os.Link(path, name); err != nil {
-		return "", err
-	}
-	return name, nil
 }
 
 // WriteText puts plain text on the OS clipboard. Used by the focused

@@ -124,8 +124,8 @@ func (c *Client) Type(ctx context.Context, ref Ref, prompt string) (sessioncmd.S
 }
 
 // typeLost marks a type or spawn cut off after agent-manager started on the host,
-// by the deadline, a cancel or a dropped connection, as one that may have reached the
-// agent: the paste may have run before the answer was lost.
+// by the deadline, a cancel, a dropped connection or a signal, as one that may have
+// reached the agent: the paste may have run before the answer was lost.
 func typeLost(err error) error {
 	var failed *Error
 	if !errors.As(err, &failed) || failed.mayHaveReached {
@@ -137,7 +137,8 @@ func typeLost(err error) error {
 	if !failed.ran {
 		return err
 	}
-	if errors.Is(failed.Err, context.DeadlineExceeded) || errors.Is(failed.Err, context.Canceled) || failed.trouble == TroubleUnreachable {
+	stopped := failed.trouble == TroubleFailed && failed.exit > 128
+	if stopped || errors.Is(failed.Err, context.DeadlineExceeded) || errors.Is(failed.Err, context.Canceled) || failed.trouble == TroubleUnreachable {
 		return &Error{Host: failed.Host, Err: fmt.Errorf("prompt may have reached the agent and was not sent again: %w", failed.Err), trouble: failed.trouble, ran: true, mayHaveReached: true}
 	}
 	return err

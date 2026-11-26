@@ -408,6 +408,8 @@ func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
 		{"the host saw the paste start", newTestClient(t, failing(3, "agent-manager: prompt may have reached api and was not sent again: boom")), true},
 		{"ssh dropped after agent-manager started", newTestClient(t, failing(255, "Connection to gpu closed by remote host.")), true},
 		{"the host refused it", newTestClient(t, failing(1, "agent-manager: prompt was not sent to api: boom")), false},
+		{"a signal stopped agent-manager there", newTestClient(t, failing(137, "")), true},
+		{"an older host refused a flag", newTestClient(t, failing(2, "flag provided but not defined: -json")), false},
 		{"ssh never reached agent-manager", newRawTestClient(t, failing(255, "ssh: connect to host gpu port 22: Connection refused")), false},
 	} {
 		_, err := tc.c.Type(context.Background(), ref, "hi")
@@ -436,6 +438,13 @@ func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
 	}
 	if _, err := newTestClient(t, failing(1, "agent-manager: no such tool")).Spawn(context.Background(), "gpu", sessioncmd.CreateSessionOptions{Prompt: "hi"}); err == nil || MayHaveReached(err) {
 		t.Errorf("a refused spawn = %v, want a plain refusal", err)
+	}
+
+	cutOff := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+		return []byte(`{"id":"a1","na`), nil, exitStatus(137)
+	})
+	if _, err := cutOff.Spawn(context.Background(), "gpu", sessioncmd.CreateSessionOptions{Prompt: "hi"}); !MayHaveReached(err) {
+		t.Errorf("a spawn whose answer was cut off mid-JSON = %v, want one that may have started the agent", err)
 	}
 
 	slow := newTestClient(t, func(ctx context.Context, _ []string) ([]byte, []byte, error) {

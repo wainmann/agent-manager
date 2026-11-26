@@ -199,6 +199,9 @@ type Error struct {
 	// answered is a command that exited cleanly with an answer this side
 	// could not read, so it did its work there.
 	answered bool
+	// exit is the remote command's status, 128 plus the signal when one
+	// stopped it.
+	exit int
 }
 
 // Trouble is the kind of failure that kept a call from a host's manager.
@@ -283,7 +286,7 @@ func classify(ctx context.Context, conn Connection, stderr []byte, err error) *E
 		// csh and tcsh take -l only on its own, and say so with their usage.
 		return &Error{Host: host, Err: errors.New("the login shell there is csh or tcsh; SSH connections need a POSIX login shell such as sh, bash or zsh")}
 	}
-	failed := &Error{Host: host, Err: err, mayHaveReached: exited.ExitCode() == sessioncmd.ExitMayHaveReached}
+	failed := &Error{Host: host, Err: err, mayHaveReached: exited.ExitCode() == sessioncmd.ExitMayHaveReached, exit: exited.ExitCode()}
 	if text != "" {
 		failed.Err = errors.New(strings.TrimPrefix(text, "agent-manager: "))
 	}
@@ -303,8 +306,10 @@ func (c *Client) decode(ctx context.Context, host string, timeout time.Duration,
 		// A command an older agent-manager does not know falls through to
 		// its interactive manager, which fails without a terminal after
 		// printing escape sequences instead of JSON. A call its caller gave
-		// up on is cut off mid-answer too, and says nothing about the host.
-		if ctx.Err() == nil && !Unreachable(err) && !errors.Is(err, errTooLong) && len(bytes.TrimSpace(out)) > 0 && !json.Valid(out) {
+		// up on is cut off mid-answer too, and says nothing about the host,
+		// and so does an answer stopped partway through its JSON.
+		trimmed := bytes.TrimSpace(out)
+		if ctx.Err() == nil && !Unreachable(err) && !errors.Is(err, errTooLong) && len(trimmed) > 0 && trimmed[0] != '{' && !json.Valid(out) {
 			return outdated(host)
 		}
 		return err
