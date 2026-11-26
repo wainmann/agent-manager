@@ -449,13 +449,7 @@ func (p *Runner) step(ctx context.Context) Result {
 				agents.Count++
 				agents.RSS += stat.RSS
 				var hostCPU float64
-				// A pid the last pass skipped (held, or new) has no baseline for
-				// this interval, and its whole cumulative time is no delta.
-				if prev, seen := p.prevTreeCPU[pid]; haveDelta && seen {
-					delta := stat.CPUSeconds - prev
-					if delta < 0 {
-						delta = 0
-					}
+				if delta, seen := intervalCPU(p.prevTreeCPU, pid, stat.CPUSeconds); haveDelta && seen {
 					cpuSecDelta += delta
 					hostCPU = sysstat.HostCPUFromDelta(delta, elapsed, ncpu)
 				} else {
@@ -779,6 +773,17 @@ func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 	}
 	reflow()
 	return nil
+}
+
+// intervalCPU is the CPU time pid spent since the last pass. A pid that
+// pass skipped (held, or new) has no baseline, and its whole cumulative
+// time is no interval.
+func intervalCPU(prev map[int]float64, pid int, seconds float64) (float64, bool) {
+	before, seen := prev[pid]
+	if !seen {
+		return 0, false
+	}
+	return max(seconds-before, 0), true
 }
 
 // HoldSessions runs a lifecycle action on ids while the poll carries on

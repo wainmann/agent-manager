@@ -88,3 +88,24 @@ func TestHeldSessionIsNotCapturedUntilReleased(t *testing.T) {
 		t.Fatalf("released: captured %d, err %v; want 1", captured, err)
 	}
 }
+
+func TestIntervalCPUNeedsABaseline(t *testing.T) {
+	prev := map[int]float64{7: 40}
+	if delta, seen := intervalCPU(prev, 7, 41.5); !seen || delta != 1.5 {
+		t.Fatalf("pid with a baseline: %v, %t", delta, seen)
+	}
+	if delta, seen := intervalCPU(prev, 8, 40); seen || delta != 0 {
+		t.Fatalf("pid skipped last pass counted its cumulative time: %v, %t", delta, seen)
+	}
+	if delta, _ := intervalCPU(prev, 7, 39); delta != 0 {
+		t.Fatalf("a reused pid went negative: %v", delta)
+	}
+}
+
+func TestHeldSessionStartsNoCapture(t *testing.T) {
+	runner := &Runner{sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"a": true}}
+	runner.startCaptureIfIdle([]store.Session{{ID: "a", Tool: "codex"}}, map[string]tmux.Pane{"a": {PID: 1}})
+	if runner.captureBusy.Load() {
+		t.Fatal("a held session started an id capture")
+	}
+}

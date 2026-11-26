@@ -115,3 +115,14 @@ func TestPendingCoversTheTargetUntilCleared(t *testing.T) {
 		t.Fatalf("cleared target still pending: %v", state.Pending)
 	}
 }
+
+func TestPendingWordNamesEachAction(t *testing.T) {
+	for action, want := range map[Action]string{
+		Archive: "archiving", Restore: "restoring", Remove: "deleting",
+		Kill: "killing", Restart: "restarting", Revive: "reviving", None: "",
+	} {
+		if got := PendingWord(action); got != want {
+			t.Errorf("PendingWord(%v) = %q, want %q", action, got, want)
+		}
+	}
+}
