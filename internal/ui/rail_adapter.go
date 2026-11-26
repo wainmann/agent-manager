@@ -306,8 +306,7 @@ func (m *Model) viewLegend() legendSection {
 }
 
 // legendReference is every footer the cursor or the messages alert can
-// bring, each row tier at its widest labels. Remote tiers go untitled, so a
-// host's name never decides the layout.
+// bring, each row tier at its widest labels.
 func (m *Model) legendReference() [][]legendSection {
 	ctx := m.railLegendContext()
 	session, group := ctx, ctx
@@ -323,14 +322,23 @@ func (m *Model) legendReference() [][]legendSection {
 		}
 	}
 	rows := []legendSection{legendOf(m.rail.RowLegendInView(session, false)), groupTier, legendOf(m.rail.RowLegendInView(session, true)), {}}
+	var widestHost string
+	hostWidth := 0
+	for _, conn := range m.ssh.List() {
+		if width := ansi.StringWidth(conn.Name); width > hostWidth {
+			widestHost, hostWidth = conn.Name, width
+		}
+	}
 	for _, row := range []uirail.RemoteRow{
 		{Kind: uirail.ConnectionRow},
-		{Kind: uirail.SessionRow, Dead: true},
-		{Kind: uirail.SessionRow, Terminal: true, Dead: true},
+		{Kind: uirail.SessionRow, Host: widestHost, Dead: true},
+		{Kind: uirail.SessionRow, Host: widestHost, Terminal: true, Dead: true},
 	} {
 		for _, archived := range []bool{false, true} {
 			remote := legendOf(m.rail.RemoteLegendInView(ctx, row, true, archived))
-			remote.Title = ""
+			if len(m.ssh.List()) == 0 {
+				remote.Title = ""
+			}
 			rows = append(rows, remote)
 		}
 	}

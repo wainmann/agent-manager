@@ -45,6 +45,7 @@ func (f Footer) ListLegend() Legend {
 	badge, quiet := TitleStyles()
 	if mode == Titled {
 		bar, _ := PaintTitledLegend(f.List, f.Width, LiveCap(f.Mode), badge, quiet, Separator())
+		bar.Text = presentation.PadToHeight(bar.Text, rows)
 		return bar
 	}
 	bar := PaintUntitledLegend(f.List, f.Width, LiveCap(f.Mode), mode, rows)

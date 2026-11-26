@@ -157,14 +157,17 @@ func PaintLegend(sections []Section, width int, cap Cap, title, quietTitle func(
 // paints every key whole in room rows, bare otherwise, cut past room.
 func LegendLayout(refs [][]Section, width, room int, cap Cap, title, quietTitle func(string) string, sep string) (LegendMode, int) {
 	titled := true
+	titledRows := 1
 	for _, ref := range refs {
-		if _, fits := PaintTitledLegend(ref, width, cap, title, quietTitle, sep); !fits {
+		bar, fits := PaintTitledLegend(ref, width, cap, title, quietTitle, sep)
+		if !fits {
 			titled = false
 			break
 		}
+		titledRows = max(titledRows, strings.Count(bar.Text, "\n")+1)
 	}
 	if titled {
-		return Titled, MaxRows
+		return Titled, titledRows
 	}
 	worded := 0
 	for _, ref := range refs {

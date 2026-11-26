@@ -3,13 +3,18 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"strings"
 	"testing"
 )
 
@@ -124,5 +129,80 @@ func TestNarrowListFooterKeepsConfiguredActionKeys(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestListFooterKeepsPaneHeightAcrossSessionStatuses(t *testing.T) {
+	for _, glyph := range []presentation.GlyphMode{presentation.GlyphModeAdvanced, presentation.GlyphModeBasic} {
+		for _, width := range []int{10, 20, 40, 80, 120, 200, 256, 280, 320, 500} {
+			m := shotModel()
+			m.prefs.glyphMode = glyph
+			m.layout.width, m.layout.height = width, 67
+			m.selectSessionRow(t, "db-migrations")
+			want := -1
+			for _, state := range []string{"finished", "idle", "working", "waiting", "errored"} {
+				m.workspace.sessions[0].Status = state
+				m.rebuildRows()
+				height := m.previewPaneHeight()
+				if want < 0 {
+					want = height
+				}
+				if height != want {
+					t.Errorf("%s/%d/%s pane height=%d, want %d", glyph, width, state, height, want)
+				}
+			}
+		}
+	}
+}
+
+func TestWideListFooterKeepsRoomForThePreview(t *testing.T) {
+	for _, glyph := range []presentation.GlyphMode{presentation.GlyphModeAdvanced, presentation.GlyphModeBasic} {
+		for _, width := range []int{320, 500} {
+			for _, fullLayout := range []bool{false, true} {
+				m := shotModel()
+				m.prefs.glyphMode, m.prefs.fullLayout = glyph, fullLayout
+				m.layout.width, m.layout.height = width, 12
+				m.selectSessionRow(t, "db-migrations")
+				m.workspace.sessions[0].Status = "idle"
+				m.rebuildRows()
+				m.workspace.preview = "wide-preview-visible\n"
+				if got := lipgloss.Height(m.listFooter()); got != 2 {
+					t.Errorf("%s/%d/full=%t footer height=%d, want 2", glyph, width, fullLayout, got)
+				}
+				if !fullLayout && !strings.Contains(ansi.Strip(preparedView(m)), "wide-preview-visible") {
+					t.Errorf("%s/%d: footer hid the preview", glyph, width)
+				}
+			}
+		}
+	}
+}
+
+func TestRemoteFooterKeepsPaneHeightWhenReviveAppears(t *testing.T) {
+	m := listedModel(t, &fakeSSH{})
+	m.prefs.glyphMode = presentation.GlyphModeBasic
+	m.layout.width, m.layout.height = 110, 40
+	for _, action := range m.services.listKeys.Actions() {
+		switch action.Name {
+		case keybind.Open, keybind.Attach, keybind.Prompt, keybind.Revive, keybind.Up, keybind.Down,
+			keybind.NewSession, keybind.NewConnection, keybind.Help, keybind.Quit, keybind.Settings:
+		default:
+			m.services.listKeys = m.services.listKeys.With(action.Name, keybind.Keys())
+		}
+	}
+	host := strings.Repeat("h", 40)
+	m.ssh.SetList([]store.Connection{{Name: host, Destination: "me@box"}})
+	state := uiconnections.Host{OK: true, Sessions: []uiconnections.Session{{ID: "s1", Name: "api", Tool: "claude", Status: "idle"}}}
+	setHost(m, host, state)
+	m.rail.Focus(uirail.Selection{Kind: uirail.SessionRow, Host: host, SessionID: "s1"})
+	active := m.listFooter()
+	height := m.previewPaneHeight()
+	state.Sessions[0].Status = "dead"
+	setHost(m, host, state)
+	dead := m.listFooter()
+	if !strings.Contains(active, host) || strings.Contains(active, "revive") || !strings.Contains(dead, "revive") {
+		t.Fatalf("unexpected remote footers: active=%q dead=%q", active, dead)
+	}
+	if lipgloss.Height(active) != lipgloss.Height(dead) || height != m.previewPaneHeight() {
+		t.Fatalf("footer height %d -> %d, pane height %d -> %d", lipgloss.Height(active), lipgloss.Height(dead), height, m.previewPaneHeight())
 	}
 }
