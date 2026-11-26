@@ -1248,3 +1248,37 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.rail.Focus(boxRow)
 	frame("an offline host")
 }
+
+// A remote lifecycle call marks its row while it is on its way, and the
+// same action pressed again in that time asks nothing.
+func TestRemoteArchiveShowsOnTheRowAndRefusesARepeat(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s1")})
+	m.answerRemote(t, fake, cmd, "y")
+	if m.remoteIdle() {
+		t.Fatal("the confirmed archive was not queued")
+	}
+	pending := ""
+	for _, host := range m.railSnapshot().Hosts {
+		for _, session := range host.Sessions {
+			if host.Name == "box" && session.ID == "s1" {
+				pending = session.Pending
+			}
+		}
+	}
+	if pending != "archiving" {
+		t.Fatalf("remote row pending = %q, want archiving", pending)
+	}
+	m.runRailIntent(uirail.Intent{Kind: uirail.Archive, Target: boxSession("s1")})
+	if confirmOpen(m) {
+		t.Fatal("a repeat archive opened another confirm")
+	}
+	jobs := len(m.effects.Remote.Pending)
+	if m.effects.Remote.Active != nil {
+		jobs++
+	}
+	if jobs != 1 {
+		t.Fatalf("remote jobs after a repeat archive = %d, want 1", jobs)
+	}
+}

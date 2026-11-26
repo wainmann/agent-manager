@@ -656,10 +656,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	}
 
 	if agents.Count > 0 {
-		agents.CPU = sysstat.HostCPUPercent(agents.CPU, ncpu)
-		if haveDelta {
-			agents.CPU = min(agents.CPU+sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu), 100)
-		}
+		agents.CPU = fleetCPU(agents.CPU, cpuSecDelta, haveDelta, elapsed, ncpu)
 		agents.RAM = sysstat.HostRAMPercent(agents.RSS, memTotal)
 	}
 	p.prevTreeCPU = nextTreeCPU
@@ -774,6 +771,16 @@ func (p *Runner) ReflowSessions(ids []string, reflow func()) error {
 // intervalCPU is the CPU time pid spent since the last pass. A pid that
 // pass skipped (held, or new) has no baseline, and its whole cumulative
 // time is no interval.
+// fleetCPU adds the pcpu of pids sampled for the first time to the interval
+// time of the rest. The two are separate estimates, so their sum is capped.
+func fleetCPU(firstSamplePCPU, intervalSeconds float64, haveDelta bool, elapsed float64, ncpu int) float64 {
+	cpu := sysstat.HostCPUPercent(firstSamplePCPU, ncpu)
+	if haveDelta {
+		cpu = min(cpu+sysstat.HostCPUFromDelta(intervalSeconds, elapsed, ncpu), 100)
+	}
+	return cpu
+}
+
 func intervalCPU(prev map[int]float64, pid int, seconds float64) (float64, bool) {
 	before, seen := prev[pid]
 	if !seen {

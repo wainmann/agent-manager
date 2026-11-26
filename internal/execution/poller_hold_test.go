@@ -15,7 +15,7 @@ func TestHoldSessionsKeepsThePollOffHeldPanesOnly(t *testing.T) {
 	createSession(t, m, "held", t.TempDir(), "")
 	createSession(t, m, "polled", t.TempDir(), "")
 	held, polled := m.sessionRows()[0], m.sessionRows()[1]
-	testPollMessage(m.poller.Step())
+	requirePoll(t, m)
 	before, err := m.store.Get(held.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -27,15 +27,22 @@ func TestHoldSessionsKeepsThePollOffHeldPanesOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		testPollMessage(m.poller.Step())
+		requirePoll(t, m)
 		assertStatus(t, m, held.ID, before.Status)
 		assertStatus(t, m, polled.ID, status.Dead)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	testPollMessage(m.poller.Step())
+	requirePoll(t, m)
 	assertStatus(t, m, held.ID, status.Dead)
+}
+
+func requirePoll(t *testing.T, m *harness) {
+	t.Helper()
+	if result := m.poller.Step(); result.Err != nil {
+		t.Fatal(result.Err)
+	}
 }
 
 func assertStatus(t *testing.T, m *harness, id, want string) {
@@ -139,5 +146,71 @@ func TestBindWaitsOutAHoldThatBeganMidCapture(t *testing.T) {
 	delete(p.held, "sess-A")
 	if bound, held, err := p.bindUnlessHeld(sess, "A-id"); !bound || held || err != nil {
 		t.Fatalf("released: bound %t held %t err %v", bound, held, err)
+	}
+}
+
+// A peer launched in a held session's directory leaves the held session's
+// conversation alone until the hold ends.
+func TestHeldSessionKeepsItsConversationFromAPeer(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	first := time.Now().Add(-2 * time.Minute)
+	second := first.Add(time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, first)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-B.jsonl"), "B-id", cwd, second)
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: first},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: second},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sessions []store.Session
+	for _, id := range []string{"sess-A", "sess-B"} {
+		sess, err := st.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions = append(sessions, sess)
+	}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
+	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 0 {
+		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
+	}
+	delete(p.held, "sess-A")
+	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 2 {
+		t.Fatalf("released: captured %d, err %v; want 2", captured, err)
+	}
+	for id, want := range map[string]string{"sess-A": "A-id", "sess-B": "B-id"} {
+		got, err := st.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.AgentSessionID != want {
+			t.Fatalf("%s bound %q, want %q", id, got.AgentSessionID, want)
+		}
+	}
+}
+
+func TestFleetCPUCountsEachPidOnceAndCaps(t *testing.T) {
+	if got := fleetCPU(200, 0, false, 0, 4); got != 50 {
+		t.Fatalf("first pass = %v, want the pcpu share 50", got)
+	}
+	if got := fleetCPU(0, 2, true, 1, 4); got != 50 {
+		t.Fatalf("every pid with a baseline = %v, want the interval share 50", got)
+	}
+	if got := fleetCPU(100, 2, true, 1, 4); got != 75 {
+		t.Fatalf("one new pid beside the rest = %v, want 25 + 50", got)
+	}
+	if got := fleetCPU(400, 4, true, 1, 4); got != 100 {
+		t.Fatalf("estimates past the machine = %v, want 100", got)
 	}
 }

@@ -119,6 +119,14 @@ func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 			recaptureCounts[recaptureScope(sessions[i])]++
 		}
 	}
+	// A first launch takes the earliest unclaimed conversation in its
+	// directory, which may be a held peer's, so the directory waits out the hold.
+	heldDirs := map[string]bool{}
+	for _, i := range pending {
+		if p.isHeld(sessions[i].ID) {
+			heldDirs[firstLaunchScope(sessions[i])] = true
+		}
+	}
 	captured := 0
 cands:
 	for _, i := range pending {
@@ -134,6 +142,9 @@ cands:
 		var agentID string
 		var ok bool
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
+			if heldDirs[firstLaunchScope(sess)] {
+				continue
+			}
 			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed, panes[sess.ID].TTY)
 		} else {
 			if recaptureCounts[recaptureScope(sess)] > 1 {
@@ -211,4 +222,8 @@ func (p *Runner) clearRecaptureSeen(sessID string) {
 	p.mu.Lock()
 	delete(p.recaptureSeen, sessID)
 	p.mu.Unlock()
+}
+
+func firstLaunchScope(sess store.Session) string {
+	return sess.Tool + "\x00" + sess.Cwd
 }

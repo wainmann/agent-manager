@@ -52,6 +52,13 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 		ArchivedGroups: make(map[string]bool, len(m.workspace.archivedGroups)),
 		Hosts:          m.ssh.RailHosts(),
 	}
+	for _, host := range snapshot.Hosts {
+		for i, session := range host.Sessions {
+			if action, busy := m.remoteLifecycleInFlight(host.Name, session.ID); busy {
+				host.Sessions[i].Pending = uilifecycle.PendingWord(action)
+			}
+		}
+	}
 	for path, archived := range m.workspace.archivedGroups {
 		snapshot.ArchivedGroups[path] = archived
 	}

@@ -17,6 +17,7 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -105,10 +106,42 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	if call.Op == uiconnections.OpNone {
 		return nil, true
 	}
+	if _, busy := m.remoteLifecycleInFlight(row.Host, row.Ref.ID); busy {
+		return nil, true
+	}
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
 	return m.confirmRemote(request, call, row.Terminals), true
+}
+
+// remotePendingAction is the row word each remote lifecycle call shows
+// while it is on its way to the host.
+var remotePendingAction = map[uilink.Op]uilifecycle.Action{
+	uilink.Kill:          uilifecycle.Kill,
+	uilink.CloseTerminal: uilifecycle.Kill,
+	uilink.Revive:        uilifecycle.Revive,
+	uilink.Archive:       uilifecycle.Archive,
+	uilink.Restore:       uilifecycle.Restore,
+	uilink.Delete:        uilifecycle.Remove,
+}
+
+// remoteLifecycleInFlight finds a lifecycle call queued or running for the
+// session id on host.
+func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bool) {
+	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
+		if job == nil {
+			continue
+		}
+		call, ok := job.Request.(uilink.Call)
+		if !ok || call.Host != host || call.Ref.ID != id {
+			continue
+		}
+		if action, lifecycle := remotePendingAction[call.Op]; lifecycle {
+			return action, true
+		}
+	}
+	return "", false
 }
 
 // openRemoteRename types a remote agent's, terminal's or group's new name
@@ -242,8 +275,14 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 		m.reportErr(refusal)
 		return nil
 	}
+	if _, lifecycle := remotePendingAction[request.Op]; lifecycle {
+		if _, busy := m.remoteLifecycleInFlight(request.Host, request.Ref.ID); busy {
+			return nil
+		}
+	}
 	m.clearErr()
 	m.enqueueEffect(request, 0, false)
+	m.rebuildRows()
 	if request.FromQuick() {
 		m.acceptQuick(request.Submission)
 	}
