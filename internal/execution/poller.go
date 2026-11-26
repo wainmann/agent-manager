@@ -658,7 +658,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	if agents.Count > 0 {
 		agents.CPU = sysstat.HostCPUPercent(agents.CPU, ncpu)
 		if haveDelta {
-			agents.CPU += sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu)
+			agents.CPU = min(agents.CPU+sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu), 100)
 		}
 		agents.RAM = sysstat.HostRAMPercent(agents.RSS, memTotal)
 	}

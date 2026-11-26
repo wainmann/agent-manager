@@ -129,7 +129,11 @@ func TestBindWaitsOutAHoldThatBeganMidCapture(t *testing.T) {
 	if bound, held, err := p.bindUnlessHeld(sess, "A-id"); bound || !held || err != nil {
 		t.Fatalf("held: bound %t held %t err %v", bound, held, err)
 	}
-	if got, _ := st.Get("sess-A"); got.AgentSessionID != "" {
+	got, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
 		t.Fatalf("held session got conversation %q", got.AgentSessionID)
 	}
 	delete(p.held, "sess-A")
