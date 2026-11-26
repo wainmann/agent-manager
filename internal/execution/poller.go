@@ -454,13 +454,10 @@ func (p *Runner) step(ctx context.Context) Result {
 					hostCPU = sysstat.HostCPUFromDelta(delta, elapsed, ncpu)
 				} else {
 					hostCPU = sysstat.HostCPUPercent(stat.PCPU, ncpu)
+					agents.CPU += stat.PCPU
 				}
 				stat.CPUPercent = hostCPU
 				stat.RamPercent = sysstat.HostRAMPercent(stat.RSS, memTotal)
-				if !haveDelta {
-					// First sample: fleet CPU still uses pcpu sum path below.
-					agents.CPU += stat.PCPU
-				}
 				if sess.ID == selectedID {
 					proc = stat
 				}
@@ -659,10 +656,9 @@ func (p *Runner) step(ctx context.Context) Result {
 	}
 
 	if agents.Count > 0 {
+		agents.CPU = sysstat.HostCPUPercent(agents.CPU, ncpu)
 		if haveDelta {
-			agents.CPU = sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu)
-		} else {
-			agents.CPU = sysstat.HostCPUPercent(agents.CPU, ncpu)
+			agents.CPU += sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu)
 		}
 		agents.RAM = sysstat.HostRAMPercent(agents.RSS, memTotal)
 	}
