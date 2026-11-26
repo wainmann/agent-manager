@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -940,5 +941,24 @@ func TestLinkPasteSurvivesTheOriginalName(t *testing.T) {
 	}
 	if _, err := LinkPaste(original); err == nil {
 		t.Fatal("linking a missing image succeeded")
+	}
+}
+
+func TestLinkPasteStepsPastATakenName(t *testing.T) {
+	dir := t.TempDir()
+	original := filepath.Join(dir, "paste-1.png")
+	if err := os.WriteFile(original, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	taken := filepath.Join(dir, fmt.Sprintf("paste-k%d-%d.png", os.Getpid(), linkCount.Load()+1))
+	if err := os.WriteFile(taken, []byte("other"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := LinkPaste(original)
+	if err != nil || linked == taken {
+		t.Fatalf("LinkPaste = %q, %v; the taken name was %q", linked, err, taken)
+	}
+	if data, _ := os.ReadFile(taken); string(data) != "other" {
+		t.Fatalf("the taken name was overwritten: %q", data)
 	}
 }

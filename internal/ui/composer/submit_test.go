@@ -1,6 +1,9 @@
 package composer
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -44,5 +47,24 @@ func TestLateRefusalPreservesNewerPrompt(t *testing.T) {
 				t.Fatalf("late refusal replaced %q with %q", before, got)
 			}
 		})
+	}
+}
+
+func TestKeepImagesGivesEachChipItsOwnName(t *testing.T) {
+	sent := filepath.Join(t.TempDir(), "paste-1.png")
+	if err := os.WriteFile(sent, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prompt := newComposer("look " + Token(1) + " and " + Token(2))
+	host := &fakeHost{}
+	prompt.KeepImages(host, []Attachment{{ID: 1, Path: sent}, {ID: 2, Path: filepath.Join(t.TempDir(), "gone.png")}})
+	if len(prompt.Attachments) != 1 || prompt.Attachments[0].ID != 1 || prompt.Attachments[0].Path == sent {
+		t.Fatalf("kept attachments = %+v", prompt.Attachments)
+	}
+	if data, err := os.ReadFile(prompt.Attachments[0].Path); err != nil || string(data) != "png" {
+		t.Fatalf("kept image = %q, %v", data, err)
+	}
+	if len(host.errs) != 1 || strings.Contains(prompt.Input.Value(), Token(2)) {
+		t.Fatalf("a missing image left its chip: errs %v, prompt %q", host.errs, prompt.Input.Value())
 	}
 }

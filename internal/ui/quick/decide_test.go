@@ -1,10 +1,14 @@
 package quick
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -105,5 +109,25 @@ func TestDecideAsksTheRootForTheSteppedCLIsModels(t *testing.T) {
 
 	if want := []string{"codex", "claude", "codex"}; !slices.Equal(h.catalog, want) {
 		t.Fatalf("asked for the models of %v, want %v", h.catalog, want)
+	}
+}
+
+// A send the root did not accept leaves the bar as it was, images included.
+func TestKeepWithoutAnAcceptedSendRelinksNothing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	image := filepath.Join(dir, "paste-1.png")
+	if err := os.WriteFile(image, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := &effectsHost{fakeHost: fakeHost{prompt: &fakePrompt{}, settings: map[string]string{}, selected: true, target: Target{Group: "web"}}}
+	q := NewSurface(h)
+	q.Input = textarea.New()
+	q.Input.SetValue("look " + composer.Token(1))
+	q.Attachments = []composer.Attachment{{ID: 1, Path: image}}
+	Execute(h, q, Request{Send: true, Text: "look", Keep: true}, nil)
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 || len(q.Attachments) != 1 || q.Attachments[0].Path != image {
+		t.Fatalf("refused keep relinked: files %v, attachments %+v", entries, q.Attachments)
 	}
 }
