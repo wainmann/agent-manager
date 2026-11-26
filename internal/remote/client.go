@@ -196,6 +196,9 @@ type Error struct {
 	ran bool
 	// mayHaveReached is the host saying a prompt's paste had started.
 	mayHaveReached bool
+	// answered is a command that exited cleanly with an answer this side
+	// could not read, so it did its work there.
+	answered bool
 }
 
 // Trouble is the kind of failure that kept a call from a host's manager.
@@ -321,5 +324,5 @@ func unreadable(host, command string, err error) error {
 	if err == nil {
 		return nil
 	}
-	return &Error{Host: host, Err: fmt.Errorf("unreadable answer to %s: %w", command, err)}
+	return &Error{Host: host, Err: fmt.Errorf("unreadable answer to %s: %w", command, err), answered: true}
 }

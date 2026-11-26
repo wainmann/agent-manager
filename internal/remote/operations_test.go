@@ -419,6 +419,12 @@ func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
 	unreadableAnswer := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
 		return []byte(`{"id":"../x"}`), nil, nil
 	})
+	notJSON := newTestClient(t, func(context.Context, []string) ([]byte, []byte, error) {
+		return []byte("welcome to gpu\n{}"), nil, nil
+	})
+	if _, err := notJSON.Type(context.Background(), ref, "hi"); !MayHaveReached(err) {
+		t.Errorf("a type that exited cleanly with an answer that is not JSON = %v, want one that may have reached the agent", err)
+	}
 	if _, err := unreadableAnswer.Type(context.Background(), ref, "hi"); !MayHaveReached(err) {
 		t.Errorf("a type with an unreadable answer = %v, want one that may have reached the agent", err)
 	}
