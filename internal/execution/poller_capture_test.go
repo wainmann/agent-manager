@@ -198,8 +198,21 @@ func TestAnEndAfterTheTurnWaitsOnATurnBegunAfterThePassBegan(t *testing.T) {
 	prev := followDuringPoll
 	t.Cleanup(func() { followDuringPoll = prev })
 	followDuringPoll = func(p *Runner, row *store.Session, agentAlive, paneGone bool) error {
-		waitForPane(t, m, row.ID, "a-turn-begun-since")
-		return nil
+		const typed = "a-turn-begun-since"
+		waitForPane(t, m, row.ID, typed)
+		// The line is a turn once the tool has drawn its next prompt under it.
+		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			pane, err := m.tmux.CapturePane(row.ID)
+			if err != nil {
+				return err
+			}
+			if _, after, _ := strings.Cut(pane, typed); strings.Contains(after, "❯") {
+				return nil
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the tool never took the typed line:\n%s", pane)
+			}
+		}
 	}
 
 	result := m.poller.Step()
