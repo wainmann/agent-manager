@@ -43,7 +43,8 @@ type State struct {
 	// which the row shows and a repeat press on it is refused by.
 	Pending map[string]Action
 	// reserved are the rows and group paths an in-flight run covers beyond
-	// the rows it shows: a kill's skipped dead terminals, an empty group's delete.
+	// the rows it shows: a kill's skipped dead terminals, an empty group's
+	// archive, restore or delete.
 	reservedRows   map[string]bool
 	reservedGroups map[string]bool
 }
@@ -248,7 +249,7 @@ func (s *State) MarkPending(target Target) {
 	for _, sess := range target.Selection.Members {
 		s.reservedRows[sess.ID] = true
 	}
-	if target.Action == Remove && target.Path != "" {
+	if reservesGroup(target) {
 		s.reservedGroups[target.Path] = true
 	}
 }
@@ -262,13 +263,17 @@ func (s *State) ClearPending(target Target) {
 	for _, sess := range target.Selection.Members {
 		delete(s.reservedRows, sess.ID)
 	}
-	if target.Action == Remove && target.Path != "" {
+	if reservesGroup(target) {
 		delete(s.reservedGroups, target.Path)
 	}
 }
 
+func reservesGroup(target Target) bool {
+	return target.Path != "" && (target.Action == Remove || target.Action == Archive || target.Action == Restore)
+}
+
 // Overlaps reports whether a run still in flight covers any row the target
-// holds or waits on, or, for a group delete, a group nested with its path.
+// holds or waits on, or, for a group action, a group nested with its path.
 func (s *State) Overlaps(target Target) bool {
 	busy := func(sessions []store.Session) bool {
 		for _, sess := range sessions {
@@ -281,7 +286,7 @@ func (s *State) Overlaps(target Target) bool {
 	if busy(target.Sessions) || busy(target.Selection.Members) {
 		return true
 	}
-	if target.Action == Remove && target.Path != "" {
+	if reservesGroup(target) {
 		for path := range s.reservedGroups {
 			if InSubtree(path, target.Path) || InSubtree(target.Path, path) {
 				return true

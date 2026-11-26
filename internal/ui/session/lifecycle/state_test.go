@@ -157,3 +157,17 @@ func TestPendingReservesMembersAndGroupPaths(t *testing.T) {
 		t.Fatal("the cleared group delete still reserves its path")
 	}
 }
+
+func TestGroupArchiveAndRestoreReserveTheirPath(t *testing.T) {
+	t.Parallel()
+	for _, action := range []Action{Archive, Restore} {
+		state := State{}
+		state.MarkPending(Target{Action: action, Path: "web"})
+		if !state.Overlaps(Target{Action: action, Path: "web"}) {
+			t.Fatalf("%v: a repeat on the same empty group was admitted", action)
+		}
+		if state.Overlaps(Target{Action: action, Path: "website"}) {
+			t.Fatalf("%v: an unrelated group was refused", action)
+		}
+	}
+}
