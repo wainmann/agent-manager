@@ -165,3 +165,59 @@ func TestConnectionRenameKeepsAndRemovalDropsTerminalOpeners(t *testing.T) {
 		t.Fatalf("opener after removal = %q, %v", opener, err)
 	}
 }
+
+func TestSwapConnectionOrderSurvivesReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, name := range []string{"a", "b", "c"} {
+		st.AddConnection(Connection{Name: name, Destination: name})
+	}
+	if err := st.SwapConnectionOrder("a", "c"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	st.Close()
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+	if got := connectionNames(t, reopened); !slices.Equal(got, []string{"c", "b", "a"}) {
+		t.Fatalf("names = %v", got)
+	}
+}
+
+// Rows that tie on position list by name, so exchanging the two positions
+// alone would move neither.
+func TestSwapConnectionOrderBreaksTies(t *testing.T) {
+	st := newTestStore(t)
+	for _, name := range []string{"a", "b", "c"} {
+		st.AddConnection(Connection{Name: name, Destination: name})
+	}
+	if _, err := st.db.Exec(`UPDATE connections SET position = 0`); err != nil {
+		t.Fatalf("tie: %v", err)
+	}
+	if err := st.SwapConnectionOrder("a", "b"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	if got := connectionNames(t, st); !slices.Equal(got, []string{"b", "a", "c"}) {
+		t.Fatalf("names = %v", got)
+	}
+}
+
+func TestSwapConnectionOrderRefusesAMissingConnection(t *testing.T) {
+	st := newTestStore(t)
+	for _, name := range []string{"a", "b"} {
+		st.AddConnection(Connection{Name: name, Destination: name})
+	}
+	for _, pair := range [][2]string{{"a", "ghost"}, {"ghost", "a"}} {
+		if err := st.SwapConnectionOrder(pair[0], pair[1]); !errors.Is(err, ErrConnectionNotFound) {
+			t.Errorf("swap %v err = %v", pair, err)
+		}
+	}
+	if got := connectionNames(t, st); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("names = %v", got)
+	}
+}

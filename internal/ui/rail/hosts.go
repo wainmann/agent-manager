@@ -163,7 +163,9 @@ func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, b
 		nameStyle = nameStyle.Foreground(lipgloss.Color(r.ctx.Theme.Bright))
 	}
 	label := lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Bg)).Background(tint).Bold(true).Render(" ssh ")
-	head := pad + r.palette.subtle.Render(marker) + " " + r.palette.highlight(row.host, r.model.search, nameStyle) + " " + label
+	lead := pad + r.palette.subtle.Render(marker) + " "
+	handle := r.rowHandle(row, selected)
+	head := lead + handle + r.palette.highlight(row.host, r.model.search, nameStyle) + " " + label
 	host, _ := r.model.host(row.host)
 	var meta string
 	switch host.State {
@@ -177,5 +179,5 @@ func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, b
 			meta = r.palette.subtle.Render("no agents yet")
 		}
 	}
-	return renderedTreeRow{text: paint(rowColumns(head, meta, width-railGutter), width, background), handleX: -1}
+	return withRowHandle(paint(rowColumns(head, meta, width-railGutter), width, background), lead, handle)
 }

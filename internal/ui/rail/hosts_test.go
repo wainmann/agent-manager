@@ -159,7 +159,6 @@ func TestRemoteRowsRefuseReorder(t *testing.T) {
 	model.Reconcile(hostsSnapshot(HostOnline))
 	ctx := KeyContext{ListKeys: keybind.DefaultList()}
 	for _, selection := range []Selection{
-		{Kind: ConnectionRow, Host: "box"},
 		{Kind: SessionRow, SessionID: "far", Host: "box"},
 		{Kind: GroupRow, Group: "ops", Host: "box"},
 	} {
@@ -182,6 +181,86 @@ func TestRemoteRowsRefuseReorder(t *testing.T) {
 	}
 	if _, ok := model.resolveDrop(Selection{Kind: ConnectionRow, Host: "box"}); ok {
 		t.Error("a local session can be dropped onto a connection")
+	}
+}
+
+func threeConnections() Snapshot {
+	snapshot := hostsSnapshot(HostOnline)
+	for _, name := range []string{"gpu", "lab"} {
+		snapshot.Hosts = append(snapshot.Hosts, Host{Name: name, State: HostOnline, Sessions: []Session{{ID: name + "1", Name: name, Tool: "claude", Status: "idle"}}})
+	}
+	return snapshot
+}
+
+func hostNames(m Model) []string {
+	var names []string
+	for _, host := range m.snapshot.Hosts {
+		names = append(names, host.Name)
+	}
+	return names
+}
+
+// applied answers a decision's mutations the way root does once the store
+// has them.
+func applied(m *Model, decision Decision) {
+	for _, mutation := range decision.Mutations {
+		m.ApplyMutation(mutation, nil)
+	}
+}
+
+func TestReorderKeyMovesAConnectionPastTheRowsOfItsNeighbour(t *testing.T) {
+	model := New(nil)
+	model.Reconcile(threeConnections())
+	ctx := KeyContext{ListKeys: keybind.DefaultList()}
+	model.Focus(Selection{Kind: ConnectionRow, Host: "gpu"})
+	decision := model.Key(runes("K"), Frame{}, ctx)
+	if len(decision.Mutations) != 1 || decision.Mutations[0].Kind != SwapConnection || decision.Mutations[0].Host != "gpu" || decision.Mutations[0].TargetHost != "box" {
+		t.Fatalf("decision = %+v", decision)
+	}
+	applied(&model, decision)
+	if got := hostNames(model); !slices.Equal(got, []string{"gpu", "box", "lab"}) {
+		t.Fatalf("connections = %v", got)
+	}
+	if selected, _ := model.Selected(); selected != (Selection{Kind: ConnectionRow, Host: "gpu"}) {
+		t.Errorf("the cursor left the connection it moved: %+v", selected)
+	}
+	if decision := model.Key(runes("K"), Frame{}, ctx); len(decision.Mutations) != 0 || decision.Error != "connection already at the top of its level" {
+		t.Errorf("past the top: %+v", decision)
+	}
+	model.Focus(Selection{Kind: ConnectionRow, Host: "lab"})
+	if decision := model.Key(runes("J"), Frame{}, ctx); len(decision.Mutations) != 0 || decision.Error != "connection already at the bottom of its level" {
+		t.Errorf("past the bottom: %+v", decision)
+	}
+}
+
+func TestDraggingAConnectionReordersItAndEscPutsItBack(t *testing.T) {
+	model := New(nil)
+	model.Reconcile(threeConnections())
+	model.Focus(Selection{Kind: ConnectionRow, Host: "box"})
+	model.enterReorder("c:box")
+	// A row inside a connection counts as that connection.
+	target := Selection{Kind: SessionRow, SessionID: "lab1", Host: "lab"}
+	if drop, ok := model.resolveDrop(target); ok {
+		t.Fatalf("a connection drops into a row: %+v", drop)
+	}
+	applied(&model, Decision{Mutations: model.planDrag(target)})
+	if got := hostNames(model); !slices.Equal(got, []string{"gpu", "lab", "box"}) {
+		t.Fatalf("dragged = %v", got)
+	}
+	applied(&model, model.Key(tea.KeyMsg{Type: tea.KeyEsc}, Frame{}, KeyContext{ListKeys: keybind.DefaultList()}))
+	if got := hostNames(model); !slices.Equal(got, []string{"box", "gpu", "lab"}) {
+		t.Fatalf("esc left %v", got)
+	}
+	if model.Reordering() {
+		t.Error("esc kept the row lifted")
+	}
+	// The local rows sit above every connection, so a drag up there stops
+	// at the top of the connections.
+	model.Focus(Selection{Kind: ConnectionRow, Host: "lab"})
+	model.enterReorder("c:lab")
+	applied(&model, Decision{Mutations: model.planDrag(Selection{Kind: GroupRow, Group: "work"})})
+	if got := hostNames(model); !slices.Equal(got, []string{"lab", "box", "gpu"}) {
+		t.Fatalf("dragged above the local rows = %v", got)
 	}
 }
 
@@ -208,8 +287,8 @@ func TestConnectionRowRendersItsLabelAndState(t *testing.T) {
 		if !strings.Contains(line, "box  ssh") || !strings.Contains(line, tc.want) {
 			t.Errorf("state %d: connection line %q, want %q", tc.state, line, tc.want)
 		}
-		if _, grip := frame.Handles["c:box"]; grip {
-			t.Error("a connection row offers a reorder grip")
+		if _, grip := frame.Handles["c:box"]; !grip {
+			t.Errorf("state %d: a connection row offers no reorder grip", tc.state)
 		}
 		if _, grip := frame.Handles["rs:box::far"]; grip {
 			t.Error("a remote session row offers a reorder grip")
@@ -318,14 +397,14 @@ func TestCompatibleConnectionFoldsUseTheSelectedMarks(t *testing.T) {
 		for _, folded := range []bool{false, true} {
 			r.model.hostFolds[HostFold{Host: "box"}] = folded
 			got := ansi.Strip(r.renderConnection(treeRow{host: "box", kind: ConnectionRow}, false, 40, "", "").text)
-			want := "v"
+			want := "v ="
 			if folded {
-				want = ">"
+				want = "> ="
 			}
 			if mode == presentation.GlyphModeAdvanced {
-				want = "▾"
+				want = "▾ ⠿"
 				if folded {
-					want = "▸"
+					want = "▸ ⠿"
 				}
 			}
 			if !strings.HasPrefix(got, want+" box") {

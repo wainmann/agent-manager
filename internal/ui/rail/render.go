@@ -403,7 +403,7 @@ func (r renderer) slotContinues(index, slot int) bool {
 }
 
 func (r renderer) rowHandle(row treeRow, selected bool) string {
-	if row.isRoot() || row.host != "" || r.renaming(row) || r.ctx.MouseDisabled {
+	if row.isRoot() || row.host != "" && row.kind != ConnectionRow || r.renaming(row) || r.ctx.MouseDisabled {
 		return ""
 	}
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(r.palette.restingMark()))

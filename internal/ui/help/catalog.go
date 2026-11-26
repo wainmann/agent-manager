@@ -139,6 +139,8 @@ func connectionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2
 	h.action("fold / unfold", keybind.Open)
 	h.action("edit its name and SSH destination", keybind.Rename)
 	h.action("remove it; its sessions keep running on that host", keybind.Delete)
+	h.action("move it up among the connections", keybind.ReorderUp)
+	h.action("move it down among the connections", keybind.ReorderDown)
 	h.action("new session or terminal on that host", keybind.NewSession, keybind.Terminal)
 	h.action("move one of its agents to another group there", keybind.Move)
 	h.fixed("", "its agents: attach, prompt, kill, revive, archive, restore, delete")

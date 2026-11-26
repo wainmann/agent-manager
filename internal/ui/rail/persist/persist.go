@@ -25,6 +25,7 @@ type Store interface {
 	SetSetting(key, value string) error
 	SwapSessionOrder(id, targetID string) error
 	SwapGroupOrder(path, targetPath string, siblingOrder ...string) error
+	SwapConnectionOrder(name, target string) error
 	PlaceSession(id, group, parentID string) error
 	PlaceSessionBefore(id, beforeID string) error
 	MoveGroup(path, newParent string) error

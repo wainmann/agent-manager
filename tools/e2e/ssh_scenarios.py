@@ -7,8 +7,8 @@ to a real agent-manager "host" without a network or the user's ~/.ssh. The
 scenario adds a connection through the dialog and drives every action a
 remote row offers: preview, rename, quick send, move, kill, revive, archive,
 restore, delete, attach, quick spawn, a new terminal, and deleting a group with
-its agent. A second connection whose host refuses shows as unreachable and is
-removed. Every process it started is ended by PID.
+its agent. A second connection whose host refuses shows as unreachable, is moved
+above the first and back, and is removed. Every process it started is ended by PID.
 """
 import argparse
 import hashlib
@@ -273,7 +273,7 @@ def add_connection(sandbox, name):
 def stored_connections(sandbox):
     conn = sqlite3.connect(str(profile_dir(sandbox) / 'state.db'), timeout=5)
     try:
-        return conn.execute('SELECT name, destination FROM connections ORDER BY name').fetchall()
+        return conn.execute('SELECT name, destination FROM connections ORDER BY position, name').fetchall()
     finally:
         conn.close()
 
@@ -487,6 +487,22 @@ def delete_group(sandbox, remote, manager):
                      lambda code: code != '0')
 
 
+def reorder_connections(sandbox):
+    """K and J move a connection among the others, unreachable or not, since no host is asked."""
+    for name, step, order in (('connection-up', 'K', [DOWN, CONNECTION]), ('connection-down', 'J', [CONNECTION, DOWN])):
+        key(sandbox, step)
+        sandbox.wait(name, lambda: str([connection for connection, _ in stored_connections(sandbox)]),
+                     lambda value, order=order: value == str(order))
+        sandbox.wait(name + '-listed', lambda: capture(sandbox), lambda value, order=order: rail_order(value, order))
+
+
+def rail_order(value, names):
+    """Whether the list shows the names from top to bottom in this order."""
+    lines = [next((index for index, line in enumerate(value.splitlines())
+                   if re.search(r'\b' + re.escape(name) + r'\b', line[:RAIL_WIDTH])), None) for name in names]
+    return None not in lines and lines == sorted(lines)
+
+
 def offline_connection(sandbox):
     """A host ssh cannot reach says unreachable with ssh's error, refuses actions, and comes out."""
     add_connection(sandbox, DOWN)
@@ -496,6 +512,7 @@ def offline_connection(sandbox):
         raise AssertionError('unreachable host not marked unreachable')
     key(sandbox, 'T')
     frame(sandbox, 'offline-refusal', f'{DOWN}: unreachable over SSH')
+    reorder_connections(sandbox)
     key(sandbox, 'd')
     confirm(sandbox, 'remove-connection', f'remove connection {DOWN}?', CONNECTION)
     sandbox.wait('connection-removed', lambda: str(stored_connections(sandbox)),

@@ -41,7 +41,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. The ←→ row in Settings (`s`) takes three values: `→ focus` (the default), `→ attach`, where `→` attaches full screen, and `off` |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. An attach (`A`, or a session on an SSH connection) leaves `←` to the agent by default, since a CLI can use it at an empty prompt (Claude Code opens its agents view with it). With the ←→ row set to `→ attach` (`agent-manager settings set arrow_step_keys attach` from a shell, on the machine that runs the session), `←` at the prompt's start comes back from an attach too, on macOS and Linux hosts. Sessions already running there pick the change up when the manager next starts on that machine, or when a session is next created there. A Windows host keeps `←` for the agent, and so does a pane the CLI split off (a Claude Code teammate). The tool's input-row rules (`input_prefix`, falling back to `activity_cutoff`) identify the prompt, including markerless composers such as Pi's. Where they cannot, `←` stays with the agent, and anywhere else in the prompt it moves the caret as usual |
-| `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
+| `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings, or an SSH connection among the others |
 | `m` | Move a session to a group, a terminal into a session, or a group under another group |
 | `r` | Rename session / edit tool; on a group, open the Edit Group card (name, path, worktree, base, env) |
 | `y` | Copy the selected session's newest reply to the system clipboard, without attaching |
@@ -445,9 +445,9 @@ On a connection's rows:
 - `r` types a new name into an agent's, terminal's or group's row, and the other machine renames it the way `r` does here: an agent's worktree branch follows its name, and a group keeps its parent while its subgroups and sessions move with it. The Edit Group card's other fields, the default path, worktree, base and environment, stay as that machine has them.
 - `m` on an agent moves it to another group on the same host: the picker lists that host's groups and its root, never this machine's. It leaves out the archived groups the host refuses, apart from the agent's own and the groups above it, so enter leaves an archived agent where it is. Its terminals go with it.
 - `d` on a group deletes it there with its subgroups and every session in them, archived ones and terminals included, the way it does here. It asks first with that machine's counts, and if the sessions there changed before you answer, the other machine refuses and nothing is deleted.
-- On the connection row itself, `r` edits it and `d` removes it. Removing asks first; its sessions keep running on that host.
+- On the connection row itself, `r` edits it and `d` removes it. Removing asks first; its sessions keep running on that host. `K` / `J`, or a drag on its handle, moves it among the other connections; that order is this machine's own.
 
-Moving a group, deleting a group in the archived view, moving or nesting a terminal, restart, fork, review, the editor, copying a reply, reordering, marking idle, cancelling an after-turn end and kill all or revive all are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](ssh-connections.md) for the protocol.
+Moving a group, deleting a group in the archived view, moving or nesting a terminal, restart, fork, review, the editor, copying a reply, reordering a host's rows, marking idle, cancelling an after-turn end and kill all or revive all are refused on a remote row with a message naming the gap. A failed call shows the other machine's error. Nothing from a connection is written to this machine's store. See [SSH connections](ssh-connections.md) for the protocol.
 
 ## Status
 

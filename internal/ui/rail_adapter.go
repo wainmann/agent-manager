@@ -585,6 +585,8 @@ func (m *Model) applyRailEffect(result uirailpersist.Result, request uirailpersi
 		case uirail.SwapGroup:
 			m.materializeGroupsLocal(mutation.GroupSiblings)
 			m.swapGroupInventory(mutation.Path, mutation.TargetPath)
+		case uirail.SwapConnection:
+			m.ssh.Swap(mutation.Host, mutation.TargetHost)
 		case uirail.MoveGroup:
 			m.renameGroupLocally(mutation.Path, result.NewPath, request.Dir, request.Worktree, request.Base, request.Env)
 		}

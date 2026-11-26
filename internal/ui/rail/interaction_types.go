@@ -109,6 +109,7 @@ const (
 	PlaceSession
 	PlaceSessionBefore
 	MoveGroup
+	SwapConnection
 )
 
 // Mutation is a caller-shaped persistence request. Root executes it with
@@ -122,6 +123,10 @@ type Mutation struct {
 	Path          string
 	TargetPath    string
 	GroupSiblings []string
+	// Host is the connection a swap moves and TargetHost the one it trades
+	// places with.
+	Host          string
+	TargetHost    string
 	Collapsed     []string
 	HostCollapsed []HostFold
 	OffsetDelta   int

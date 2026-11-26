@@ -2,6 +2,7 @@ package rail
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,7 +16,7 @@ func (m *Model) requestReorder(delta int) Decision {
 	if row.isRoot() {
 		return Decision{Consumed: true, Error: "root stays at the top of the list"}
 	}
-	if row.host != "" {
+	if row.host != "" && row.kind != ConnectionRow {
 		return Decision{Consumed: true, Error: RemoteRefusal("reorder")}
 	}
 	request, ok := m.swapRequest(row, delta)
@@ -24,8 +25,11 @@ func (m *Model) requestReorder(delta int) Decision {
 		if delta > 0 {
 			edge = "bottom"
 		}
-		if row.kind == SessionRow {
+		switch row.kind {
+		case SessionRow:
 			what = "session"
+		case ConnectionRow:
+			what = "connection"
 		}
 		return Decision{Consumed: true, Error: fmt.Sprintf("%s already at the %s of its level", what, edge)}
 	}
@@ -37,7 +41,10 @@ func (m Model) swapRequest(row treeRow, delta int) (Mutation, bool) {
 	if !ok {
 		return Mutation{}, false
 	}
-	if row.kind == GroupRow {
+	switch row.kind {
+	case ConnectionRow:
+		return Mutation{Kind: SwapConnection, Host: row.host, TargetHost: target.host, OffsetDelta: delta}, true
+	case GroupRow:
 		return Mutation{
 			Kind:          SwapGroup,
 			Path:          row.group,
@@ -63,6 +70,12 @@ func (m Model) visibleReorderTarget(row treeRow, delta int) (treeRow, bool) {
 	}
 	for index := m.cursor + step; index >= 0 && index < len(m.rows); index += step {
 		candidate := m.rows[index]
+		if row.kind == ConnectionRow {
+			if candidate.kind == ConnectionRow {
+				return candidate, true
+			}
+			continue
+		}
 		if candidate.isRoot() || candidate.host != row.host {
 			continue
 		}
@@ -95,6 +108,8 @@ func (m *Model) ApplyMutation(request Mutation, mutationErr error) Decision {
 	case SwapGroup:
 		m.materializeGroupsLocal(request.GroupSiblings)
 		m.swapGroupLocal(request.Path, request.TargetPath)
+	case SwapConnection:
+		m.swapConnectionLocal(request.Host, request.TargetHost)
 	case PlaceSession, PlaceSessionBefore, MoveGroup:
 		if request.Group != "" && m.collapsed[request.Group] {
 			m.collapsed[request.Group] = false
@@ -156,6 +171,15 @@ func (m *Model) swapGroupLocal(path, targetPath string) {
 	}
 	if current >= 0 && target >= 0 {
 		m.snapshot.Groups[current], m.snapshot.Groups[target] = m.snapshot.Groups[target], m.snapshot.Groups[current]
+	}
+}
+
+func (m *Model) swapConnectionLocal(name, targetName string) {
+	hosts := m.snapshot.Hosts
+	current := slices.IndexFunc(hosts, func(host Host) bool { return host.Name == name })
+	target := slices.IndexFunc(hosts, func(host Host) bool { return host.Name == targetName })
+	if current >= 0 && target >= 0 {
+		hosts[current], hosts[target] = hosts[target], hosts[current]
 	}
 }
 
@@ -235,9 +259,12 @@ func (m Model) planUndo() []Mutation {
 }
 
 func (m *Model) applyPlannedSwap(request Mutation) {
-	if request.Kind == SwapSession {
+	switch request.Kind {
+	case SwapSession:
 		m.swapSessionLocal(request.SessionID, request.TargetID)
-	} else {
+	case SwapConnection:
+		m.swapConnectionLocal(request.Host, request.TargetHost)
+	default:
 		m.materializeGroupsLocal(request.GroupSiblings)
 		m.swapGroupLocal(request.Path, request.TargetPath)
 	}

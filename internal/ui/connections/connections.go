@@ -65,6 +65,18 @@ func (c *Connections) SetList(list []remote.Connection) {
 	c.polling = map[string]bool{}
 }
 
+// Swap exchanges two connections' places. The hosts are the same, so a
+// refresh in flight still lands.
+func (c *Connections) Swap(name, target string) {
+	named := func(want string) func(remote.Connection) bool {
+		return func(conn remote.Connection) bool { return conn.Name == want }
+	}
+	from, to := slices.IndexFunc(c.list, named(name)), slices.IndexFunc(c.list, named(target))
+	if from >= 0 && to >= 0 {
+		c.list[from], c.list[to] = c.list[to], c.list[from]
+	}
+}
+
 func (c *Connections) List() []remote.Connection { return c.list }
 
 func (c *Connections) Gen() uint64 { return c.gen }

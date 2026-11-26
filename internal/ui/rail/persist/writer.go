@@ -71,6 +71,8 @@ func (w Writer) Apply(mutation uirail.Mutation, placement Precondition) (Result,
 		err = w.store.SwapSessionOrder(mutation.SessionID, mutation.TargetID)
 	case uirail.SwapGroup:
 		err = w.store.SwapGroupOrder(mutation.Path, mutation.TargetPath, mutation.GroupSiblings...)
+	case uirail.SwapConnection:
+		err = w.store.SwapConnectionOrder(mutation.Host, mutation.TargetHost)
 	case uirail.PlaceSession:
 		err = w.store.PlaceSession(mutation.SessionID, mutation.Group, mutation.ParentID)
 	case uirail.PlaceSessionBefore:

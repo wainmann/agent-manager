@@ -5,7 +5,7 @@ An SSH connection puts the sessions of an agent-manager on another machine in th
 ## Shape
 
 - **Connections are created in the app.** The user adds one the way they add a group: a name and an SSH destination (`user@host` or an alias from `~/.ssh/config`). The manager stores it in `state.db`. There is no `fleet.json`.
-- **A connection sits in the list like a group.** It has its own color and an `ssh` label. Under it are the remote host's groups and sessions, in the remote host's order. There can be any number of connections.
+- **A connection sits in the list like a group.** It has its own color and an `ssh` label. Under it are the remote host's groups and sessions, in the remote host's order. There can be any number of connections, in an order this machine keeps.
 - **Each host owns its sessions.** Remote rows come from the remote manager's `snapshot --json` and live only in memory. The local store keeps only which local session opened a remote terminal through MCP. A host whose refresh failed keeps its last rows and refuses actions. Its row says why: `unreachable` when ssh failed or timed out, `agent-manager missing`, `agent-manager too old` or `agent-manager newer` when ssh got through, and `error` for anything else, with the full message in the detail pane.
 - **Control flows outward.** The local machine holds the SSH keys and drives the remote one through the remote CLI. A remote host never connects back. On a remote host the MCP server sees and drives that host's sessions only.
 - **The remote manager keeps running.** Queued messages, status and notifications need a manager running on the remote host. When a connection finds none awake, it starts `agent-manager serve --background` there, at most once a minute. That headless manager runs the same poller as the TUI, delivering queued messages and ending sessions after their turn. It logs to `serve.log` in the profile directory. Two managers on one host share the work the way two TUIs do.
@@ -80,7 +80,7 @@ These are refused on a remote row with a message naming the gap:
 - Moving a group, deleting a group in the archived view, moving or nesting a terminal, restart and fork.
 - Diff review.
 - The editor.
-- Copying a reply, marking idle, cancelling an after-turn end, reordering.
+- Copying a reply, marking idle, cancelling an after-turn end, reordering its rows.
 - Kill all and revive all.
 - File reservations and tasks, which stay per host.
 

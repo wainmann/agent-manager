@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -88,6 +89,34 @@ func (s *Store) UpdateConnection(name string, next Connection) error {
 	// The sessions that opened terminals there keep them under the new name.
 	if _, err := tx.Exec(`UPDATE remote_terminals SET host = ? WHERE host = ?`, next.Name, name); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// SwapConnectionOrder exchanges two connections' places in the list. Every
+// position is rewritten, since an import can leave two rows on the same one.
+func (s *Store) SwapConnectionOrder(name, target string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	names, err := txStrings(tx, `SELECT name FROM connections ORDER BY position, name`)
+	if err != nil {
+		return err
+	}
+	from, to := slices.Index(names, name), slices.Index(names, target)
+	if from < 0 {
+		return fmt.Errorf("connection %q: %w", name, ErrConnectionNotFound)
+	}
+	if to < 0 {
+		return fmt.Errorf("connection %q: %w", target, ErrConnectionNotFound)
+	}
+	names[from], names[to] = names[to], names[from]
+	for position, each := range names {
+		if _, err := tx.Exec(`UPDATE connections SET position = ? WHERE name = ?`, position, each); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
