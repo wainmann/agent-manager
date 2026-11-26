@@ -87,7 +87,9 @@ func TestTreesLeaveOutZombies(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		stdin.Close()
-		parent.Wait()
+		if err := parent.Wait(); err != nil {
+			t.Errorf("wait for zombie parent: %v", err)
+		}
 	})
 	if line, err := bufio.NewReader(stdout).ReadString('\n'); line != "zombie\n" {
 		t.Fatalf("the parent never held a zombie child: %q, %v", line, err)
@@ -105,12 +107,17 @@ const zombieParentEnv = "AM_SYSSTAT_ZOMBIE_PARENT"
 func holdZombie() {
 	exited := make(chan os.Signal, 1)
 	signal.Notify(exited, syscall.SIGCHLD)
-	if err := exec.Command("true").Start(); err != nil {
+	child := exec.Command("true")
+	if err := child.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	<-exited
 	fmt.Println("zombie")
 	io.Copy(io.Discard, os.Stdin)
+	if err := child.Wait(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	os.Exit(0)
 }
