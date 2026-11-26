@@ -362,6 +362,26 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 	return file.Name(), nil
 }
 
+// LinkPaste gives a pasted image a second name beside the first, so each
+// holder can delete its own name without taking the image from the other.
+func LinkPaste(path string) (string, error) {
+	file, err := os.CreateTemp(filepath.Dir(path), "paste-*"+filepath.Ext(path))
+	if err != nil {
+		return "", err
+	}
+	name := file.Name()
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Remove(name); err != nil {
+		return "", err
+	}
+	if err := os.Link(path, name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 // WriteText puts plain text on the OS clipboard. Used by the focused
 // preview's own selection, which the host terminal never sees because the
 // app holds mouse reporting.

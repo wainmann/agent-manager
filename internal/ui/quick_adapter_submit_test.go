@@ -81,6 +81,44 @@ func TestQuickAltEnterRefusalLeavesTheKeptTextOnce(t *testing.T) {
 	}
 }
 
+func TestQuickAltEnterKeepsTheImageUnderItsOwnName(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "target", t.TempDir(), "")
+	m.selectSessionRow(t, "target")
+	m.openQuickMode()
+	q := m.quick()
+	imagePath := filepath.Join(t.TempDir(), "paste-shot.png")
+	if err := os.WriteFile(imagePath, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q.Input.SetValue("look " + composer.Token(1))
+	q.Attachments = []composer.Attachment{{ID: 1, Path: imagePath}}
+	sent := q.Submission()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+	if len(q.Attachments) != 1 || q.Attachments[0].Path == imagePath {
+		t.Fatalf("kept chip shares the sent image or lost it: %v", q.Attachments)
+	}
+	kept := q.Attachments[0].Path
+	cleanup := quickSendRoot{m}.ReturnRefused(uiquicksend.SendRequest{
+		ComposerGen: q.Gen,
+		Submission:  sent,
+		Images:      []composer.Attachment{{ID: 1, Path: imagePath}},
+	})
+	if cleanup != nil {
+		cleanup()
+	}
+	if _, err := os.Stat(imagePath); !os.IsNotExist(err) {
+		t.Fatalf("refused send kept its image, stat err = %v", err)
+	}
+	if data, err := os.ReadFile(kept); err != nil || string(data) != "png" {
+		t.Fatalf("kept chip lost its image: %q, %v", data, err)
+	}
+	if got := q.Message(); got != "look "+kept {
+		t.Fatalf("kept prompt reads %q", got)
+	}
+}
+
 func TestQuickEnterAcceptsBurstOnSameBar(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

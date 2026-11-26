@@ -915,3 +915,26 @@ func TestCopyCommandOverSSH(t *testing.T) {
 		})
 	}
 }
+
+func TestLinkPasteSurvivesTheOriginalName(t *testing.T) {
+	original := filepath.Join(t.TempDir(), "paste-1.png")
+	if err := os.WriteFile(original, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := LinkPaste(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked == original || filepath.Ext(linked) != ".png" {
+		t.Fatalf("linked name = %q", linked)
+	}
+	if err := os.Remove(original); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(linked); err != nil || string(data) != "png" {
+		t.Fatalf("linked image = %q, %v", data, err)
+	}
+	if _, err := LinkPaste(original); err == nil {
+		t.Fatal("linking a missing image succeeded")
+	}
+}

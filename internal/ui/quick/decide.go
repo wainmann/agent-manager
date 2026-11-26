@@ -1,6 +1,8 @@
 package quick
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,7 +27,7 @@ func Decide(h Effects, q *Surface, msg tea.KeyMsg) tea.Cmd {
 }
 
 func Execute(h Effects, q *Surface, request Request, cmd tea.Cmd) tea.Cmd {
-	kept := q.Submission()
+	kept, images := q.Submission(), slices.Clone(q.Attachments)
 	var follow tea.Cmd
 	switch {
 	case request.Move != 0:
@@ -45,8 +47,8 @@ func Execute(h Effects, q *Surface, request Request, cmd tea.Cmd) tea.Cmd {
 	case request.InsertSaved != nil:
 		q.InsertSaved(*request.InsertSaved)
 	}
-	if request.Keep {
-		q.Restore(kept)
+	if request.Keep && q.Restore(kept) {
+		follow = tea.Batch(follow, q.KeepImages(h, images))
 	}
 	return tea.Batch(cmd, follow)
 }
