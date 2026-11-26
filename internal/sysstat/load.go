@@ -8,7 +8,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/wsl"
 )
 
-var loadInGuest = wsl.Detect
+var (
+	loadInGuest = wsl.Detect
+	loadAvg     = load.Avg
+)
 
 // Under WSL the kernel's load average is the guest VM's, and it would sit
 // beside the Windows host's CPU and memory, so it is left out.
@@ -16,7 +19,7 @@ func sampleLoad(snap *Snapshot) {
 	if loadInGuest() {
 		return
 	}
-	avg, err := load.Avg()
+	avg, err := loadAvg()
 	if err != nil {
 		return
 	}
