@@ -36,7 +36,7 @@ func (p *Runner) holdsBegun() uint64 {
 }
 
 // bindUnlessHeld binds under the hold lock, so a hold on any of waitOn that
-// is active, or began after since while this pass read the tool's store,
+// is active, or began after since (read with the pass's session list),
 // keeps the bind off until a later pass.
 func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []string, since uint64) (bound, held bool, err error) {
 	p.holdMu.Lock()
@@ -65,12 +65,13 @@ func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]t
 	if !hasWork || !p.captureBusy.CompareAndSwap(false, true) {
 		return
 	}
+	since := p.holdsBegun()
 	snapshot := append([]store.Session(nil), sessions...)
 	p.captureWait.Add(1)
 	go func() {
 		defer p.captureWait.Done()
 		defer p.captureBusy.Store(false)
-		captured, err := p.captureAgentSessionIDs(snapshot, panes)
+		captured, err := p.captureAgentSessionIDs(snapshot, panes, since)
 		if err != nil {
 			p.mu.Lock()
 			p.captureErr = err
@@ -89,7 +90,7 @@ func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]t
 // started in the same directory then skips that one via claimed and captures
 // its own. Launch times carry nanosecond precision, so sessions launched a
 // moment apart in the same directory still order deterministically.
-func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[string]tmux.Pane) (int, error) {
+func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[string]tmux.Pane, since uint64) (int, error) {
 	claimed := make(map[string]bool, len(sessions))
 	for _, sess := range sessions {
 		if sess.AgentSessionID != "" {
@@ -154,7 +155,6 @@ cands:
 		// exact candidate counts.
 		var agentID string
 		var ok bool
-		since := p.holdsBegun()
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
 			if heldDirs[recaptureScope(sess)] {
 				continue

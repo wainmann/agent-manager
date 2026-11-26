@@ -88,11 +88,11 @@ func TestHeldSessionIsNotCapturedUntilReleased(t *testing.T) {
 	if !p.idMinting(sess, panes) {
 		t.Fatal("a held session dropped out of the shared-scope count")
 	}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("held: captured %d, err %v; want 0", captured, err)
 	}
 	delete(p.held, "sess-A")
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes); err != nil || captured != 1 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdsBegun()); err != nil || captured != 1 {
 		t.Fatalf("released: captured %d, err %v; want 1", captured, err)
 	}
 }
@@ -235,11 +235,11 @@ func TestHeldSessionKeepsItsConversationFromAPeer(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
-	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
 	}
 	delete(p.held, "sess-A")
-	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 2 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 2 {
 		t.Fatalf("released: captured %d, err %v; want 2", captured, err)
 	}
 	for id, want := range map[string]string{"sess-A": "A-id", "sess-B": "B-id"} {
@@ -289,7 +289,7 @@ func TestHeldSessionKeepsItsConversationFromAPeerViaASymlink(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
-	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
 	}
 	got, err := st.Get("sess-B")
@@ -329,5 +329,46 @@ func TestSetInputDoesNotWaitOnABindUnderTheHoldLock(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("SetInput waited on the hold lock")
+	}
+}
+
+func TestCaptureWaitsOutAPeersHoldThatEndedAfterTheSnapshot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	launched := time.Now().Add(-time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-new", cwd, launched.Add(time.Second))
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launched.Add(-time.Hour), AgentSessionID: "A-old"},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launched},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sessions []store.Session
+	for _, id := range []string{"sess-A", "sess-B"} {
+		sess, err := st.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions = append(sessions, sess)
+	}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	since := p.holdsBegun()
+	if err := p.HoldSessions([]string{"sess-A"}, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, since); err != nil || captured != 0 {
+		t.Fatalf("hold after snapshot: captured %d, err %v; want 0", captured, err)
+	}
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 1 {
+		t.Fatalf("later pass: captured %d, err %v; want 1", captured, err)
 	}
 }

@@ -1232,7 +1232,7 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	sessions := []store.Session{sessB, sessA} // store order, not launch order
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
-	captured, err := p.captureAgentSessionIDs(sessions, panes)
+	captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1294,10 +1294,10 @@ func TestCaptureAgentSessionIDsKeepsABoundConversationFromAStaleSnapshot(t *test
 	stale := []store.Session{sessA, sessB}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
-	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+	if _, err := p.captureAgentSessionIDs(stale, panes, p.holdsBegun()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+	if _, err := p.captureAgentSessionIDs(stale, panes, p.holdsBegun()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1342,7 +1342,7 @@ func TestCaptureAgentSessionIDsSkipsASessionDeletedDuringThePass(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess-A": {PID: 123}})
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess-A": {PID: 123}}, p.holdsBegun())
 	if err != nil || captured != 0 {
 		t.Fatalf("captured %d, err %v; want 0 and no error", captured, err)
 	}
@@ -1392,7 +1392,7 @@ func TestCaptureAgentSessionIDsKeepsAConversationRetiredDuringThePass(t *testing
 	stale := []store.Session{sessA, sessB}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
-	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+	if _, err := p.captureAgentSessionIDs(stale, panes, p.holdsBegun()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1446,11 +1446,11 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	// First sighting stores the candidate without binding.
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
 	}
 	// The second consecutive pass agrees and binds.
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 1 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 1 {
 		t.Fatalf("second pass captured %d err=%v, want 1", captured, err)
 	}
 	got, err := st.Get("sess")
@@ -1496,7 +1496,7 @@ func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{snapshot}, map[string]tmux.Pane{"sess": {PID: 7}})
+	captured, err := p.captureAgentSessionIDs([]store.Session{snapshot}, map[string]tmux.Pane{"sess": {PID: 7}}, p.holdsBegun())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1549,7 +1549,7 @@ func TestCaptureAgentSessionIDsRefusesAnAmbiguousResume(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1602,10 +1602,10 @@ func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
 	}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 1 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 1 {
 		t.Fatalf("second pass captured %d err=%v, want 1", captured, err)
 	}
 	got, err := st.Get("sess")
@@ -1656,7 +1656,7 @@ func TestCaptureAgentSessionIDsRefusesSharedRelaunchScope(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{first.ID: {PID: 41}, second.ID: {PID: 42}}
 	for pass := 0; pass < 2; pass++ {
-		if captured, err := p.captureAgentSessionIDs([]store.Session{first, second}, panes); err != nil || captured != 0 {
+		if captured, err := p.captureAgentSessionIDs([]store.Session{first, second}, panes, p.holdsBegun()); err != nil || captured != 0 {
 			t.Fatalf("pass %d captured %d err=%v, want no bind", pass+1, captured, err)
 		}
 	}
@@ -1705,7 +1705,7 @@ func TestCaptureAgentSessionIDsRefusesCaptureInTheStampingWindow(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("captured %d err=%v, want the stamping window refused", captured, err)
 	}
 	got, err := st.Get("sess")
@@ -1764,7 +1764,7 @@ func TestCaptureAgentSessionIDsClearsTheSightingWhenAmbiguityFollows(t *testing.
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "id-1", cwd, relaunched.Add(time.Second))
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
 	}
 	if p.recaptureSeen["sess"].agentID != "id-1" {
@@ -1773,7 +1773,7 @@ func TestCaptureAgentSessionIDsClearsTheSightingWhenAmbiguityFollows(t *testing.
 	// The second conversation turns too: the pass now sees two candidates
 	// and must drop the stored sighting instead of honoring it.
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-2.jsonl"), "id-2", cwd, relaunched.Add(2*time.Second))
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("ambiguous pass captured %d err=%v, want 0", captured, err)
 	}
 	if _, still := p.recaptureSeen["sess"]; still {
@@ -1817,7 +1817,7 @@ func TestCaptureAgentSessionIDsRefusesARelaunchWithoutASnapshot(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun()); err != nil || captured != 0 {
 		t.Fatalf("captured %d err=%v, want 0 without a snapshot", captured, err)
 	}
 	got, err := st.Get("sess")
@@ -1859,7 +1859,7 @@ func TestCaptureAgentSessionIDsKeepsTheEarliestWriteForASpawn(t *testing.T) {
 	}
 
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}, p.holdsBegun())
 	if err != nil {
 		t.Fatal(err)
 	}
