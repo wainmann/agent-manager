@@ -110,7 +110,7 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
-	if m.remoteAnyInFlight(row.Host, m.remoteAdmissionIDs(request)) {
+	if m.remoteAnyInFlight(request) {
 		return nil, true
 	}
 	return m.confirmRemote(request, call, row.Terminals), true
@@ -180,13 +180,18 @@ func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bo
 // remoteAnyInFlight reports whether a queued or running lifecycle call on
 // host covers any of ids, counting the rows each call waits on, so a kill
 // and a close of one of its agent's terminals refuse each other.
-func (m *Model) remoteAnyInFlight(host string, ids []string) bool {
+func (m *Model) remoteAnyInFlight(request uilink.Call) bool {
+	ids := m.remoteAdmissionIDs(request)
 	for _, call := range m.remoteLifecycleJobs() {
-		if call.Host != host {
+		if call.Host != request.Host {
 			continue
 		}
 		busy := m.remoteAdmissionIDs(call)
 		if slices.ContainsFunc(ids, func(id string) bool { return slices.Contains(busy, id) }) {
+			return true
+		}
+		if request.Op == uilink.DeleteGroup && call.Op == uilink.DeleteGroup &&
+			(uilifecycle.InSubtree(request.Name, call.Name) || uilifecycle.InSubtree(call.Name, request.Name)) {
 			return true
 		}
 	}
@@ -257,10 +262,10 @@ func (m *Model) confirmRemoteGroupDelete(row uiconnections.Row) tea.Cmd {
 		return nil
 	}
 	subgroups, sessions := m.ssh.Subtree(row.Host, row.Group)
-	if m.remoteAnyInFlight(row.Host, sessions) {
+	request := uilink.Call{Op: uilink.DeleteGroup, Host: row.Host, Name: row.Group, Sessions: sessions}
+	if m.remoteAnyInFlight(request) {
 		return nil
 	}
-	request := uilink.Call{Op: uilink.DeleteGroup, Host: row.Host, Name: row.Group, Sessions: sessions}
 	m.openConfirm(confirmTarget{
 		prompt: uidialogs.Confirm{Action: uidialogs.ConfirmDelete, Group: true,
 			Label: uisession.GroupDeleteLabel(presentation.EscapeControlsInline(row.Group+" on "+row.Host), subgroups, len(sessions), "kills their tmux sessions there.")},
@@ -328,7 +333,7 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 		return nil
 	}
 	if _, lifecycle := remotePendingAction[request.Op]; lifecycle {
-		if m.remoteAnyInFlight(request.Host, m.remoteAdmissionIDs(request)) {
+		if m.remoteAnyInFlight(request) {
 			return nil
 		}
 	}

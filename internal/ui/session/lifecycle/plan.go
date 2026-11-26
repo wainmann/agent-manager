@@ -266,7 +266,7 @@ func RestoreRows(sessions []store.Session, edit *ArchiveEdit) []store.Session {
 		if !sessions[i].Archived {
 			continue
 		}
-		if !edit.Rows[sessions[i].ID] && (edit.Group == "" || !inSubtree(sessions[i].Group, edit.Group)) {
+		if !edit.Rows[sessions[i].ID] && (edit.Group == "" || !InSubtree(sessions[i].Group, edit.Group)) {
 			continue
 		}
 		sessions[i].Archived = false
@@ -275,7 +275,7 @@ func RestoreRows(sessions []store.Session, edit *ArchiveEdit) []store.Session {
 	return rows
 }
 
-func inSubtree(group, path string) bool {
+func InSubtree(group, path string) bool {
 	return group == path || strings.HasPrefix(group, path+"/")
 }
 

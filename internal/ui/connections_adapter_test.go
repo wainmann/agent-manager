@@ -1405,3 +1405,17 @@ func TestRemoteTerminalCloseWaitsForItsAgentsKill(t *testing.T) {
 		t.Fatal("the terminal's row was marked for a call that never queued")
 	}
 }
+
+func TestRemoteDeleteOfANestedEmptyGroupWaitsForItsParent(t *testing.T) {
+	m := connectedModel(t, &fakeSSH{})
+	m.queueRemote(uilink.Call{Op: uilink.DeleteGroup, Host: "box", Name: "web"})
+	m.queueRemote(uilink.Call{Op: uilink.DeleteGroup, Host: "box", Name: "web/api"})
+	m.queueRemote(uilink.Call{Op: uilink.DeleteGroup, Host: "box", Name: "website"})
+	var queued []string
+	for _, call := range m.remoteLifecycleJobs() {
+		queued = append(queued, call.Name)
+	}
+	if !slices.Equal(queued, []string{"web", "website"}) {
+		t.Fatalf("queued group deletes %q, want web and website", queued)
+	}
+}
