@@ -813,3 +813,84 @@ func TestInputRefusesChangedCreationEvenWithSameLaunch(t *testing.T) {
 		t.Fatalf("changed creation received input: called=%v err=%v", called, err)
 	}
 }
+
+func TestFocusInputCoalescesQueuedBackspaces(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "bs-burst", t.TempDir(), "")
+	m.selectSessionRow(t, "bs-burst")
+	_, cmd := m.focusSelected()
+	m.applyCmd(t, cmd)
+	if !m.focused() {
+		t.Fatalf("expected focus mode")
+	}
+	m.layout.width, m.layout.height = 120, 36
+	m.prepareFrame()
+
+	// Send first Backspace so the input lane becomes active, then queue three
+	// more while the first is in flight: the three pending ones must coalesce
+	// into one send-keys command with three BSpace tokens.
+	_, firstCmd := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if firstCmd == nil || m.effects.Input.Active == nil {
+		t.Fatal("first backspace did not start input lane")
+	}
+	for range 3 {
+		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	if len(m.effects.Input.Pending) != 1 {
+		t.Fatalf("pending input jobs = %d, want 1 coalesced batch", len(m.effects.Input.Pending))
+	}
+	req, ok := m.effects.Input.Pending[0].Request.(focusruntime.InputRequest)
+	if !ok {
+		t.Fatalf("pending request type = %T", m.effects.Input.Pending[0].Request)
+	}
+	wantSuffix := " BSpace BSpace BSpace"
+	if !strings.HasSuffix(req.Value.Command, wantSuffix) {
+		t.Fatalf("coalesced command = %q, want suffix %q", req.Value.Command, wantSuffix)
+	}
+}
+
+func TestFocusForwardedInputAndHoverKeepFrame(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "keep-frame", t.TempDir(), "")
+	m.selectSessionRow(t, "keep-frame")
+	_, cmd := m.focusSelected()
+	m.applyCmd(t, cmd)
+	m.layout.width, m.layout.height = 120, 36
+	m.prepareFrame()
+
+	// Sentinel frame proves prepareFrame did not run on no-op focus events.
+	const sentinel = "SENTINEL_FRAME"
+	m.layout.frame = sentinel
+
+	// Forwarded Backspace with cursor already visible keeps the frame.
+	_, inputCmd := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.layout.frame != sentinel {
+		t.Fatal("forwarded backspace unnecessarily re-rendered the frame")
+	}
+
+	// Successful input completion keeps the frame.
+	m.applyTestMsg(t, inputCmd())
+	if m.layout.frame != sentinel {
+		t.Fatal("successful input completion unnecessarily re-rendered the frame")
+	}
+
+	// Unpressed mouse hover motion over the focused pane keeps the frame.
+	m.Update(tea.MouseMsg{X: 60, Y: 15, Action: tea.MouseActionMotion, Button: tea.MouseButtonNone})
+	if m.layout.frame != sentinel {
+		t.Fatal("mouse hover motion in focus mode unnecessarily re-rendered the frame")
+	}
+
+	// Blinking the caret off and then typing MUST re-render immediately so the
+	// caret becomes visible again.
+	m.focus.pane.Blink()
+	m.layout.frame = sentinel
+	_, blinkCmd := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.layout.frame == sentinel {
+		t.Fatal("typing while caret was blinked off skipped re-render")
+	}
+	if blinkCmd != nil {
+		m.applyTestMsg(t, blinkCmd())
+	}
+}

@@ -96,18 +96,33 @@ func FillBackdrop(frame string, width int, backgroundHex, foregroundHex string) 
 
 func fillBackdropLine(line string, width int, fill, ink string, parser *ansi.Parser) string {
 	var out strings.Builder
-	out.WriteString(fill + ink)
+	out.Grow(len(line) + len(fill)*4 + len(ink)*4 + 32)
+	out.WriteString(fill)
+	out.WriteString(ink)
 	// DecodeSequence can split an ASCII-base grapheme (such as a keycap).
 	// Measure the whole line so padding uses the same width as the layout.
 	cells := ansi.StringWidth(line)
 	// A terminal that sizes this row per code point draws it narrower and
 	// would keep a stale last cell, so clear it first. Clearing every row
 	// shows it blank between frames on terminals without synchronized output.
-	if cells != ansi.StringWidthWc(line) {
+	if hasNonASCII(line) && cells != ansi.StringWidthWc(line) {
 		out.WriteString(ansi.EraseEntireLine)
 	}
 	var state byte
 	for len(line) > 0 {
+		if state == 0 {
+			i := 0
+			for i < len(line) && line[i] != 0x1b && line[i] < 0x80 {
+				i++
+			}
+			if i > 0 {
+				out.WriteString(line[:i])
+				line = line[i:]
+				if len(line) == 0 {
+					break
+				}
+			}
+		}
 		seq, _, n, next := ansi.DecodeSequence(line, state, parser)
 		out.WriteString(seq)
 		if ansi.HasCsiPrefix(seq) && parser.Command() == 'm' {
@@ -122,10 +137,22 @@ func fillBackdropLine(line string, width int, fill, ink string, parser *ansi.Par
 		line, state = line[n:], next
 	}
 	if cells < width {
-		out.WriteString("\x1b[0m" + fill + ink + strings.Repeat(" ", width-cells))
+		out.WriteString("\x1b[0m")
+		out.WriteString(fill)
+		out.WriteString(ink)
+		out.WriteString(strings.Repeat(" ", width-cells))
 	}
 	out.WriteString("\x1b[0m")
 	return out.String()
+}
+
+func hasNonASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return true
+		}
+	}
+	return false
 }
 
 // clearedColors reports which of the terminal's own colors an SGR leaves

@@ -36,6 +36,12 @@ func (l Layout) BodyHeight() int {
 	return l.bodyRows(l.FooterRows())
 }
 
+// BodyHeightFor computes the body height from an already-measured footer row
+// count, avoiding a second footer render on the same frame.
+func (l Layout) BodyHeightFor(footer int) int {
+	return l.bodyRows(footer)
+}
+
 // RestingBodyHeight is the same budget with the footer the screen actually
 // paints: a growing footer crops previews instead of resizing running panes.
 func (l Layout) RestingBodyHeight() int {

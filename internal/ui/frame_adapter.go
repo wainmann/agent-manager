@@ -304,32 +304,93 @@ func (m *Model) footer() legend {
 	footer := m.footerOf()
 	switch {
 	case m.rail.Reordering():
-		return m.transientFooter(legendOf(m.rail.ReorderLegend(m.prefs.glyphMode)))
+		return footer.Transient(legendOf(m.rail.ReorderLegend(m.prefs.glyphMode)))
 	case m.quick() != nil:
 		return m.quickFooter(m.quick())
 	}
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
-		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.resizeGlyph()+" / release", " / "))})
+		return footer.Transient(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.resizeGlyph()+" / release", " / "))})
 	}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
-		return m.transientFooter(legendSection{Title: "Rename", Pairs: s.Footer()})
+		return footer.Transient(legendSection{Title: "Rename", Pairs: s.Footer()})
 	}
 	if m.focused() {
 		return footer.Transient(footer.Focused(m.focusFooter()))
 	}
-	return m.listLegend()
+	return footer.ListLegend()
+}
+
+type footerMeasureCache struct {
+	valid           bool
+	width           int
+	room            int
+	glyphMode       presentation.GlyphMode
+	fullLayout      bool
+	arrowStep       bool
+	arrowAttach     bool
+	mouseDisabled   bool
+	enterFocuses    bool
+	hideEmptyGroups bool
+	listKeys        keybind.Table
+	measured        uiframe.Measurement
+}
+
+func (m *Model) measureFooter() uiframe.Measurement {
+	room := max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2)
+	cache := &m.layout.footerMeasure
+	if cache.valid &&
+		cache.width == m.layout.width &&
+		cache.room == room &&
+		cache.glyphMode == m.prefs.glyphMode &&
+		cache.fullLayout == m.prefs.fullLayout &&
+		cache.arrowStep == m.prefs.arrowStep &&
+		cache.arrowAttach == m.prefs.arrowAttach &&
+		cache.mouseDisabled == m.prefs.mouseDisabled &&
+		cache.enterFocuses == m.enterFocuses() &&
+		cache.hideEmptyGroups == m.rail.HideEmptyGroups() &&
+		cache.listKeys.Equal(m.services.listKeys) {
+		return cache.measured
+	}
+	measured := m.layout.footer.Measure(m.legendReference(), m.layout.width, room, m.prefs.glyphMode)
+	*cache = footerMeasureCache{
+		valid:           true,
+		width:           m.layout.width,
+		room:            room,
+		glyphMode:       m.prefs.glyphMode,
+		fullLayout:      m.prefs.fullLayout,
+		arrowStep:       m.prefs.arrowStep,
+		arrowAttach:     m.prefs.arrowAttach,
+		mouseDisabled:   m.prefs.mouseDisabled,
+		enterFocuses:    m.enterFocuses(),
+		hideEmptyGroups: m.rail.HideEmptyGroups(),
+		listKeys:        m.services.listKeys,
+		measured:        measured,
+	}
+	return measured
 }
 
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
-	return uiframe.Footer{
+	list := m.listTiers()
+	measured := m.measureFooter()
+	footer := uiframe.Footer{
 		Mode:        m.prefs.glyphMode,
-		List:        m.listTiers(),
-		Measurement: m.layout.footer.Measure(m.legendReference(), m.layout.width, max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2), m.prefs.glyphMode),
+		List:        list,
+		Measurement: measured,
 		Width:       m.layout.width,
 		FullLayout:  m.prefs.fullLayout,
 		ArrowStep:   m.prefs.arrowStep,
 	}
+	if !m.prefs.fullLayout {
+		footer.ListHeight = m.layout.footer.ListHeight(list, m.layout.width, measured.Mode, measured.Rows, m.prefs.glyphMode, func() int {
+			return lipgloss.Height(footer.ListLegend().Text)
+		})
+	}
+	return footer
+}
+
+func (m *Model) listBodyHeightFor(footer legend) int {
+	return m.geometryLayout().BodyHeightFor(lipgloss.Height(footer.Text))
 }
 
 // listTiers is the base screen's tiers: the cursor's row, then the keys that
@@ -439,7 +500,7 @@ func (m *Model) viewListFrame() string {
 	}
 	leftWidth, rightWidth := m.splitWidths()
 	footer := m.footer()
-	bodyHeight := m.listBodyHeight()
+	bodyHeight := m.listBodyHeightFor(footer)
 	contentWidth := rightWidth - 1
 
 	frame := []string{}
@@ -485,7 +546,7 @@ func (m *Model) fullRows() bool { return m.prefs.fullLayout && !m.focused() }
 
 func (m *Model) viewFullListFrame() string {
 	footer := m.footer()
-	bodyHeight := m.listBodyHeight()
+	bodyHeight := m.listBodyHeightFor(footer)
 	railWidth := m.layout.width - 1
 
 	frame := []string{}

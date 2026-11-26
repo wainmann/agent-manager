@@ -33,6 +33,7 @@ type Footer struct {
 	Mode        presentation.GlyphMode
 	List        []Section
 	Measurement Measurement
+	ListHeight  int
 	Width       int
 	FullLayout  bool
 	ArrowStep   bool
@@ -69,7 +70,14 @@ func (f Footer) Transient(tier Section) Legend {
 	if f.FullLayout {
 		return painted
 	}
-	painted.Text = presentation.PadToHeight(painted.Text, lipgloss.Height(f.ListLegend().Text))
+	targetHeight := f.ListHeight
+	if targetHeight <= 0 {
+		targetHeight = rows
+		if mode == Titled {
+			targetHeight = lipgloss.Height(f.ListLegend().Text)
+		}
+	}
+	painted.Text = presentation.PadToHeight(painted.Text, targetHeight)
 	return painted
 }
 

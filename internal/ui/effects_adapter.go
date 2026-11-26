@@ -141,6 +141,9 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 	if request, ok := job.Request.(focusruntime.InputRequest); ok && request.Value.Kind != focusruntime.Prompt {
 		result, _ := msg.Result.(focusruntime.Result)
 		m.applyInputEffect(result, msg.Err)
+		if msg.Err == nil && m.layout.frame != "" {
+			m.layout.keepFrame = true
+		}
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {

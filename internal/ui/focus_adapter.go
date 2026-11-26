@@ -120,7 +120,10 @@ func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
 		return nil
 	}
 	m.takeForeground()
-	return m.focus.pane.ExtendedKeyPress(focusHost{m}, msg)
+	before := m.focusFrameSnapshot()
+	cmd := m.focus.pane.ExtendedKeyPress(focusHost{m}, msg)
+	m.keepFrameAfterFocusForward(before)
+	return cmd
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
@@ -181,15 +184,61 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 // and paging a normal-screen pane's history. Every plain character, q
 // included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.focus.pane.KeyPress(focusHost{m}, msg)
+	before := m.focusFrameSnapshot()
+	model, cmd := m.focus.pane.KeyPress(focusHost{m}, msg)
+	m.keepFrameAfterFocusForward(before)
+	return model, cmd
+}
+
+type focusFrameSnapshot struct {
+	hasFrame    bool
+	cursorOn    bool
+	scrolled    bool
+	dragging    bool
+	errText     string
+	surfaces    int
+	base        baseScreen
+	effectSeqID uint64
+}
+
+func (m *Model) focusFrameSnapshot() focusFrameSnapshot {
+	return focusFrameSnapshot{
+		hasFrame:    m.layout.frame != "",
+		cursorOn:    m.focus.pane.CursorOn(),
+		scrolled:    m.focus.pane.ScrolledBack(),
+		dragging:    m.focus.pane.Dragging(),
+		errText:     m.errBar.text,
+		surfaces:    len(m.surfaces),
+		base:        m.base,
+		effectSeqID: m.effects.NextID,
+	}
+}
+
+func (m *Model) keepFrameAfterFocusForward(before focusFrameSnapshot) {
+	if !before.hasFrame || m.effects.NextID == before.effectSeqID {
+		return
+	}
+	if before.cursorOn && m.focus.pane.CursorOn() &&
+		!before.scrolled && !m.focus.pane.ScrolledBack() &&
+		m.focused() && len(m.surfaces) == before.surfaces &&
+		m.base == before.base && m.errBar.text == before.errText {
+		m.layout.keepFrame = true
+	}
 }
 
 // handleFocusMouse runs the mouse over a focused pane.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	before := m.focusFrameSnapshot()
 	// The package cannot name the root, so a nil model is this one.
 	model, cmd := m.focus.pane.MouseUnder(focusHost{m}, msg)
 	if model == nil {
 		model = m
+	}
+	if msg.Action == tea.MouseActionMotion && before.hasFrame &&
+		!before.dragging && !m.focus.pane.Dragging() &&
+		m.focused() && len(m.surfaces) == before.surfaces &&
+		m.base == before.base && m.errBar.text == before.errText {
+		m.layout.keepFrame = true
 	}
 	return model, cmd
 }
@@ -423,9 +472,20 @@ func (m *Model) applyAckEffect(err error) {
 	m.requestRefresh()
 }
 
-// dispatchInput queues one write to a focused session's pane.
+// dispatchInput queues one write to a focused session's pane, coalescing
+// compatible pending key writes so held keys drain in batches.
 func (m *Model) dispatchInput(request focusruntime.Request) {
 	request = request.Copied()
+	if !m.effects.Quitting && len(m.effects.Input.Pending) > 0 {
+		last := len(m.effects.Input.Pending) - 1
+		if prev, ok := m.effects.Input.Pending[last].Request.(focusruntime.InputRequest); ok {
+			if merged, ok := prev.Value.Merge(request); ok {
+				m.effects.Input.Pending = m.effects.Input.Pending[:last]
+				m.enqueueEffect(focusruntime.InputRequest{Value: merged}, 0, false)
+				return
+			}
+		}
+	}
 	if request.Kind != focusruntime.Prompt && !request.Counted {
 		request.Counted = m.focus.runtime.CountWrite(request.Session.ID)
 	}
@@ -448,7 +508,7 @@ func newFocusWatch(driver *tmux.Driver, send func(tea.Msg)) *focuswatch.Watcher 
 // captured pane owns the whole terminal body and the list waits behind it.
 func (m *Model) viewFullFocusFrame() string {
 	footer := m.footer()
-	bodyHeight := m.listBodyHeight()
+	bodyHeight := m.listBodyHeightFor(footer)
 	// This frame paints no rail, so a click lands on no row: the list frame's
 	// hits would otherwise select a row nobody pointed at.
 	m.layout.displayedRail = uirail.Frame{}

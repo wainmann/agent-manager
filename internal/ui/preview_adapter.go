@@ -232,9 +232,9 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		}
 		for i, line := range rendered.Rows {
 			if replaced := loaderRow(rendered.TopPadding + i); replaced != "" {
-				line = replaced
+				line = uipreview.Line(replaced, width)
 			}
-			rows = append(rows, uipreview.Line(line, width))
+			rows = append(rows, line)
 		}
 	} else {
 		rows = uipreview.Rows(m.workspace.preview, height, width, m.paneCaretRow(), loaderRow)

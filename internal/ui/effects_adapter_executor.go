@@ -54,7 +54,7 @@ type effectServices struct {
 func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, error) {
 	capture := m.captureServices
 	binders := []func(uieffects.Request) (func() (uieffects.Result, error), bool){
-		uieffects.Binder(func() focusruntime.Services { return capture().focusRuntime() }),
+		uieffects.Binder[focusruntime.Services](m.focusRuntimeServices),
 		uieffects.Binder(func() uigeometrypanes.Services { return capture().geometry() }),
 		uieffects.Binder(func() uiinstall.Services { return capture().install() }),
 		uieffects.Binder(func() uilink.Services { return capture().link() }),
@@ -219,15 +219,15 @@ func (s effectServices) reflow(ids []string, work func()) error {
 	return s.runner.ReflowSessions(ids, work)
 }
 
-// focusRuntime is the store, tmux server, watcher, engine and paste transport
-// the focus effects run against.
-func (s effectServices) focusRuntime() focusruntime.Services {
+// focusRuntimeServices captures only the five pointers focus effects need,
+// avoiding cloning the tool config and lifecycle services on every keystroke.
+func (m *Model) focusRuntimeServices() focusruntime.Services {
 	return focusruntime.Services{
-		Store:  s.store,
-		Driver: s.driver,
-		Engine: s.engine,
-		Watch:  s.watch,
-		Paste:  s.pasteInput,
+		Store:  m.services.store,
+		Driver: m.services.tmux,
+		Engine: m.services.engine,
+		Watch:  m.focus.runtime.Watch,
+		Paste:  pasteFocused,
 	}
 }
 

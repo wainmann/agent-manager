@@ -34,8 +34,10 @@ func (h focusHost) Bindings(pressed string) uifocus.Bindings {
 		Saved:     keys.Binding(keybind.SavedPrompt).Has(pressed),
 		ArrowStep: h.m.prefs.arrowStep,
 	}
-	if sess, ok := h.m.selected(); ok {
-		bindings.AtInputHead = h.m.caretAtInputStart(sess.ID, sess.Tool)
+	if h.m.prefs.arrowStep && keybind.Normalize(pressed) == "left" {
+		if sess, ok := h.m.selected(); ok {
+			bindings.AtInputHead = h.m.caretAtInputStart(sess.ID, sess.Tool)
+		}
 	}
 	return bindings
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -51,6 +52,46 @@ func (r Request) Copied() Request {
 	return r
 }
 
+// maxMergedSendKeysBytes caps coalesced send-keys commands well below tmux's
+// ~1024-byte send-keys limit.
+const maxMergedSendKeysBytes = 512
+
+// Merge folds a back-to-back pending key write into r when both target the same
+// session launch with compatible non-guarded send-keys forms (hex bytes or key
+// names), so held keys such as Backspace drain in batches instead of one
+// serialized round trip per repeat.
+func (r Request) Merge(next Request) (Request, bool) {
+	if r.Kind != Keys || next.Kind != Keys || r.Submit || next.Submit || len(r.Args) > 0 || len(next.Args) > 0 {
+		return Request{}, false
+	}
+	if r.Session.ID == "" || r.Session.ID != next.Session.ID ||
+		!r.Session.CreatedAt.Equal(next.Session.CreatedAt) ||
+		r.Session.TmuxSocket != next.Session.TmuxSocket ||
+		!r.Session.LaunchTime().Equal(next.Session.LaunchTime()) {
+		return Request{}, false
+	}
+	target := tmux.PaneTarget(r.Session.ID)
+	hexPrefix := "send-keys -t " + target + " -H "
+	namePrefix := "send-keys -t " + target + " "
+	var suffix string
+	switch {
+	case strings.HasPrefix(r.Command, hexPrefix) && strings.HasPrefix(next.Command, hexPrefix):
+		suffix = strings.TrimPrefix(next.Command, hexPrefix)
+	case strings.HasPrefix(r.Command, namePrefix) && strings.HasPrefix(next.Command, namePrefix) &&
+		!strings.HasPrefix(r.Command[len(namePrefix):], "-") &&
+		!strings.HasPrefix(next.Command[len(namePrefix):], "-"):
+		suffix = strings.TrimPrefix(next.Command, namePrefix)
+	default:
+		return Request{}, false
+	}
+	if suffix == "" || len(r.Command)+1+len(suffix) > maxMergedSendKeysBytes {
+		return Request{}, false
+	}
+	r.Command += " " + suffix
+	r.Echo = r.Echo || next.Echo
+	return r, true
+}
+
 // Result reports what a write left for the Update path: the session it reached,
 // the composer draft an enter captured, and the prompt a receipt recorded.
 type Result struct {
@@ -90,13 +131,22 @@ func (w Writer) Run(request Request) (Result, error) {
 	}
 	result := Result{InputID: current.ID}
 	if request.Submit && w.Engine != nil {
-		if pane, captureErr := w.Driver.CapturePane(current.ID); captureErr == nil {
+		if pane, captureErr := w.capturePane(current.ID); captureErr == nil {
 			if draft, ok := w.Engine.InputDraft(current.Tool, ansi.Strip(pane)); ok {
 				result.Candidate = &Candidate{ID: current.ID, Session: current, Text: draft, At: time.Now()}
 			}
 		}
 	}
 	return result, w.send(current, request)
+}
+
+func (w Writer) capturePane(id string) (string, error) {
+	if w.Watch != nil {
+		if pane, ok := w.Watch.Query("capture-pane -p -e -t " + tmux.PaneTarget(id)); ok {
+			return watch.MatchExecShape(pane), nil
+		}
+	}
+	return w.Driver.CapturePane(id)
 }
 
 // ErrUnreplayed marks a write the control client may have delivered before it

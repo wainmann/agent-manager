@@ -183,6 +183,9 @@ func (m Model) FrameBox() Box { return m.frame.box }
 
 func (m Model) ScrolledBack() bool { return m.scroll > 0 }
 
+// Dragging reports whether a local selection or forwarded mouse drag is active.
+func (m Model) Dragging() bool { return m.selection.dragging || m.forward.active }
+
 // PagesScrollback is the one policy decision shared by input, footer and
 // status line: a normal-screen pane's transcript lives in tmux history,
 // while alternate-screen and mouse-tracking programs keep their keys.

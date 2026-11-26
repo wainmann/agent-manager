@@ -153,6 +153,7 @@ func (m *Model) flushPendingNotice() {
 	id := m.notices.Take()
 	if uinotices.Holds(m.activeNotices(), id) {
 		m.openNotices(id)
+		m.layout.keepFrame = false
 	}
 }
 

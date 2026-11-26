@@ -58,8 +58,8 @@ func (m *Model) PrepareFrame(ctx FrameContext) FrameContent {
 	}
 
 	rendered := make([]string, len(pane))
-	for i, raw := range pane {
-		rendered[i] = m.renderPaneRow(i, raw, ctx.Width, ctx.CursorStyle, ctx.SelectionStyle)
+	for i := range pane {
+		rendered[i] = m.renderSafePaneRow(i, safe[i], lines[i], ctx.Width, ctx.CursorStyle, ctx.SelectionStyle)
 	}
 	return FrameContent{Rows: rendered, TopPadding: topPadding, HasPane: true}
 }
@@ -90,37 +90,40 @@ func (m Model) cursorCell() (row, col int, ok bool) {
 
 func (m Model) renderPaneRow(row int, raw string, width int, cursorStyle, selectionStyle lipgloss.Style) string {
 	clean := safePaneLine(raw)
-	line := ansi.Strip(clean)
-	if start, end, ok := m.selectionSpan(row, ansi.StringWidth(line)); ok {
-		startByte, endByte := graphemeRangeAtColumns(line, start, end)
-		selected := line[startByte:endByte]
-		before := ansi.Truncate(clean, ansi.StringWidth(line[:startByte]), "")
-		after := ansi.TruncateLeft(clean, ansi.StringWidth(line[:endByte]), "")
-		return fitPaneLine(before+selectionStyle.Render(selected)+after, width)
-	}
-	return m.withCursor(row, raw, width, cursorStyle)
+	return m.renderSafePaneRow(row, clean, ansi.Strip(clean), width, cursorStyle, selectionStyle)
 }
 
-func (m Model) withCursor(row int, raw string, width int, style lipgloss.Style) string {
+func (m Model) renderSafePaneRow(row int, clean, line string, width int, cursorStyle, selectionStyle lipgloss.Style) string {
+	if m.selection.active {
+		if start, end, ok := m.selectionSpan(row, ansi.StringWidth(line)); ok {
+			startByte, endByte := graphemeRangeAtColumns(line, start, end)
+			selected := line[startByte:endByte]
+			before := ansi.Truncate(clean, ansi.StringWidth(line[:startByte]), "")
+			after := ansi.TruncateLeft(clean, ansi.StringWidth(line[:endByte]), "")
+			return fitSafePaneLine(before+selectionStyle.Render(selected)+after, width)
+		}
+	}
+	return m.withCursor(row, clean, line, width, cursorStyle)
+}
+
+func (m Model) withCursor(row int, clean, line string, width int, style lipgloss.Style) string {
 	cursorRow, cursorCol, ok := m.cursorCell()
 	if !ok || cursorRow != row {
-		return fitPaneLine(raw, width)
+		return fitSafePaneLine(clean, width)
 	}
-	clean := safePaneLine(raw)
 	lineWidth := ansi.StringWidth(clean)
 	if cursorCol >= lineWidth {
 		pad := strings.Repeat(" ", cursorCol-lineWidth)
-		return fitPaneLine(clean+pad+style.Render(" "), width)
+		return fitSafePaneLine(clean+pad+style.Render(" "), width)
 	}
-	line := ansi.Strip(clean)
 	startByte, endByte := graphemeRangeAtColumns(line, cursorCol, cursorCol+1)
 	head, tail := splitCursorLine(clean, startByte, endByte)
 	cell := line[startByte:endByte]
 	withCursor := head + style.Render(cell) + tail
 	if ansi.Strip(withCursor) != line {
-		return fitPaneLine(clean, width)
+		return fitSafePaneLine(clean, width)
 	}
-	return fitPaneLine(withCursor, width)
+	return fitSafePaneLine(withCursor, width)
 }
 
 // Keep ANSI sequences when splitting at byte offsets in the stripped text.
@@ -162,20 +165,21 @@ func splitCursorLine(line string, startByte, endByte int) (string, string) {
 	return head.String(), tail.String()
 }
 
-func fitPaneLine(line string, width int) string {
-	line = safePaneLine(line)
-	line = strings.Map(func(r rune) rune {
-		if r < 0x20 && r != 0x1b && r != '\t' {
-			return -1
-		}
-		return r
-	}, line)
+func fitSafePaneLine(line string, width int) string {
+	if hasStripControl(line) {
+		line = strings.Map(func(r rune) rune {
+			if r < 0x20 && r != 0x1b && r != '\t' {
+				return -1
+			}
+			return r
+		}, line)
+	}
 	w := ansi.StringWidth(line)
 	if w > width {
 		line = ansi.Truncate(line, width, "")
 		w = ansi.StringWidth(line)
 	}
-	if strings.ContainsRune(line, 0x1b) {
+	if strings.IndexByte(line, 0x1b) >= 0 {
 		line += "\x1b[0m"
 	}
 	if w < width {
@@ -184,7 +188,19 @@ func fitPaneLine(line string, width int) string {
 	return line
 }
 
+func hasStripControl(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if b := s[i]; b < 0x20 && b != 0x1b && b != '\t' {
+			return true
+		}
+	}
+	return false
+}
+
 func safePaneLine(line string) string {
+	if strings.IndexByte(line, 0x1b) < 0 {
+		return line
+	}
 	line = strings.ReplaceAll(line, capturedCursorMarker, "")
 	return dangerousPaneSequences.ReplaceAllString(line, "")
 }

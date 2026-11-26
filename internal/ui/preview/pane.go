@@ -22,13 +22,18 @@ var dangerSeqs = regexp.MustCompile(
 // and danger sequences dropped, an open background closed before the pad,
 // and the tail filled out to the column.
 func Line(line string, width int) string {
-	line = dangerSeqs.ReplaceAllString(line, "")
-	line = strings.Map(func(r rune) rune {
-		if r < 0x20 && r != 0x1b && r != '\t' {
-			return -1
-		}
-		return r
-	}, line)
+	hasEsc := strings.IndexByte(line, 0x1b) >= 0
+	if hasEsc {
+		line = dangerSeqs.ReplaceAllString(line, "")
+	}
+	if hasControlByte(line) {
+		line = strings.Map(func(r rune) rune {
+			if r < 0x20 && r != 0x1b && r != '\t' {
+				return -1
+			}
+			return r
+		}, line)
+	}
 	w := ansi.StringWidth(line)
 	if w > width {
 		line = ansi.Truncate(line, width, "")
@@ -36,13 +41,22 @@ func Line(line string, width int) string {
 	}
 	// Reset before padding so an open background from the agent does not
 	// paint the rest of the column.
-	if strings.ContainsRune(line, 0x1b) {
+	if hasEsc && strings.IndexByte(line, 0x1b) >= 0 {
 		line += "\x1b[0m"
 	}
 	if w < width {
 		line += strings.Repeat(" ", width-w)
 	}
 	return line
+}
+
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if b := s[i]; b < 0x20 && b != 0x1b && b != '\t' {
+			return true
+		}
+	}
+	return false
 }
 
 // ExpandTabs writes a captured row's tabs out as the spaces the pane

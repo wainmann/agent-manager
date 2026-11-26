@@ -185,6 +185,23 @@ func LegendLayout(refs [][]Section, width, room int, cap Cap, title, quietTitle 
 	return Bare, min(bare, room)
 }
 
+func (s Section) hasParts() bool {
+	if s.Hint != "" || len(s.Pairs) > 0 {
+		return true
+	}
+	for _, lead := range s.Leads {
+		if lead[0] != "" {
+			return true
+		}
+	}
+	for _, alert := range s.Alerts {
+		if alert[0] != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // PaintTitledLegend renders one tier per line where the terminal allows it
 // and the tail marked when it does not. fits reports whether each tier with
 // a key a click can press painted its first such key whole.
@@ -204,7 +221,7 @@ func PaintTitledLegend(sections []Section, width int, cap Cap, title, quietTitle
 		}
 		maxRows := MaxRows
 		for _, next := range sections[i+1:] {
-			if len(next.Parts(cap)) > 0 {
+			if next.hasParts() {
 				maxRows--
 			}
 		}

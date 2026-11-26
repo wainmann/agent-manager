@@ -92,9 +92,13 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if keys.Saved {
 		return nil, h.Saved()
 	}
+	rows := 0
+	if s.ScrolledBack() || (!msg.Alt && (msg.Type == tea.KeyPgUp || msg.Type == tea.KeyPgDown)) {
+		rows = h.PaneRows()
+	}
 	result := s.Key(msg, KeyContext{
 		SessionID:   id,
-		Rows:        h.PaneRows(),
+		Rows:        rows,
 		Detach:      keys.Detach,
 		Resize:      keys.Resize,
 		Editor:      keys.Editor,
@@ -145,7 +149,12 @@ func (s *Model) ExtendedKeyPress(h KeyHost, msg ExtendedKeyMsg) tea.Cmd {
 			return cmd
 		}
 	}
-	resume := h.Region(s.resumeLive(id, h.PaneRows()))
+	var resume tea.Cmd
+	if s.ScrolledBack() {
+		resume = h.Region(s.resumeLive(id, h.PaneRows()))
+	} else {
+		s.cursorOn = true
+	}
 	return tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Name: msg.Name, Echo: true, ExtendedOnly: !reachesLegacyPane(msg.Name)}))
 }
 
@@ -154,9 +163,13 @@ func (s *Model) MouseUnder(h MouseHost, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return nil, nil
 	}
+	rows := 0
+	if tea.MouseEvent(msg).IsWheel() {
+		rows = h.PaneRows()
+	}
 	result := s.Mouse(msg, MouseContext{
 		SessionID:    id,
-		Rows:         h.PaneRows(),
+		Rows:         rows,
 		RuntimeReady: h.RuntimeReady(),
 	})
 	if result.SendReport != "" {

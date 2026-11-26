@@ -102,3 +102,54 @@ func TestWriterPastesThroughItsOwnTransport(t *testing.T) {
 		t.Fatalf("input id = %q, want %q", result.InputID, current.ID)
 	}
 }
+
+func TestRequestMergeCoalescesCompatibleKeys(t *testing.T) {
+	t.Parallel()
+	_, current := storeWith(t)
+	target := tmux.PaneTarget(current.ID)
+
+	bs := Request{Kind: Keys, Session: current, Command: tmux.SendKeyName(target, "BSpace"), Echo: true, Counted: true}
+	merged, ok := bs.Merge(Request{Kind: Keys, Session: current, Command: tmux.SendKeyName(target, "BSpace"), Echo: false})
+	if !ok {
+		t.Fatal("expected consecutive BSpace requests to merge")
+	}
+	want := "send-keys -t " + target + " BSpace BSpace"
+	if merged.Command != want || !merged.Echo || !merged.Counted {
+		t.Fatalf("merged = %+v, want command %q Echo=true Counted=true", merged, want)
+	}
+
+	hexA := Request{Kind: Keys, Session: current, Command: tmux.SendKeysHex(target, []byte("a")), Echo: true}
+	hexB := Request{Kind: Keys, Session: current, Command: tmux.SendKeysHex(target, []byte("b")), Echo: true}
+	mergedHex, ok := hexA.Merge(hexB)
+	if !ok || mergedHex.Command != "send-keys -t "+target+" -H 61 62" {
+		t.Fatalf("merged hex = (%q, %v)", mergedHex.Command, ok)
+	}
+
+	if _, ok := hexA.Merge(bs); ok {
+		t.Fatal("hex and named send-keys must not merge")
+	}
+	if _, ok := bs.Merge(Request{Kind: Keys, Session: current, Command: tmux.SendKeyName(target, "Enter"), Submit: true}); ok {
+		t.Fatal("submit key must not merge")
+	}
+	if _, ok := bs.Merge(Request{Kind: Keys, Session: current, Command: "if-shell ...", Args: []string{"if-shell"}}); ok {
+		t.Fatal("guarded send must not merge")
+	}
+	other := current
+	other.AgentLaunchedAt = other.LaunchTime().Add(time.Second)
+	if _, ok := bs.Merge(Request{Kind: Keys, Session: other, Command: tmux.SendKeyName(target, "BSpace")}); ok {
+		t.Fatal("different launch must not merge")
+	}
+
+	// Merge respects maxMergedSendKeysBytes cap.
+	cur := bs
+	for range 200 {
+		next, merged := cur.Merge(bs)
+		if !merged {
+			break
+		}
+		cur = next
+	}
+	if len(cur.Command) > maxMergedSendKeysBytes {
+		t.Fatalf("merged command length %d exceeded cap %d", len(cur.Command), maxMergedSendKeysBytes)
+	}
+}
