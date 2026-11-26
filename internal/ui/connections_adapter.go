@@ -110,7 +110,7 @@ func (m *Model) remoteSessionIntent(row uiconnections.Row, call uiconnections.Ca
 	request := remoteCall(row.Host, row.Ref, row.Name)
 	request.Op = remoteOp[call.Op]
 	request.Dead = call.Dead
-	if m.remoteAnyInFlight(row.Host, m.remoteLifecycleTargets(request)) {
+	if m.remoteAnyInFlight(row.Host, m.remoteAdmissionIDs(request)) {
 		return nil, true
 	}
 	return m.confirmRemote(request, call, row.Terminals), true
@@ -139,6 +139,16 @@ func (m *Model) remoteLifecycleTargets(call uilink.Call) []string {
 		return append([]string{call.Ref.ID}, m.ssh.Nested(call.Host, call.Ref.ID)...)
 	}
 	return []string{call.Ref.ID}
+}
+
+// remoteAdmissionIDs are the rows that must be idle before a remote call
+// queues: its targets, and for a kill or revive the nested terminals too.
+func (m *Model) remoteAdmissionIDs(call uilink.Call) []string {
+	ids := m.remoteLifecycleTargets(call)
+	if call.Op == uilink.Kill || call.Op == uilink.Revive {
+		ids = append(ids, m.ssh.Nested(call.Host, call.Ref.ID)...)
+	}
+	return ids
 }
 
 // remoteLifecycleJobs are the lifecycle calls queued or running on the
@@ -311,7 +321,7 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 		return nil
 	}
 	if _, lifecycle := remotePendingAction[request.Op]; lifecycle {
-		if m.remoteAnyInFlight(request.Host, m.remoteLifecycleTargets(request)) {
+		if m.remoteAnyInFlight(request.Host, m.remoteAdmissionIDs(request)) {
 			return nil
 		}
 	}

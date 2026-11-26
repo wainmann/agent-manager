@@ -1363,3 +1363,25 @@ func TestRemoteDeleteMarksTheTerminalsItTakes(t *testing.T) {
 		t.Fatal("a kill on a terminal its agent's delete takes opened a confirm")
 	}
 }
+
+func TestRemoteKillOnAnAgentWaitsForItsTerminals(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	fake.snapshot.Terminals = append(fake.snapshot.Terminals,
+		sessioncmd.Terminal{ID: "t2", Name: "api-sh", Group: "web", Status: "idle", Running: true, ParentID: "s1"})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("t2")})
+	m.answerRemote(t, fake, cmd, "y")
+	if _, busy := m.remoteLifecycleInFlight("box", "t2"); !busy {
+		t.Fatal("terminal kill is not in flight")
+	}
+	for _, kind := range []uirail.ActionKind{uirail.Kill, uirail.Revive} {
+		m.runRailIntent(uirail.Intent{Kind: kind, Target: boxSession("s1")})
+		if confirmOpen(m) {
+			t.Fatalf("%v on an agent whose terminal is in flight opened a confirm", kind)
+		}
+	}
+	if _, busy := m.remoteLifecycleInFlight("box", "s1"); busy {
+		t.Fatal("the agent's row was marked for a call that never queued")
+	}
+}
