@@ -29,19 +29,19 @@ func (p *Runner) isHeld(id string) bool {
 	return p.held[id]
 }
 
-func (p *Runner) holdsBegun() uint64 {
+func (p *Runner) holdGeneration() uint64 {
 	p.holdMu.Lock()
 	defer p.holdMu.Unlock()
 	return p.holdSeq
 }
 
 // bindUnlessHeld binds under the hold lock, so a hold on any of waitOn that
-// is active, or began after since (read with the pass's session list),
+// is active, or started or ended after since (read before the session list),
 // keeps the bind off until a later pass.
 func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []string, since uint64) (bound, held bool, err error) {
 	p.holdMu.Lock()
 	defer p.holdMu.Unlock()
-	if slices.ContainsFunc(waitOn, func(id string) bool { return p.held[id] || p.heldAt[id] > since }) {
+	if slices.ContainsFunc(waitOn, func(id string) bool { return p.held[id] || p.holdChangedAt[id] > since }) {
 		return false, true, nil
 	}
 	bound, err = p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
@@ -54,7 +54,7 @@ func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []str
 // including a freshly submitted session's first appearance. One pass runs at
 // a time, on a snapshot, and a pass that captures anything pokes a refresh so
 // the UI and store pick up the new ids.
-func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]tmux.Pane) {
+func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]tmux.Pane, since uint64) {
 	hasWork := false
 	for _, sess := range sessions {
 		if p.idMinting(sess, panes) && !p.isHeld(sess.ID) {
@@ -65,7 +65,6 @@ func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]t
 	if !hasWork || !p.captureBusy.CompareAndSwap(false, true) {
 		return
 	}
-	since := p.holdsBegun()
 	snapshot := append([]store.Session(nil), sessions...)
 	p.captureWait.Add(1)
 	go func() {

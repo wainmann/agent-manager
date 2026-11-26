@@ -61,10 +61,10 @@ type Runner struct {
 	// held are the panes a lifecycle action is ending or relaunching, which
 	// the poll leaves alone until the action is done.
 	held map[string]bool
-	// holdSeq counts holds begun; heldAt is the count when each session's
-	// latest hold began, so a bind can see a hold that already ended.
-	holdSeq uint64
-	heldAt  map[string]uint64
+	// holdSeq counts hold starts and ends; holdChangedAt is the count at each
+	// session's latest one, so a bind can see a hold that changed mid-pass.
+	holdSeq       uint64
+	holdChangedAt map[string]uint64
 
 	// captureBusy guards the single in-flight id-capture goroutine.
 	captureBusy atomic.Bool
@@ -348,6 +348,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	p.tick++
 
 	listedAt := time.Now()
+	holdGeneration := p.holdGeneration()
 	sessions, err := p.store.ListSessions(includeArchived)
 	if err != nil {
 		return Result{Err: err}
@@ -617,7 +618,7 @@ func (p *Runner) step(ctx context.Context) Result {
 			}
 		}
 	}
-	p.startCaptureIfIdle(sessions, panes)
+	p.startCaptureIfIdle(sessions, panes, holdGeneration)
 	p.paneHashes = paneHashes
 	p.turnMarks = turnMarks
 	followWarning := p.newFollowFailure(sessions, followFailures)
@@ -816,19 +817,21 @@ func (p *Runner) HoldSessions(ids []string, work func()) error {
 	p.holdMu.Lock()
 	if p.held == nil {
 		p.held = map[string]bool{}
-		p.heldAt = map[string]uint64{}
+		p.holdChangedAt = map[string]uint64{}
 	}
 	p.holdSeq++
 	for _, id := range ids {
 		p.held[id] = true
-		p.heldAt[id] = p.holdSeq
+		p.holdChangedAt[id] = p.holdSeq
 	}
 	p.holdMu.Unlock()
 	p.runMu.Unlock()
 	defer func() {
 		p.holdMu.Lock()
+		p.holdSeq++
 		for _, id := range ids {
 			delete(p.held, id)
+			p.holdChangedAt[id] = p.holdSeq
 		}
 		p.holdMu.Unlock()
 	}()

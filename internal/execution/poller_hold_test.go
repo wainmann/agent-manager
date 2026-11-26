@@ -88,11 +88,11 @@ func TestHeldSessionIsNotCapturedUntilReleased(t *testing.T) {
 	if !p.idMinting(sess, panes) {
 		t.Fatal("a held session dropped out of the shared-scope count")
 	}
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdsBegun()); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdGeneration()); err != nil || captured != 0 {
 		t.Fatalf("held: captured %d, err %v; want 0", captured, err)
 	}
 	delete(p.held, "sess-A")
-	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdsBegun()); err != nil || captured != 1 {
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes, p.holdGeneration()); err != nil || captured != 1 {
 		t.Fatalf("released: captured %d, err %v; want 1", captured, err)
 	}
 }
@@ -112,7 +112,7 @@ func TestIntervalCPUNeedsABaseline(t *testing.T) {
 
 func TestHeldSessionStartsNoCapture(t *testing.T) {
 	runner := &Runner{sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"a": true}}
-	runner.startCaptureIfIdle([]store.Session{{ID: "a", Tool: "codex"}}, map[string]tmux.Pane{"a": {PID: 1}})
+	runner.startCaptureIfIdle([]store.Session{{ID: "a", Tool: "codex"}}, map[string]tmux.Pane{"a": {PID: 1}}, runner.holdGeneration())
 	if runner.captureBusy.Load() {
 		t.Fatal("a held session started an id capture")
 	}
@@ -189,7 +189,7 @@ func TestFirstLaunchBindWaitsOutAPeersHoldThatAlreadyEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &Runner{store: st}
-	since := p.holdsBegun()
+	since := p.holdGeneration()
 	if err := p.HoldSessions([]string{"sess-B"}, func() {}); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestFirstLaunchBindWaitsOutAPeersHoldThatAlreadyEnded(t *testing.T) {
 	if bound, held, err := p.bindUnlessHeld(sess, "B-id", peers, since); bound || !held || err != nil {
 		t.Fatalf("ended hold: bound %t held %t err %v", bound, held, err)
 	}
-	if bound, held, err := p.bindUnlessHeld(sess, "A-id", peers, p.holdsBegun()); !bound || held || err != nil {
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id", peers, p.holdGeneration()); !bound || held || err != nil {
 		t.Fatalf("later pass: bound %t held %t err %v", bound, held, err)
 	}
 }
@@ -235,11 +235,11 @@ func TestHeldSessionKeepsItsConversationFromAPeer(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
-	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdGeneration()); err != nil || captured != 0 {
 		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
 	}
 	delete(p.held, "sess-A")
-	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 2 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdGeneration()); err != nil || captured != 2 {
 		t.Fatalf("released: captured %d, err %v; want 2", captured, err)
 	}
 	for id, want := range map[string]string{"sess-A": "A-id", "sess-B": "B-id"} {
@@ -289,7 +289,7 @@ func TestHeldSessionKeepsItsConversationFromAPeerViaASymlink(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
-	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 0 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdGeneration()); err != nil || captured != 0 {
 		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
 	}
 	got, err := st.Get("sess-B")
@@ -361,14 +361,41 @@ func TestCaptureWaitsOutAPeersHoldThatEndedAfterTheSnapshot(t *testing.T) {
 	}
 	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
 	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	since := p.holdsBegun()
+	since := p.holdGeneration()
 	if err := p.HoldSessions([]string{"sess-A"}, func() {}); err != nil {
 		t.Fatal(err)
 	}
 	if captured, err := p.captureAgentSessionIDs(sessions, panes, since); err != nil || captured != 0 {
 		t.Fatalf("hold after snapshot: captured %d, err %v; want 0", captured, err)
 	}
-	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdsBegun()); err != nil || captured != 1 {
+	if captured, err := p.captureAgentSessionIDs(sessions, panes, p.holdGeneration()); err != nil || captured != 1 {
 		t.Fatalf("later pass: captured %d, err %v; want 1", captured, err)
+	}
+}
+
+func TestBindWaitsOutAPeersHoldThatEndedAfterTheSnapshot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.CreateSession(store.Session{ID: "sess-B", Name: "b", Tool: "codex", Cwd: t.TempDir(), Group: "g", Status: "idle", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Runner{store: st}
+	var since uint64
+	if err := p.HoldSessions([]string{"sess-A"}, func() { since = p.holdGeneration() }); err != nil {
+		t.Fatal(err)
+	}
+	peers := []string{"sess-A", "sess-B"}
+	if bound, held, err := p.bindUnlessHeld(sess, "A-new", peers, since); bound || !held || err != nil {
+		t.Fatalf("hold ended mid-pass: bound %t held %t err %v", bound, held, err)
+	}
+	if bound, held, err := p.bindUnlessHeld(sess, "B-id", peers, p.holdGeneration()); !bound || held || err != nil {
+		t.Fatalf("later pass: bound %t held %t err %v", bound, held, err)
 	}
 }
