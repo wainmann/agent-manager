@@ -54,6 +54,10 @@ type Runner struct {
 	// captureErr holds a background id-capture failure to surface on the
 	// next poll, since that work no longer runs inline.
 	captureErr error
+
+	// holdMu guards held apart from mu, so a bind that waits on the database
+	// under holdMu never stalls SetInput on the UI thread.
+	holdMu sync.Mutex
 	// held are the panes a lifecycle action is ending or relaunching, which
 	// the poll leaves alone until the action is done.
 	held map[string]bool
@@ -300,8 +304,10 @@ func (p *Runner) step(ctx context.Context) Result {
 	selectedID := p.selectedID
 	captureErr := p.captureErr
 	p.captureErr = nil
-	held := maps.Clone(p.held)
 	p.mu.Unlock()
+	p.holdMu.Lock()
+	held := maps.Clone(p.held)
+	p.holdMu.Unlock()
 	if captureErr != nil {
 		return Result{Err: captureErr}
 	}
@@ -803,21 +809,21 @@ func (p *Runner) HoldSessions(ids []string, work func()) error {
 		delete(p.paneHashes, id)
 		delete(p.quietSince, id)
 	}
-	p.mu.Lock()
+	p.holdMu.Lock()
 	if p.held == nil {
 		p.held = map[string]bool{}
 	}
 	for _, id := range ids {
 		p.held[id] = true
 	}
-	p.mu.Unlock()
+	p.holdMu.Unlock()
 	p.runMu.Unlock()
 	defer func() {
-		p.mu.Lock()
+		p.holdMu.Lock()
 		for _, id := range ids {
 			delete(p.held, id)
 		}
-		p.mu.Unlock()
+		p.holdMu.Unlock()
 	}()
 	work()
 	return nil

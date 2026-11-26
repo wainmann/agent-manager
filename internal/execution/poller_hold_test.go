@@ -214,3 +214,19 @@ func TestFleetCPUCountsEachPidOnceAndCaps(t *testing.T) {
 		t.Fatalf("estimates past the machine = %v, want 100", got)
 	}
 }
+
+func TestSetInputDoesNotWaitOnABindUnderTheHoldLock(t *testing.T) {
+	p := &Runner{}
+	p.holdMu.Lock()
+	defer p.holdMu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		p.SetInput(true, "sess-A")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("SetInput waited on the hold lock")
+	}
+}

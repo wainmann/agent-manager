@@ -23,16 +23,16 @@ func (p *Runner) idMinting(sess store.Session, panes map[string]tmux.Pane) bool 
 }
 
 func (p *Runner) isHeld(id string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.holdMu.Lock()
+	defer p.holdMu.Unlock()
 	return p.held[id]
 }
 
 // bindUnlessHeld binds under the hold lock, so a hold that began while this
 // pass read the tool's store keeps the bind off until a later pass.
 func (p *Runner) bindUnlessHeld(sess store.Session, agentID string) (bound, held bool, err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.holdMu.Lock()
+	defer p.holdMu.Unlock()
 	if p.held[sess.ID] {
 		return false, true, nil
 	}
