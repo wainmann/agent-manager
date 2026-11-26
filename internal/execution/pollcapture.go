@@ -130,8 +130,13 @@ func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	// A first launch takes the earliest unclaimed conversation in its
 	// directory, which may be a held peer's, so the directory waits out the hold.
 	heldDirs := map[string]bool{}
+	// Archived rows count too: a restore holds its session while still archived.
+	everySession, err := p.store.ListSessions(true)
+	if err != nil {
+		return 0, err
+	}
 	scopePeers := map[string][]string{}
-	for _, sess := range sessions {
+	for _, sess := range everySession {
 		scopePeers[recaptureScope(sess)] = append(scopePeers[recaptureScope(sess)], sess.ID)
 	}
 	for _, i := range pending {

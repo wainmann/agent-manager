@@ -399,3 +399,37 @@ func TestBindWaitsOutAPeersHoldThatEndedAfterTheSnapshot(t *testing.T) {
 		t.Fatalf("later pass: bound %t held %t err %v", bound, held, err)
 	}
 }
+
+func TestCaptureWaitsOutARestoreHeldWhileArchived(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	launched := time.Now().Add(-time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-new", cwd, launched.Add(time.Second))
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launched.Add(-time.Hour), Archived: true},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launched},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	visible, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	panes := map[string]tmux.Pane{"sess-B": {PID: 2}}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{visible}, panes, p.holdGeneration()); err != nil || captured != 0 {
+		t.Fatalf("archived peer held: captured %d, err %v; want 0", captured, err)
+	}
+	delete(p.held, "sess-A")
+	if captured, err := p.captureAgentSessionIDs([]store.Session{visible}, panes, p.holdGeneration()); err != nil || captured != 1 {
+		t.Fatalf("released: captured %d, err %v; want 1", captured, err)
+	}
+}
