@@ -29,13 +29,19 @@ func (p *Runner) isHeld(id string) bool {
 	return p.held[id]
 }
 
-// bindUnlessHeld binds under the hold lock, so a hold that began on any of
-// waitOn while this pass read the tool's store keeps the bind off until a
-// later pass.
-func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []string) (bound, held bool, err error) {
+func (p *Runner) holdsBegun() uint64 {
 	p.holdMu.Lock()
 	defer p.holdMu.Unlock()
-	if slices.ContainsFunc(waitOn, func(id string) bool { return p.held[id] }) {
+	return p.holdSeq
+}
+
+// bindUnlessHeld binds under the hold lock, so a hold on any of waitOn that
+// is active, or began after since while this pass read the tool's store,
+// keeps the bind off until a later pass.
+func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []string, since uint64) (bound, held bool, err error) {
+	p.holdMu.Lock()
+	defer p.holdMu.Unlock()
+	if slices.ContainsFunc(waitOn, func(id string) bool { return p.held[id] || p.heldAt[id] > since }) {
 		return false, true, nil
 	}
 	bound, err = p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
@@ -148,6 +154,7 @@ cands:
 		// exact candidate counts.
 		var agentID string
 		var ok bool
+		since := p.holdsBegun()
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
 			if heldDirs[recaptureScope(sess)] {
 				continue
@@ -182,7 +189,7 @@ cands:
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
 			waitOn = scopePeers[recaptureScope(sess)]
 		}
-		bound, held, err := p.bindUnlessHeld(sess, agentID, waitOn)
+		bound, held, err := p.bindUnlessHeld(sess, agentID, waitOn, since)
 		if held {
 			heldDirs[recaptureScope(sess)] = true
 			continue

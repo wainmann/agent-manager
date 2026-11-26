@@ -134,7 +134,7 @@ func TestBindWaitsOutAHoldThatBeganMidCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &Runner{store: st, held: map[string]bool{"sess-A": true}}
-	if bound, held, err := p.bindUnlessHeld(sess, "A-id", []string{"sess-A"}); bound || !held || err != nil {
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id", []string{"sess-A"}, 0); bound || !held || err != nil {
 		t.Fatalf("held: bound %t held %t err %v", bound, held, err)
 	}
 	got, err := st.Get("sess-A")
@@ -145,7 +145,7 @@ func TestBindWaitsOutAHoldThatBeganMidCapture(t *testing.T) {
 		t.Fatalf("held session got conversation %q", got.AgentSessionID)
 	}
 	delete(p.held, "sess-A")
-	if bound, held, err := p.bindUnlessHeld(sess, "A-id", []string{"sess-A"}); !bound || held || err != nil {
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id", []string{"sess-A"}, 0); !bound || held || err != nil {
 		t.Fatalf("released: bound %t held %t err %v", bound, held, err)
 	}
 }
@@ -165,11 +165,40 @@ func TestFirstLaunchBindWaitsOutAPeersHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &Runner{store: st, held: map[string]bool{"sess-B": true}}
-	if bound, held, err := p.bindUnlessHeld(sess, "B-id", []string{"sess-A", "sess-B"}); bound || !held || err != nil {
+	if bound, held, err := p.bindUnlessHeld(sess, "B-id", []string{"sess-A", "sess-B"}, 0); bound || !held || err != nil {
 		t.Fatalf("peer held: bound %t held %t err %v", bound, held, err)
 	}
 	if got, err := st.Get("sess-A"); err != nil || got.AgentSessionID != "" {
 		t.Fatalf("bound %q while a peer was held, err %v", got.AgentSessionID, err)
+	}
+}
+
+// A peer's hold that began and ended while the capture read the store still
+// keeps the bind off, and a later pass binds.
+func TestFirstLaunchBindWaitsOutAPeersHoldThatAlreadyEnded(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: t.TempDir(), Group: "g", Status: "idle", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Runner{store: st}
+	since := p.holdsBegun()
+	if err := p.HoldSessions([]string{"sess-B"}, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	peers := []string{"sess-A", "sess-B"}
+	if bound, held, err := p.bindUnlessHeld(sess, "B-id", peers, since); bound || !held || err != nil {
+		t.Fatalf("ended hold: bound %t held %t err %v", bound, held, err)
+	}
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id", peers, p.holdsBegun()); !bound || held || err != nil {
+		t.Fatalf("later pass: bound %t held %t err %v", bound, held, err)
 	}
 }
 
