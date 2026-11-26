@@ -95,8 +95,13 @@ type Tool struct {
 	ChromeBlock string `toml:"chrome_block"`
 	// BusyLine marks work that outlives the turn which started it, such as
 	// background agents. Matching it in the newest turn keeps a turn-end
-	// summary from resolving to finished while that work runs.
+	// summary from resolving to finished while that work runs. Its groups,
+	// when it has any, count the units of work it waits on.
 	BusyLine string `toml:"busy_line"`
+	// BusyDone is the line a tool prints when one unit of that work ends.
+	// Once as many sit below the newest busy line as it counts, the work
+	// has drained even though no newer turn summary followed.
+	BusyDone string `toml:"busy_done"`
 	// LimitLine is a usage or rate-limit banner. Matching it in the newest
 	// turn is errored even when a turn-end summary or a limit dialog would
 	// otherwise settle the turn.
