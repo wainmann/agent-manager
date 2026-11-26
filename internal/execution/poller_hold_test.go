@@ -1,7 +1,9 @@
 package execution
 
 import (
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -55,13 +57,34 @@ func TestStoppedHoldReportsUnexecutedWork(t *testing.T) {
 	}
 }
 
-func TestHeldSessionMintsNoID(t *testing.T) {
-	runner := &Runner{sessionStores: map[string]string{"claude": "/x"}, held: map[string]bool{"a": true}}
-	panes := map[string]tmux.Pane{"a": {PID: 1}, "b": {PID: 2}}
-	if runner.idMinting(store.Session{ID: "a", Tool: "claude"}, panes) {
-		t.Fatal("a held session was offered to id capture")
+func TestHeldSessionIsNotCapturedUntilReleased(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !runner.idMinting(store.Session{ID: "b", Tool: "claude"}, panes) {
-		t.Fatal("an unheld session was kept from id capture")
+	t.Cleanup(func() { st.Close() })
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	launch := time.Now().Add(-time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, launch)
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launch}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
+	if !p.idMinting(sess, panes) {
+		t.Fatal("a held session dropped out of the shared-scope count")
+	}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes); err != nil || captured != 0 {
+		t.Fatalf("held: captured %d, err %v; want 0", captured, err)
+	}
+	delete(p.held, "sess-A")
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, panes); err != nil || captured != 1 {
+		t.Fatalf("released: captured %d, err %v; want 1", captured, err)
 	}
 }

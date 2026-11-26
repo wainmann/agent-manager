@@ -19,7 +19,7 @@ import (
 // tool that mints its own conversation id.
 func (p *Runner) idMinting(sess store.Session, panes map[string]tmux.Pane) bool {
 	return !sess.Archived && panes[sess.ID].PID != 0 && sess.AgentSessionID == "" &&
-		p.sessionStores[sess.Tool] != "" && !p.isHeld(sess.ID)
+		p.sessionStores[sess.Tool] != ""
 }
 
 func (p *Runner) isHeld(id string) bool {
@@ -37,7 +37,7 @@ func (p *Runner) isHeld(id string) bool {
 func (p *Runner) startCaptureIfIdle(sessions []store.Session, panes map[string]tmux.Pane) {
 	hasWork := false
 	for _, sess := range sessions {
-		if p.idMinting(sess, panes) {
+		if p.idMinting(sess, panes) && !p.isHeld(sess.ID) {
 			hasWork = true
 			break
 		}
@@ -111,6 +111,11 @@ func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 cands:
 	for _, i := range pending {
 		sess := sessions[i]
+		// A held session still counts toward its scope above, so a peer
+		// relaunched beside it cannot take its new conversation.
+		if p.isHeld(sess.ID) {
+			continue
+		}
 		// A resumed session cannot use the earliest-write tie-break: in a
 		// shared cwd it would bind the wrong conversation, so only one
 		// exact candidate counts.
