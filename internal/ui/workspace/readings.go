@@ -35,9 +35,25 @@ func ComputerLines(r Readings, net Net, width int, mode presentation.GlyphMode) 
 		return render(label, percent, extra, uitheme.Gauge(percent, barWidth, false, mode))
 	}
 
+	// wrapped moves extra under its meter when the two overflow the foot.
+	wrapped := func(label string, percent float64, extra string) []string {
+		line := meter(label, percent, true, extra)
+		if ansi.StringWidth(line) <= width {
+			return []string{line}
+		}
+		return []string{meter(label, percent, true, ""),
+			pad + strings.Repeat(" ", 5) + uitheme.SubtleStyle().Render(extra)}
+	}
+
 	lines := []string{pad + uitheme.SubtleStyle().Render("computer")}
 	lines = append(lines,
 		meter("cpu", r.CPUPercent, r.CPUOK, ""),
+	)
+	if r.LoadOK {
+		perCPU := r.Load1 / float64(r.LoadCPUs) * 100
+		lines = append(lines, wrapped("load", perCPU, loadAverages(r))...)
+	}
+	lines = append(lines,
 		meter("mem", r.MemPercent, r.MemOK, uiframe.HumanBytes(r.MemUsed)+"/"+uiframe.HumanBytes(r.MemTotal)),
 	)
 	if r.SwapOK && r.SwapTotal > 0 {
@@ -48,13 +64,7 @@ func ComputerLines(r Readings, net Net, width int, mode presentation.GlyphMode) 
 	}
 	if r.DiskOK {
 		extra := uiframe.DiskBytes(r.DiskAvailable) + " available"
-		line := meter("disk", r.DiskPercent, true, extra)
-		if ansi.StringWidth(line) > width {
-			lines = append(lines, meter("disk", r.DiskPercent, true, ""),
-				pad+strings.Repeat(" ", 5)+uitheme.SubtleStyle().Render(extra))
-		} else {
-			lines = append(lines, line)
-		}
+		lines = append(lines, wrapped("disk", r.DiskPercent, extra)...)
 	} else {
 		lines = append(lines, meter("disk", 0, false, ""))
 	}
@@ -76,6 +86,10 @@ func ComputerLines(r Readings, net Net, width int, mode presentation.GlyphMode) 
 			uitheme.SubtleStyle().Render("  "+nav.UpGlyph+" "+uiframe.HumanBytes(net.Up)+"/s"))
 	}
 	return append(lines, "")
+}
+
+func loadAverages(r Readings) string {
+	return fmt.Sprintf("%.2f/%.2f/%.2f", r.Load1, r.Load5, r.Load15)
 }
 
 func tempReadings(r Readings) string {
@@ -109,6 +123,9 @@ func FootLine(r Readings, net Net, width int, mode presentation.GlyphMode) []str
 			value += " charging"
 		}
 		parts = append(parts, reading("batt", value, true))
+	}
+	if r.LoadOK {
+		parts = append(parts, reading("load", loadAverages(r), true))
 	}
 	if temps := tempReadings(r); temps != "" {
 		parts = append(parts, uitheme.LabelStyle().Render("temp ")+temps)
