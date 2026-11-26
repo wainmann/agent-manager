@@ -28,6 +28,18 @@ func (p *Runner) isHeld(id string) bool {
 	return p.held[id]
 }
 
+// bindUnlessHeld binds under the hold lock, so a hold that began while this
+// pass read the tool's store keeps the bind off until a later pass.
+func (p *Runner) bindUnlessHeld(sess store.Session, agentID string) (bound, held bool, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.held[sess.ID] {
+		return false, true, nil
+	}
+	bound, err = p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
+	return bound, false, err
+}
+
 // startCaptureIfIdle runs id capture off the poll lock. Capturing an
 // some ids shell out to the tool's CLI, which can take seconds;
 // doing it inside refreshOnce would hold runMu and stall every refresh,
@@ -148,7 +160,10 @@ cands:
 		// The raw field, never LaunchTime(): the compare-and-set matches the
 		// stored column, which is zero for a session that never restarted,
 		// while LaunchTime() answers CreatedAt and would match nothing.
-		bound, err := p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
+		bound, held, err := p.bindUnlessHeld(sess, agentID)
+		if held {
+			continue
+		}
 		if err != nil {
 			return captured, err
 		}

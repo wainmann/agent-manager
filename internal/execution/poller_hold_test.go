@@ -109,3 +109,31 @@ func TestHeldSessionStartsNoCapture(t *testing.T) {
 		t.Fatal("a held session started an id capture")
 	}
 }
+
+// A capture that passed the held check before a hold began still finds the
+// hold at bind time.
+func TestBindWaitsOutAHoldThatBeganMidCapture(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: t.TempDir(), Group: "g", Status: "idle", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Runner{store: st, held: map[string]bool{"sess-A": true}}
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id"); bound || !held || err != nil {
+		t.Fatalf("held: bound %t held %t err %v", bound, held, err)
+	}
+	if got, _ := st.Get("sess-A"); got.AgentSessionID != "" {
+		t.Fatalf("held session got conversation %q", got.AgentSessionID)
+	}
+	delete(p.held, "sess-A")
+	if bound, held, err := p.bindUnlessHeld(sess, "A-id"); !bound || held || err != nil {
+		t.Fatalf("released: bound %t held %t err %v", bound, held, err)
+	}
+}
