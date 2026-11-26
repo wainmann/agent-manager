@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"database/sql"
 	"time"
 )
@@ -15,13 +16,14 @@ const (
 // the collision while both agents can still talk about it, which is what
 // a worktree cannot do, since worktrees defer the conflict to merge time.
 type Reservation struct {
-	ID         string
-	SessionID  string
-	Pattern    string
-	Mode       string
-	Note       string
-	AcquiredAt time.Time
-	ExpiresAt  time.Time
+	ID          string
+	SessionID   string
+	Pattern     string
+	GlobPattern string
+	Mode        string
+	Note        string
+	AcquiredAt  time.Time
+	ExpiresAt   time.Time
 }
 
 // Reserve takes or extends this session's leases on a set of patterns and
@@ -54,11 +56,11 @@ func (s *Store) Reserve(reservations []Reservation) ([]Reservation, error) {
 			conflicts = append(conflicts, conflict)
 		}
 		if _, err := tx.Exec(`
-INSERT INTO file_reservations (id, session_id, pattern, mode, note, acquired_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO file_reservations (id, session_id, pattern, glob_pattern, mode, note, acquired_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id, pattern) DO UPDATE SET
-	mode = excluded.mode, note = excluded.note, expires_at = excluded.expires_at`,
-			reservation.ID, reservation.SessionID, reservation.Pattern, reservation.Mode,
+	glob_pattern = excluded.glob_pattern, mode = excluded.mode, note = excluded.note, expires_at = excluded.expires_at`,
+			reservation.ID, reservation.SessionID, reservation.Pattern, reservation.GlobPattern, reservation.Mode,
 			reservation.Note, encodeTime(reservation.AcquiredAt), encodeTime(reservation.ExpiresAt)); err != nil {
 			return nil, err
 		}
@@ -78,15 +80,16 @@ ON CONFLICT(session_id, pattern) DO UPDATE SET
 // comparable in SQL and are reported only on an exact match, which is why
 // these are advisory.
 func overlappingReservations(tx *sql.Tx, reservation Reservation) ([]Reservation, error) {
+	globPattern := cmp.Or(reservation.GlobPattern, reservation.Pattern)
 	rows, err := tx.Query(`
-SELECT id, session_id, pattern, mode, note, acquired_at, expires_at
+SELECT id, session_id, pattern, glob_pattern, mode, note, acquired_at, expires_at
   FROM file_reservations
  WHERE session_id != ? AND expires_at > ?
-   AND (pattern = ? OR pattern GLOB ? OR ? GLOB pattern)
+   AND (pattern = ? OR pattern GLOB ? OR ? GLOB COALESCE(NULLIF(glob_pattern, ''), pattern))
    AND (mode = ? OR ? = ?)
  ORDER BY acquired_at`,
 		reservation.SessionID, encodeTime(reservation.AcquiredAt),
-		reservation.Pattern, reservation.Pattern, reservation.Pattern,
+		reservation.Pattern, globPattern, reservation.Pattern,
 		ReservationExclusive, reservation.Mode, ReservationExclusive)
 	if err != nil {
 		return nil, err
@@ -116,7 +119,7 @@ func (s *Store) Release(sessionID, pattern string) (int64, error) {
 // so a crashed agent's claim lapses instead of holding the repo.
 func (s *Store) Reservations(now time.Time) ([]Reservation, error) {
 	rows, err := s.db.Query(`
-SELECT id, session_id, pattern, mode, note, acquired_at, expires_at
+SELECT id, session_id, pattern, glob_pattern, mode, note, acquired_at, expires_at
   FROM file_reservations WHERE expires_at > ? ORDER BY acquired_at, pattern`, encodeTime(now))
 	if err != nil {
 		return nil, err
@@ -135,7 +138,7 @@ func scanReservations(rows rowScanner) ([]Reservation, error) {
 	for rows.Next() {
 		var reservation Reservation
 		var acquiredAt, expiresAt int64
-		if err := rows.Scan(&reservation.ID, &reservation.SessionID, &reservation.Pattern,
+		if err := rows.Scan(&reservation.ID, &reservation.SessionID, &reservation.Pattern, &reservation.GlobPattern,
 			&reservation.Mode, &reservation.Note, &acquiredAt, &expiresAt); err != nil {
 			return nil, err
 		}

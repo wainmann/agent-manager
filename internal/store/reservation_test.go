@@ -95,3 +95,51 @@ func TestReserveReportsOneOverlappingLeaseOnce(t *testing.T) {
 		t.Fatalf("conflicts = %+v, want the rival lease once", conflicts)
 	}
 }
+
+func TestReserveUsesGlobPatternForLiteralMetacharacters(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	if _, err := st.Reserve([]Reservation{{
+		ID:          "glob0001",
+		SessionID:   "a",
+		Pattern:     "/work/repo[1]/*.md",
+		GlobPattern: "/work/repo[[]1]/*.md",
+		Mode:        ReservationExclusive,
+		AcquiredAt:  now,
+		ExpiresAt:   now.Add(time.Hour),
+	}}); err != nil {
+		t.Fatalf("seed glob: %v", err)
+	}
+	conflicts, err := st.Reserve([]Reservation{{
+		ID:          "file0001",
+		SessionID:   "b",
+		Pattern:     "/work/repo[1]/note.md",
+		GlobPattern: "/work/repo[[]1]/note.md",
+		Mode:        ReservationExclusive,
+		AcquiredAt:  now,
+		ExpiresAt:   now.Add(time.Hour),
+	}})
+	if err != nil {
+		t.Fatalf("Reserve literal: %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0].ID != "glob0001" {
+		t.Fatalf("conflicts = %+v, want glob0001", conflicts)
+	}
+
+	// Unrelated directory repo1 must not match literal repo[1].
+	unrelated, err := st.Reserve([]Reservation{{
+		ID:          "other001",
+		SessionID:   "c",
+		Pattern:     "/work/repo1/note.md",
+		GlobPattern: "/work/repo1/note.md",
+		Mode:        ReservationExclusive,
+		AcquiredAt:  now,
+		ExpiresAt:   now.Add(time.Hour),
+	}})
+	if err != nil {
+		t.Fatalf("Reserve unrelated: %v", err)
+	}
+	if len(unrelated) != 0 {
+		t.Fatalf("repo1 falsely conflicted with repo[1]: %+v", unrelated)
+	}
+}
