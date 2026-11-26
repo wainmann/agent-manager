@@ -185,11 +185,7 @@ cands:
 		// The raw field, never LaunchTime(): the compare-and-set matches the
 		// stored column, which is zero for a session that never restarted,
 		// while LaunchTime() answers CreatedAt and would match nothing.
-		waitOn := []string{sess.ID}
-		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
-			waitOn = scopePeers[recaptureScope(sess)]
-		}
-		bound, held, err := p.bindUnlessHeld(sess, agentID, waitOn, since)
+		bound, held, err := p.bindUnlessHeld(sess, agentID, scopePeers[recaptureScope(sess)], since)
 		if held {
 			heldDirs[recaptureScope(sess)] = true
 			continue
