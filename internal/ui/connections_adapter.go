@@ -177,9 +177,16 @@ func (m *Model) remoteLifecycleInFlight(host, id string) (uilifecycle.Action, bo
 	return "", false
 }
 
+// remoteAnyInFlight reports whether a queued or running lifecycle call on
+// host covers any of ids, counting the rows each call waits on, so a kill
+// and a close of one of its agent's terminals refuse each other.
 func (m *Model) remoteAnyInFlight(host string, ids []string) bool {
-	for _, id := range ids {
-		if _, busy := m.remoteLifecycleInFlight(host, id); busy {
+	for _, call := range m.remoteLifecycleJobs() {
+		if call.Host != host {
+			continue
+		}
+		busy := m.remoteAdmissionIDs(call)
+		if slices.ContainsFunc(ids, func(id string) bool { return slices.Contains(busy, id) }) {
 			return true
 		}
 	}

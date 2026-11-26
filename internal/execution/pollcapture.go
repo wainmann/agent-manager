@@ -134,6 +134,7 @@ cands:
 		// A held session still counts toward its scope above, so a peer
 		// relaunched beside it cannot take its new conversation.
 		if p.isHeld(sess.ID) {
+			heldDirs[firstLaunchScope(sess)] = true
 			continue
 		}
 		// A resumed session cannot use the earliest-write tie-break: in a
@@ -173,6 +174,7 @@ cands:
 		// while LaunchTime() answers CreatedAt and would match nothing.
 		bound, held, err := p.bindUnlessHeld(sess, agentID)
 		if held {
+			heldDirs[firstLaunchScope(sess)] = true
 			continue
 		}
 		if err != nil {

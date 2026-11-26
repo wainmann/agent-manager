@@ -1385,3 +1385,23 @@ func TestRemoteKillOnAnAgentWaitsForItsTerminals(t *testing.T) {
 		t.Fatal("the agent's row was marked for a call that never queued")
 	}
 }
+
+func TestRemoteTerminalCloseWaitsForItsAgentsKill(t *testing.T) {
+	fake := &fakeSSH{}
+	m := connectedModel(t, fake)
+	fake.snapshot.Terminals = append(fake.snapshot.Terminals,
+		sessioncmd.Terminal{ID: "t2", Name: "api-sh", Group: "web", Status: "idle", Running: true, ParentID: "s1"})
+	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: fake.snapshot}))
+	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
+	m.answerRemote(t, fake, cmd, "y")
+	if _, busy := m.remoteLifecycleInFlight("box", "s1"); !busy {
+		t.Fatal("agent kill is not in flight")
+	}
+	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("t2")})
+	if confirmOpen(m) {
+		t.Fatal("a close of a terminal under an agent being killed opened a confirm")
+	}
+	if _, busy := m.remoteLifecycleInFlight("box", "t2"); busy {
+		t.Fatal("the terminal's row was marked for a call that never queued")
+	}
+}
