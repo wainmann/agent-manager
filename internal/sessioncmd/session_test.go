@@ -323,6 +323,30 @@ func TestSessionsListLeavesArchivedRowsOutUnlessAsked(t *testing.T) {
 	}
 }
 
+// A caller finds itself by its row, and archiving leaves its pane running.
+func TestSessionsListKeepsAnArchivedCallersOwnRow(t *testing.T) {
+	h := newSessionHarness(t)
+	if err := h.store.SetArchived(h.caller.ID, true); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	for _, includeArchived := range []bool{false, true} {
+		listed, err := h.sessions.List(h.caller.ID, includeArchived)
+		if err != nil {
+			t.Fatalf("List(%t): %v", includeArchived, err)
+		}
+		if len(listed) != 1 || listed[0].ID != h.caller.ID || !listed[0].Self || !listed[0].Archived {
+			t.Fatalf("List(%t) = %+v, want the caller's archived row once", includeArchived, listed)
+		}
+	}
+	outside, err := h.sessions.List("", false)
+	if err != nil {
+		t.Fatalf("List with no caller: %v", err)
+	}
+	if len(outside) != 0 {
+		t.Fatalf("list with no caller = %+v, want the archived row left out", outside)
+	}
+}
+
 func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 	var socket string
 	t.Run("harness", func(t *testing.T) {

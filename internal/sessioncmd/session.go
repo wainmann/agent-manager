@@ -126,19 +126,25 @@ func sessionRow(sess store.Session, running, self bool, path string) Session {
 }
 
 // List leaves archived rows out unless includeArchived is set: they outnumber
-// the live ones by orders of magnitude and callers poll this list.
+// the live ones by orders of magnitude and callers poll this list. The caller's
+// own row always stays, since archiving leaves its pane running and callers
+// find themselves by it.
 func (s *Sessions) List(sessionID string, includeArchived bool) ([]Session, error) {
 	runtime, err := s.open()
 	if err != nil {
 		return nil, err
 	}
 	defer runtime.Close()
-	if _, err := runtime.optionalCaller(sessionID); err != nil {
+	caller, err := runtime.optionalCaller(sessionID)
+	if err != nil {
 		return nil, err
 	}
 	stored, err := runtime.store.ListSessions(includeArchived)
 	if err != nil {
 		return nil, err
+	}
+	if caller.Archived && !includeArchived {
+		stored = append(stored, caller)
 	}
 	panes, err := runtime.driver.Panes()
 	if err != nil {

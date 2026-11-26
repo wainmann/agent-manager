@@ -273,7 +273,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `review` | Declare the repo under review, the base ref and the diff scope, in one call |
 | `review_comment` | Mark a sent review comment handled after addressing it, or reopen it |
 | `report_issue` | File a bug report or feature request on the agent-manager repo for the user: a preview first, and posting only with the id that preview returned |
-| `list_sessions` | List the agent sessions with their id, CLI, group, directory, worktree branch and status; archived ones only with `include_archived` |
+| `list_sessions` | List the agent sessions with their id, CLI, group, directory, worktree branch and status; archived ones only with `include_archived`, apart from the caller's own row |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
 | `send_session` | Queue a message for another agent, delivered once it is at rest |

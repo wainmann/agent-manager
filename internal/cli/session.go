@@ -106,7 +106,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 	return section{
 		title: "Agent sessions",
 		commands: []command{
-			{name: "sessions", usage: usageSessions, about: "list the agent sessions with their id, CLI, group, directory and status, archived ones only with --archived; call it before delegating anything", run: bind(open, runSessions)},
+			{name: "sessions", usage: usageSessions, about: "list the agent sessions with their id, CLI, group, directory and status, archived ones only with --archived, apart from your own row; call it before delegating anything", run: bind(open, runSessions)},
 			{name: "snapshot", usage: usageSnapshot, about: "print every session, terminal and group on this host, archived ones included, and whether a manager is running here, as one JSON document another manager reads over SSH", run: bind(open, runSnapshot)},
 			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(open, runSpawn)},
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
