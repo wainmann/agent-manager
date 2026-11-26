@@ -171,9 +171,7 @@ func TestSlowLifecycleDoesNotBlockWindowUpdateAndKeepsSnapshotWriter(t *testing.
 		}
 		var msgs []tea.Msg
 		for _, each := range batch {
-			if each != nil {
-				msgs = append(msgs, each())
-			}
+			msgs = append(msgs, each())
 		}
 		completed <- msgs
 	}()
