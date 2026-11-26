@@ -458,7 +458,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `◐` | `*` | `working` | The agent is busy on a turn |
 | `◆` | `?` | `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question. `.` marks it idle until the screen changes |
 | `●` | `+` | `finished` | Turn ended — an alert that clears to `idle` once you enter the session, or on `.` |
-| `✕` | `x` | `errored` | The tool reported an error |
+| `!` | `!` | `errored` | The tool reported an error |
 | `○` | `.` | `idle` | Nothing running |
 | `✕` | `x` | `dead` | The tmux session is gone |
 | `◌` | `~` | `starting` | The pane is still launching |

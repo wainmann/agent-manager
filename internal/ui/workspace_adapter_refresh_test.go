@@ -26,7 +26,7 @@ import (
 func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	for _, socket := range []string{"/tmp/first/agentmgr", "/tmp/second/agentmgr", ""} {
 		m := &Model{workspace: workspace{tmuxSocket: "/tmp/stale/agentmgr"}, rail: railModelFromRows(nil, 0)}
-		m.Update(refreshMsg{tmuxSocket: socket, leadingManager: true, listedAt: time.Now()})
+		m.Update(refreshMsg{tmuxSocket: socket, leadingManager: true, listedAt: m.freshListingAt()})
 		if m.workspace.tmuxSocket != socket {
 			t.Fatalf("model socket = %q, want the poll's %q", m.workspace.tmuxSocket, socket)
 		}
@@ -192,7 +192,6 @@ func TestReorderSurvivesInFlightPoll(t *testing.T) {
 	loadStoredRows(t, m)
 	pollListed := slices.Clone(m.workspace.sessions)
 	pollAt := time.Now()
-	time.Sleep(2 * time.Millisecond)
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	m = updated.(*Model)
@@ -237,7 +236,6 @@ func TestGroupReorderSurvivesInFlightPoll(t *testing.T) {
 	pollSessions := slices.Clone(m.workspace.sessions)
 	pollGroups := slices.Clone(m.workspace.groups)
 	pollAt := time.Now()
-	time.Sleep(2 * time.Millisecond)
 	m.selectGroupRow(t, "alpha")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	m = updated.(*Model)
@@ -286,7 +284,7 @@ func TestFreshPollAfterReorderApplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored = append(stored, store.Session{ID: "late", Name: "late", Tool: "claude", Cwd: "/tmp", Status: status.Idle})
-	updated, _ = m.Update(refreshMsg{sessions: stored, listedAt: time.Now().Add(time.Second), groups: slices.Clone(m.workspace.groups)})
+	updated, _ = m.Update(refreshMsg{sessions: stored, listedAt: m.freshListingAt(), groups: slices.Clone(m.workspace.groups)})
 	m = updated.(*Model)
 	if got := rowIDs(m); len(got) != 3 || got[2] != "late" {
 		t.Fatalf("fresh listing after the reorder was not applied: %v", got)
@@ -307,12 +305,11 @@ func TestOlderPollAfterFreshPollCannotUndoReorder(t *testing.T) {
 	loadStoredRows(t, m)
 	old := slices.Clone(m.workspace.sessions)
 	oldAt := time.Now()
-	time.Sleep(2 * time.Millisecond)
 	m.selectSessionRow(t, "alpha")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	fresh := refreshMsg{sessions: slices.Clone(m.workspace.sessions), listedAt: time.Now().Add(time.Second), groups: slices.Clone(m.workspace.groups)}
+	fresh := refreshMsg{sessions: slices.Clone(m.workspace.sessions), listedAt: m.freshListingAt(), groups: slices.Clone(m.workspace.groups)}
 	updated, _ = m.Update(fresh)
 	m = updated.(*Model)
 	updated, _ = m.Update(refreshMsg{sessions: old, listedAt: oldAt, groups: slices.Clone(m.workspace.groups)})
@@ -389,7 +386,6 @@ func TestStaleGroupPollKeepsAnotherManagersUnrelatedReorder(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	oldAt := time.Now()
-	time.Sleep(2 * time.Millisecond)
 	m.selectGroupRow(t, "alpha")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	m = updated.(*Model)

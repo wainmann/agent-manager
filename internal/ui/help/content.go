@@ -126,7 +126,11 @@ func helpBodyLines(sections []helpSection, ctx Context, query string) []string {
 					ctx.Styles.Subtle.Render(ansi.Truncate(row[1], max(ctx.Width-keyColumn, 1), "…")))
 				continue
 			}
-			key := presentation.PadRight(ctx.Styles.Key.Render(row[0]), keyColumn)
+			key := ctx.Styles.Key.Render(row[0])
+			if mark, label, ok := strings.Cut(row[0], " "); ok && label == "errored" {
+				key = lipgloss.NewStyle().Foreground(uitheme.ColorErrored()).Render(mark) + ctx.Styles.Key.Render(" "+label)
+			}
+			key = presentation.PadRight(key, keyColumn)
 			lines = append(lines, key+highlightMatch(row[1], query, ctx.Width-keyColumn, ctx.Styles))
 		}
 	}

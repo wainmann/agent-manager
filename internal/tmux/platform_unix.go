@@ -3,10 +3,14 @@
 package tmux
 
 import (
+	"context"
+	"crypto/rand"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -148,6 +152,54 @@ func (d *Driver) displayAndCapture(target, format string) (string, error) {
 		[]string{"display-message", "-p", "-t", target, format},
 		[]string{"capture-pane", "-p", "-e", "-t", target},
 	)...)
+}
+
+// CapturesAsList: one command list reads every session's pane.
+const CapturesAsList = true
+
+// captureListSize keeps one invocation's arguments, about 100 bytes a pane,
+// at half the 8 KB tmux 3.8 takes as one command; tmux 3.1 takes 16 KB.
+const captureListSize = 40
+
+// captureAll spawns tmux once per captureListSize panes rather than once a
+// pane.
+func (d *Driver) captureAll(ctx context.Context, ids []string, history int) map[string]string {
+	panes := make(map[string]string, len(ids))
+	for chunk := range slices.Chunk(ids, captureListSize) {
+		captured, err := d.captureList(ctx, chunk, history)
+		if err != nil {
+			// tmux stops a list at its first failure, so one pane that just
+			// closed costs every other pane its capture.
+			captured = d.captureEach(ctx, chunk, history)
+		}
+		maps.Copy(panes, captured)
+	}
+	return panes
+}
+
+// captureList captures every pane in one command list. A pane can show any
+// text, so the captures are told apart by a line minted for this call.
+func (d *Driver) captureList(ctx context.Context, ids []string, history int) (map[string]string, error) {
+	boundary := rand.Text()
+	commands := make([][]string, 0, 2*len(ids))
+	for _, id := range ids {
+		commands = append(commands, captureCommand(id, history), []string{"display-message", "-p", boundary})
+	}
+	ctx, cancel := context.WithTimeout(ctx, CommandTimeout)
+	defer cancel()
+	out, err := d.runContext(ctx, commandList(commands...)...)
+	if err != nil {
+		return nil, err
+	}
+	captures := strings.Split(out, boundary+"\n")
+	if len(captures) != len(ids)+1 {
+		return nil, fmt.Errorf("tmux capture list: %d boundaries for %d panes", len(captures)-1, len(ids))
+	}
+	panes := make(map[string]string, len(ids))
+	for i, id := range ids {
+		panes[id] = captures[i]
+	}
+	return panes, nil
 }
 
 // SocketPath is the file the server this driver talks to listens on. The

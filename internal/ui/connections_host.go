@@ -78,8 +78,12 @@ func (r linkRoot) CloseRename(gen int, name string) {
 	}
 }
 
-func (r linkRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
-	r.clearAccepted(composerGen, draft, closeAfterSend)
+func (r linkRoot) SettleAccepted(composerGen int, submitted uint64, closeAfterSend bool) {
+	r.settleAccepted(composerGen, submitted, closeAfterSend)
+}
+
+func (r linkRoot) RestoreRefused(composerGen int, submission spawn.Submission) {
+	r.restoreRefused(composerGen, submission)
 }
 
 // remoteRenameRoot is the root as a remote row's rename field reaches it:

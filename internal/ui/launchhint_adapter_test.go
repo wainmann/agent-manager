@@ -403,6 +403,46 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	}
 }
 
+func TestQuickSpawnRefusedByTheHintKeepsANewerPromptOnTheBar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
+	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	m.quick().SetTools([]string{"hermes"}, 0)
+	path := tempImage(t, "refused.png")
+	m.quick().Input.SetValue("fix the tests " + composer.Token(1))
+	m.quick().Attachments = []composer.Attachment{{ID: 1, Path: path}}
+
+	updated, cmd := m.quickSpawn("backend", m.quick().Input.Value())
+	m = updated.(*Model)
+	m.quick().Input.SetValue("newer prompt")
+	m.applyCmd(t, cmd)
+
+	if hintOpen(m) {
+		t.Fatal("a stale refusal replaced the bar holding a newer prompt")
+	}
+	if m.quick() == nil || m.quick().Input.Value() != "newer prompt" {
+		t.Fatalf("the newer prompt left the bar, quick = %v", m.quick())
+	}
+	if m.errBar.text == "" {
+		t.Fatal("the refusal was not reported")
+	}
+	if len(m.quick().Attachments) != 0 {
+		t.Fatalf("refused images joined the newer prompt: %v", m.quick().Attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("refused image kept on disk, stat err = %v", err)
+	}
+}
+
 // A form spawn the hint dialog refused takes the form off screen with it,
 // so the images its prompt was holding have nothing left naming them.
 func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {

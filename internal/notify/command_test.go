@@ -11,7 +11,7 @@ func TestBannerContract(t *testing.T) {
 	for kind, want := range map[Kind][2]string{
 		Waiting:  {"waiting", "◆ Waiting for your input"},
 		Finished: {"finished", "● Finished"},
-		Errored:  {"errored", "✕ Errored"},
+		Errored:  {"errored", "! Errored"},
 	} {
 		event.Kind = kind
 		name, title, body, ok := Banner(event)

@@ -34,7 +34,7 @@ func TestNotifyWSLPostsWindowsToast(t *testing.T) {
 	want := map[string]string{
 		"AM_TOAST_TITLE":    "agent-manager",
 		"AM_TOAST_SUBTITLE": "deploy · claude",
-		"AM_TOAST_BODY":     "✕ Errored",
+		"AM_TOAST_BODY":     "! Errored",
 		"AM_TOAST_SOUND":    "ms-winsoundevent:Notification.IM",
 		"AM_TOAST_APPID":    toastAppID,
 	}

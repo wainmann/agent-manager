@@ -258,7 +258,7 @@ func (m *Model) statusRow() string {
 	if m.errBar.text == "" {
 		return ""
 	}
-	return m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
+	return m.statusMessage(m.glyphs().CrossGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 }
 
 // noticesRoot is the root as the messages modal reads it.

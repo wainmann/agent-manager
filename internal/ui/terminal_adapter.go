@@ -39,12 +39,12 @@ func (m *Model) isShell(toolName string) bool {
 // starts it again, so a burst queued while tmux creates the pane still makes
 // one shell.
 func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
-	if time.Since(m.ledger.lifecycle.TerminalKeyAt) < terminalKeyWindow {
-		m.ledger.lifecycle.TerminalKeyAt = time.Now()
+	if m.services.now().Sub(m.ledger.lifecycle.TerminalKeyAt) < terminalKeyWindow {
+		m.ledger.lifecycle.TerminalKeyAt = m.services.now()
 		return m, nil
 	}
 	model, cmd := m.openTerminal()
-	m.ledger.lifecycle.TerminalKeyAt = time.Now()
+	m.ledger.lifecycle.TerminalKeyAt = m.services.now()
 	return model, cmd
 }
 

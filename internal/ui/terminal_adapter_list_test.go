@@ -2,12 +2,10 @@ package ui
 
 import (
 	"errors"
-	"fmt"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -15,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -473,35 +470,24 @@ func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	}
 }
 
-// slowSpawn puts a tmux ahead of the real one on PATH that stalls
-// new-session, so a model built after it spawns as slowly as a loaded
-// machine does.
-func slowSpawn(t *testing.T, delay time.Duration) {
-	t.Helper()
-	testenv.SkipPOSIXShell(t)
-	realTmux, err := exec.LookPath(tmux.Binary)
-	if err != nil {
-		t.Skip(tmux.Binary + " not installed")
-	}
-	dir := t.TempDir()
-	script := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *' new-session '*) sleep %.3f ;; esac\nexec %s \"$@\"\n", delay.Seconds(), realTmux)
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write slow tmux: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
 // Holding T autorepeats into a burst of keystrokes. T spawns on the
 // keystroke itself, so without a guard a held key fills the list with
 // shells and tmux windows nobody asked for. The spawn here takes longer
 // than the window, the way it does on a loaded machine, and the burst
-// queued behind it still has to collapse into one shell.
+// queued behind it still has to collapse into one shell. The clock is the
+// test's, so a runner slower than the window per frame cannot split the burst.
 func TestTerminalKeyIgnoresAutorepeat(t *testing.T) {
-	slowSpawn(t, terminalKeyWindow+50*time.Millisecond)
+	t.Parallel()
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
+	clock := time.Now()
+	m.services.now = func() time.Time { return clock }
 
-	for i := 0; i < 5; i++ {
+	_, spawn := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	clock = clock.Add(terminalKeyWindow + 50*time.Millisecond)
+	m.applyCmd(t, spawn)
+	for i := 0; i < 4; i++ {
+		clock = clock.Add(30 * time.Millisecond)
 		pressTerminalKey(t, m)
 	}
 

@@ -1,6 +1,7 @@
 name: Bug report
 description: Something in the manager behaves differently than documented
 type: Bug
+labels: ["needs-triage"]
 body:
   - type: markdown
     attributes:

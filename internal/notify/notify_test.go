@@ -141,7 +141,7 @@ func TestNotifyDarwinPostsThroughHelper(t *testing.T) {
 	}{
 		{Waiting, "◆ Waiting for your input", "Funk"},
 		{Finished, "● Finished", "Hero"},
-		{Errored, "✕ Errored", "Basso"},
+		{Errored, "! Errored", "Basso"},
 	}
 	for _, test := range tests {
 		t.Run(test.sound, func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
 	}{
 		{"waiting question", Waiting, "Do you want to create probe.txt?", "◆ Waiting: Do you want to create probe.txt?"},
 		{"finished prompt", Finished, "write three sentences about rivers", "● Finished: write three sentences about rivers"},
-		{"errored keeps the state", Errored, "curl: (6) Could not resolve host", "✕ Errored"},
+		{"errored keeps the state", Errored, "curl: (6) Could not resolve host", "! Errored"},
 		{"nothing to quote", Waiting, "", "◆ Waiting for your input"},
 		{"multiline squashed", Finished, "first\nsecond\tthird", "● Finished: first second third"},
 		{"long line cut", Finished, strings.Repeat("x", 200), "● Finished: " + strings.Repeat("x", bodyTextCap-1) + "…"},
@@ -264,7 +264,7 @@ func TestNotifyDarwinHelperFailureFallsBackToAppleScript(t *testing.T) {
 		t.Fatalf("want one osascript call, got %v", rec.calls())
 	}
 	call := rec.calls()[0]
-	want := []string{"agent-manager", "deploy · codex", "✕ Errored", "Basso"}
+	want := []string{"agent-manager", "deploy · codex", "! Errored", "Basso"}
 	if len(call) < len(want) || !slices.Equal(call[len(call)-len(want):], want) {
 		t.Fatalf("notification fields should ride argv unquoted, got %v", call)
 	}
@@ -311,7 +311,7 @@ func TestNotifyLinuxUsesPortableStatusHints(t *testing.T) {
 	}{
 		{Waiting, "◆ Waiting for your input", "dialog-question", "normal", "dialog-question", "x-agent-manager.session.waiting"},
 		{Finished, "● Finished", "complete-download", "low", "emblem-default", "x-agent-manager.session.finished"},
-		{Errored, "✕ Errored", "dialog-error", "critical", "dialog-error", "x-agent-manager.session.errored"},
+		{Errored, "! Errored", "dialog-error", "critical", "dialog-error", "x-agent-manager.session.errored"},
 	}
 	for _, test := range tests {
 		t.Run(test.urgency, func(t *testing.T) {

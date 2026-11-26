@@ -3,13 +3,17 @@
 package sysstat
 
 import (
+	"bufio"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
-	"time"
 )
 
 func TestParsePSTime(t *testing.T) {
@@ -65,34 +69,48 @@ func TestPSForPIDsListsOnlyThosePIDs(t *testing.T) {
 // A pane shell's child that exited unreaped, such as fish leaves behind on
 // its first start, is not an agent still running in the pane.
 func TestTreesLeaveOutZombies(t *testing.T) {
-	parent := exec.Command("sh", "-c", "sleep 0 & exec sleep 30")
+	if os.Getenv(zombieParentEnv) != "" {
+		holdZombie()
+	}
+	parent := exec.Command(os.Args[0], "-test.run=^TestTreesLeaveOutZombies$")
+	parent.Env = append(os.Environ(), zombieParentEnv+"=1")
+	stdin, err := parent.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := parent.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := parent.Start(); err != nil {
 		t.Fatalf("start parent: %v", err)
 	}
 	t.Cleanup(func() {
-		parent.Process.Kill()
+		stdin.Close()
 		parent.Wait()
 	})
+	if line, err := bufio.NewReader(stdout).ReadString('\n'); line != "zombie\n" {
+		t.Fatalf("the parent never held a zombie child: %q, %v", line, err)
+	}
 	pid := parent.Process.Pid
-	hasZombie := func() bool {
-		out, err := exec.Command("ps", "-axo", "ppid=,stat=").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, line := range strings.Split(string(out), "\n") {
-			if fields := strings.Fields(line); len(fields) == 2 && fields[0] == strconv.Itoa(pid) && strings.HasPrefix(fields[1], "Z") {
-				return true
-			}
-		}
-		return false
-	}
-	for deadline := time.Now().Add(3 * time.Second); !hasZombie(); time.Sleep(50 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the parent never held a zombie child")
-		}
-	}
 	stat := Trees([]int{pid})[pid]
 	if !stat.OK || stat.Procs != 1 || len(stat.Children) != 0 {
 		t.Fatalf("tree = %d procs, children %v, OK %v; want the parent alone", stat.Procs, stat.Children, stat.OK)
 	}
+}
+
+const zombieParentEnv = "AM_SYSSTAT_ZOMBIE_PARENT"
+
+// SIGCHLD arrives once the unwaited child can be waited on, so it is a zombie.
+func holdZombie() {
+	exited := make(chan os.Signal, 1)
+	signal.Notify(exited, syscall.SIGCHLD)
+	if err := exec.Command("true").Start(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	<-exited
+	fmt.Println("zombie")
+	io.Copy(io.Discard, os.Stdin)
+	os.Exit(0)
 }

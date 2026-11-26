@@ -229,6 +229,25 @@ func TestSubmitTextLeavesAGapBetweenThePasteAndTheEnter(t *testing.T) {
 	}
 }
 
+// psmux can report the caret on a row the tool is painting for one frame.
+func TestSubmitTextTakesNoSingleEmptyReadForASubmit(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	stub := t.TempDir() + "/tmux"
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	reads := 0
+	_, err := driver.SubmitTextContext(context.Background(), "x1", "hello world", func() (bool, error) {
+		reads++
+		return reads != 2, nil
+	})
+	if !errors.Is(err, ErrUnsubmitted) {
+		t.Fatalf("SubmitTextContext = %v, want a composer that read empty once and then held the paste to stay unsubmitted", err)
+	}
+}
+
 // A clipboard paste forwarded into a focused pane must arrive inside the
 // pane's bracketed-paste markers with no Enter after it, so agent composers
 // keep multi-line text instead of submitting on the first newline.

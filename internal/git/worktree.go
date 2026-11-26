@@ -1,9 +1,12 @@
 package git
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -243,10 +246,118 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
 		return "", fmt.Errorf("branch already exists: %s", newBranch)
 	}
-	if _, err := d.run(root, "branch", "-m", branch, newBranch); err != nil {
+	if err := d.moveCheckedOutBranch(root, path, branch, newBranch); err != nil {
 		return "", err
 	}
 	return newBranch, nil
+}
+
+// moveCheckedOutBranch renames the branch checked out at path while git
+// commands keep running there. `git branch -m` deletes the old ref before
+// it repoints HEAD, so a reader in that gap finds HEAD naming a missing
+// branch and fails. Copying first, then repointing HEAD, then deleting the
+// old ref keeps HEAD on a branch that exists at every step. Both refs stay
+// locked at the copied tip while HEAD moves, so a commit racing the rename
+// lands on one branch or fails to lock, and is never left behind.
+func (d *Driver) moveCheckedOutBranch(root, path, branch, newBranch string) error {
+	oldRef, newRef := "refs/heads/"+branch, "refs/heads/"+newBranch
+	// -c carries the branch config and reflog, as -m does.
+	if _, err := d.run(root, "branch", "-c", branch, newBranch); err != nil {
+		return err
+	}
+	tip, err := d.run(root, "rev-parse", "--verify", newRef)
+	if err != nil {
+		return errors.Join(err, d.dropCopy(root, newBranch, ""))
+	}
+	release, err := d.holdRefs(root, tip, oldRef, newRef)
+	if err != nil {
+		return errors.Join(fmt.Errorf("branch %s changed or is in use by another git command: %w", branch, err), d.dropCopy(root, newBranch, tip))
+	}
+	_, err = d.run(path, "symbolic-ref", "-m", "branch: renamed "+oldRef+" to "+newRef, "HEAD", newRef)
+	releaseErr := release()
+	if err != nil {
+		return errors.Join(err, releaseErr, d.dropCopy(root, newBranch, tip))
+	}
+	// HEAD is on the new branch, so the rename has happened and the caller
+	// must record it. An old ref that cannot be deleted at the copied tip
+	// was moved by something outside this worktree; it stays as a plain
+	// branch holding that work.
+	if _, err := d.run(root, "update-ref", "-d", oldRef, tip); err == nil {
+		_ = d.dropBranchConfig(root, branch)
+	}
+	return nil
+}
+
+// dropCopy undoes the copy of a rename that could not switch HEAD.
+func (d *Driver) dropCopy(root, branch, tip string) error {
+	args := []string{"update-ref", "-d", "refs/heads/" + branch}
+	if tip != "" {
+		args = append(args, tip)
+	}
+	_, err := d.run(root, args...)
+	return errors.Join(err, d.dropBranchConfig(root, branch))
+}
+
+// holdRefs locks refs, which must all point at tip, until release is called.
+func (d *Driver) holdRefs(root, tip string, refs ...string) (func() error, error) {
+	cmd := exec.Command(d.bin, "update-ref", "--stdin")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
+	detachTerminal(cmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	finish := func() error {
+		_ = stdin.Close()
+		if err := cmd.Wait(); err != nil {
+			return fmt.Errorf("git update-ref: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return nil
+	}
+	request := "start\n"
+	for _, ref := range refs {
+		request += "verify " + ref + " " + tip + "\n"
+	}
+	if _, err := io.WriteString(stdin, request+"prepare\n"); err != nil {
+		return nil, errors.Join(err, finish())
+	}
+	replies := bufio.NewScanner(stdout)
+	for _, want := range []string{"start: ok", "prepare: ok"} {
+		if !replies.Scan() || replies.Text() != want {
+			return nil, errors.Join(fmt.Errorf("could not lock %s at %s", strings.Join(refs, " and "), tip), finish())
+		}
+	}
+	return func() error {
+		if _, err := io.WriteString(stdin, "abort\n"); err != nil {
+			return errors.Join(err, finish())
+		}
+		return finish()
+	}, nil
+}
+
+// dropBranchConfig removes branch.<name>.* when it exists, as
+// `git branch -D` would.
+func (d *Driver) dropBranchConfig(root, branch string) error {
+	if _, err := d.run(root, "config", "--get-regexp", `^branch\.`+regexp.QuoteMeta(branch)+`\.`); err != nil {
+		// --get-regexp exits 1 when nothing matches; anything else is a real failure.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		return err
+	}
+	_, err := d.run(root, "config", "--remove-section", "branch."+branch)
+	return err
 }
 
 // RemoveWorktreeIfClean removes a session's worktree and its am/ branch

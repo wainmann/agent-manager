@@ -212,6 +212,15 @@ func (d *Driver) displayAndCapture(target, format string) (string, error) {
 	return expanded + pane, err
 }
 
+// CapturesAsList is off: a psmux server holds one session, so no command
+// list reaches two panes.
+const CapturesAsList = false
+
+// captureAll captures one invocation a pane.
+func (d *Driver) captureAll(ctx context.Context, ids []string, history int) map[string]string {
+	return d.captureEach(ctx, ids, history)
+}
+
 // bindingAction is a binding's command as a psmux command list carries it.
 // A lone word goes as it is: psmux quotes each argument of a list itself,
 // and a second pair of quotes is bound as part of the command, leaving a

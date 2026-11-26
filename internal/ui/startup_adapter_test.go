@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -30,7 +29,7 @@ func TestStartupTickRunsWhileBooting(t *testing.T) {
 
 func TestFirstRefreshClearsBootLoader(t *testing.T) {
 	m := &Model{startup: startupState{Booting: true}}
-	updated, _ := m.Update(refreshMsg{listedAt: time.Now()})
+	updated, _ := m.Update(refreshMsg{listedAt: m.freshListingAt()})
 	got := updated.(*Model)
 	if got.startup.Booting {
 		t.Fatal("the first poller pass should end boot")
@@ -94,7 +93,7 @@ func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
 	if !strings.Contains(ansi.Strip(preparedView(m)), "startup poll failed") {
 		t.Fatal("startup error is hidden behind the boot loader")
 	}
-	m.Update(refreshMsg{listedAt: time.Now()})
+	m.Update(refreshMsg{listedAt: m.freshListingAt()})
 	if m.startup.Booting {
 		t.Fatal("the first successful refresh must finish boot")
 	}

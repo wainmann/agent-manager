@@ -103,7 +103,7 @@ type Message struct {
 // Line is the bar's one line: prompts, search, and self-dismissing errors
 // and outcomes. It returns "" when there is nothing to say.
 func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
-	marks := Marks{Fail: glyphs.ErroredGlyph, Done: glyphs.FinishedGlyph, Warn: glyphs.WarningGlyph}
+	marks := Marks{Fail: glyphs.CrossGlyph, Done: glyphs.FinishedGlyph, Warn: glyphs.WarningGlyph}
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must not
 	// hide a failure report.

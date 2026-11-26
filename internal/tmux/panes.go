@@ -32,6 +32,43 @@ func (d *Driver) CapturePaneHistoryContext(ctx context.Context, id string, lines
 	return d.runContext(ctx, "capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", PaneTarget(id))
 }
 
+// CapturePanes is CapturePane for every session in ids, in as few tmux
+// invocations as the multiplexer allows. A session whose pane could not be
+// read is absent from the result.
+func (d *Driver) CapturePanes(ids []string) map[string]string {
+	return d.captureAll(context.Background(), ids, 0)
+}
+
+// CapturePanesHistoryContext is CapturePaneHistoryContext for every session
+// in ids, the way CapturePanes is CapturePane.
+func (d *Driver) CapturePanesHistoryContext(ctx context.Context, ids []string, lines int) map[string]string {
+	return d.captureAll(ctx, ids, lines)
+}
+
+// captureCommand captures a session's agent pane with history rows above
+// the visible ones.
+func captureCommand(id string, history int) []string {
+	args := []string{"capture-pane", "-p", "-e"}
+	if history > 0 {
+		args = append(args, "-S", "-"+strconv.Itoa(history))
+	}
+	return append(args, "-t", PaneTarget(id))
+}
+
+// captureEach is captureAll at one invocation a pane.
+func (d *Driver) captureEach(ctx context.Context, ids []string, history int) map[string]string {
+	panes := make(map[string]string, len(ids))
+	for _, id := range ids {
+		paneCtx, cancel := context.WithTimeout(ctx, CommandTimeout)
+		pane, err := d.runContext(paneCtx, captureCommand(id, history)...)
+		cancel()
+		if err == nil {
+			panes[id] = pane
+		}
+	}
+	return panes
+}
+
 func (d *Driver) capturePlainContext(ctx context.Context, target string) (string, error) {
 	return d.runContext(ctx, "capture-pane", "-p", "-t", target)
 }

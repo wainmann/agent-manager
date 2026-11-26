@@ -13,7 +13,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -33,15 +32,16 @@ func isManagerEcho(line string) bool {
 	return false
 }
 
-// rowLines is what a full screen row shows for a session: the agent's
-// last message flattened to one line from its beginning, and the last
-// prompt sent to it. The visible pane is the first source; when an
-// anchor scrolled off it, the recovery is the tool's own transcript for
-// Claude Code (which repaints in place, so tmux holds no history for
-// it), and a deeper pane capture for everything else. pi and omp draw a
-// prompt with no marker at all, so theirs is read from their session file
-// every time.
-func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir string) (quote, prompt string) {
+// visibleRow is what a session's visible pane gives its row, and which of
+// the row's anchors, the message bullet and the prompt echo, it lacks.
+type visibleRow struct {
+	quote, prompt    string
+	quoteAdrift      bool
+	promptAdrift     bool
+	promptUnreadable bool
+}
+
+func (p *Runner) visibleRow(sess store.Session, pane string) visibleRow {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
@@ -51,22 +51,60 @@ func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir str
 	if isManagerEcho(prompt) {
 		prompt = ""
 	}
-	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
-	promptAdrift := echoOK && prompt == ""
-	promptUnreadable := !echoOK
-	if (quoteAdrift || promptAdrift || promptUnreadable) && agentsession.KeepsTranscript(p.reportStyles[sess.Tool]) && sess.AgentSessionID != "" {
+	return visibleRow{
+		quote:            quote,
+		prompt:           prompt,
+		quoteAdrift:      ok && !anchored && p.engine.HasMessageStart(sess.Tool),
+		promptAdrift:     echoOK && prompt == "",
+		promptUnreadable: !echoOK,
+	}
+}
+
+func (p *Runner) readsTranscript(sess store.Session) bool {
+	return agentsession.KeepsTranscript(p.reportStyles[sess.Tool]) && sess.AgentSessionID != ""
+}
+
+func (p *Runner) wantsHistory(sess store.Session, row visibleRow) bool {
+	return (row.quoteAdrift || row.promptAdrift) && !p.readsTranscript(sess)
+}
+
+// quoteHistories is the deeper capture of every session whose row needs
+// one, read in one tmux call ahead of the rows themselves.
+func (p *Runner) quoteHistories(ctx context.Context, sessions []store.Session, captured map[string]string) map[string]string {
+	var adrift []string
+	for _, sess := range sessions {
+		if pane, read := captured[sess.ID]; read && p.wantsHistory(sess, p.visibleRow(sess, pane)) {
+			adrift = append(adrift, sess.ID)
+		}
+	}
+	return p.tmux.CapturePanesHistoryContext(ctx, adrift, quoteHistoryLines)
+}
+
+// rowLines is what a full screen row shows for a session: the agent's
+// last message flattened to one line from its beginning, and the last
+// prompt sent to it. The visible pane is the first source; when an
+// anchor scrolled off it, the recovery is the tool's own transcript for
+// Claude Code (which repaints in place, so tmux holds no history for
+// it), and a deeper pane capture for everything else, taken from histories
+// when the pass already read it. pi and omp draw a prompt with no marker at
+// all, so theirs is read from their session file every time.
+func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir string, histories map[string]string) (quote, prompt string) {
+	row := p.visibleRow(sess, pane)
+	quote, prompt = row.quote, row.prompt
+	if (row.quoteAdrift || row.promptAdrift || row.promptUnreadable) && p.readsTranscript(sess) {
 		tailPrompt, tailReply := p.transcriptTail(sess, dir)
-		if quoteAdrift && tailReply != "" {
+		if row.quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
-		if (promptAdrift || promptUnreadable) && tailPrompt != "" {
+		if (row.promptAdrift || row.promptUnreadable) && tailPrompt != "" {
 			prompt = tailPrompt
 		}
-	} else if quoteAdrift || promptAdrift {
-		captureCtx, cancel := context.WithTimeout(ctx, tmux.CommandTimeout)
-		deep, err := p.tmux.CapturePaneHistoryContext(captureCtx, sess.ID, quoteHistoryLines)
-		cancel()
-		if err == nil {
+	} else if p.wantsHistory(sess, row) {
+		deep, read := histories[sess.ID]
+		if !read {
+			deep, read = p.tmux.CapturePanesHistoryContext(ctx, []string{sess.ID}, quoteHistoryLines)[sess.ID]
+		}
+		if read {
 			cleanDeep := p.engine.Plain(sess.Tool, deep)
 			if line, anchored, ok := p.engine.LastMessage(sess.Tool, cleanDeep); ok && anchored {
 				quote = line

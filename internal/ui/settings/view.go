@@ -119,7 +119,13 @@ func (s *State) View(ctx ViewContext) Frame {
 	if s.GlyphMode.Effective() == presentation.GlyphModeAdvanced {
 		glyphLabel = "Advanced"
 	}
+	palette := uitheme.Palettes[s.ThemeIndex]
 	symbolsRow := row(FieldGlyphs, label(FieldGlyphs), glyphLabel) + "  " + g.WorkingGlyph + " " + g.WaitingGlyph + " " + g.ReorderGrip + " " + g.BranchGlyph
+	statusMarks := g.StatusGlyph("errored") + " " + g.StatusGlyph("dead")
+	if ansi.StringWidth(symbolsRow+"  "+statusMarks) <= ctx.InnerWidth {
+		statusMark := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Errored))
+		symbolsRow += "  " + statusMark.Render(statusMarks)
+	}
 	if ctx.InnerWidth < 36 {
 		style := st.Value
 		if s.Field == FieldGlyphs {
@@ -127,7 +133,6 @@ func (s *State) View(ctx ViewContext) Frame {
 		}
 		symbolsRow = style.Render(label(FieldGlyphs) + " <" + glyphLabel + ">")
 	}
-	palette := uitheme.Palettes[s.ThemeIndex]
 	// The environments row appears once a profile exists: most people never
 	// define one, and every row they never use crowds the ones they do.
 	s.envsHidden = len(ctx.Envs) == 0

@@ -173,9 +173,9 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Errored:
 		return presentation{
-			glyph:         "✕",
+			glyph:         "!",
 			word:          "Errored",
-			body:          "✕ Errored",
+			body:          "! Errored",
 			macSound:      "Basso",
 			windowsSound:  "ms-winsoundevent:Notification.IM",
 			linuxSound:    "dialog-error",

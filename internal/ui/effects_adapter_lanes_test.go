@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -68,14 +69,17 @@ func TestSecondQuitAbandonsAStuckDrain(t *testing.T) {
 	if len(m.effects.Main.Pending) != 0 {
 		t.Fatal("abandoned work stayed queued")
 	}
-	if !m.effects.Lifetime.Begin() {
-		t.Fatal("lifetime closed early")
-	}
-	started := time.Now()
-	m.StopEffects()
-	if time.Since(started) > time.Second {
-		t.Fatal("stop waited on work the user abandoned")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		if !m.effects.Lifetime.Begin() {
+			t.Fatal("lifetime closed early")
+		}
+		defer m.effects.Lifetime.Done()
+		started := time.Now()
+		m.StopEffects()
+		if time.Since(started) != 0 {
+			t.Fatal("stop waited on work the user abandoned")
+		}
+	})
 }
 
 func TestStopEffectsGivesUpOnStuckWork(t *testing.T) {

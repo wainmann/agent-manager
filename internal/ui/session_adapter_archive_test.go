@@ -419,7 +419,7 @@ func TestNestedGroupRestoreIsVisibleAcrossPolls(t *testing.T) {
 	if m.services.tmux.Exists(sleeper.ID) {
 		t.Fatal("restore revived a deliberately killed active session")
 	}
-	m.ledger.lifecycle.ReconcileListing(uilifecycle.Listing{ListedAt: time.Now().Add(time.Second)})
+	m.ledger.lifecycle.ReconcileListing(uilifecycle.Listing{ListedAt: m.freshListingAt()})
 	if len(m.ledger.lifecycle.GoneGroups) != 0 {
 		t.Fatalf("new poll did not retire group ledger: %+v", m.ledger.lifecycle.GoneGroups)
 	}

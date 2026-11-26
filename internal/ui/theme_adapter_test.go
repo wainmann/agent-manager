@@ -197,8 +197,12 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 					t.Errorf("%s mark %q must occupy one cell", state, mark)
 				}
 			}
-			if g.StatusGlyph(status.Dead) != g.StatusGlyph(status.Errored) {
-				t.Fatal("dead sessions lost their error mark")
+			deadMark := "✕"
+			if mode == presentation.GlyphModeBasic {
+				deadMark = "x"
+			}
+			if got := g.StatusGlyph(status.Dead); got != deadMark || got == g.StatusGlyph(status.Errored) {
+				t.Fatalf("dead mark = %q, want %q distinct from errored", got, deadMark)
 			}
 			marks := append([]string(nil), g.StartupFrames...)
 			fields := reflect.ValueOf(g)
@@ -239,12 +243,12 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 
 func TestGlyphModeKeepsModelsIndependentAndAdvancedAppearance(t *testing.T) {
 	basic, advanced := &Model{prefs: preferences{glyphMode: presentation.GlyphModeBasic}}, &Model{prefs: preferences{glyphMode: presentation.GlyphModeAdvanced}}
-	want := map[string]string{status.Working: "◐", status.Starting: "◌", status.Waiting: "◆", status.Finished: "●", status.Errored: "✕", status.Idle: "○"}
+	want := map[string]string{status.Working: "◐", status.Starting: "◌", status.Waiting: "◆", status.Finished: "●", status.Errored: "!", status.Dead: "✕", status.Idle: "○"}
 	for state, mark := range want {
 		if got := advanced.glyphs().StatusGlyph(state); got != mark {
 			t.Errorf("advanced %s = %q want %q", state, got, mark)
 		}
-		if basic.glyphs().StatusGlyph(state) == mark {
+		if state != status.Errored && basic.glyphs().StatusGlyph(state) == mark {
 			t.Errorf("advanced choice leaked into basic model for %s", state)
 		}
 	}
@@ -257,8 +261,11 @@ func TestGlyphModeKeepsModelsIndependentAndAdvancedAppearance(t *testing.T) {
 		m.services.listKeys = keybind.DefaultList()
 		m.openHelp()
 		m.layout.width, m.layout.height = 120, 100
-		if !strings.Contains(ansi.Strip(viewHelpOf(m)), m.glyphs().StatusGlyph(status.Working)+" working") {
-			t.Fatal("help and renderer disagree")
+		help := ansi.Strip(viewHelpOf(m))
+		for _, state := range []string{status.Working, status.Errored, status.Dead} {
+			if !strings.Contains(help, m.glyphs().StatusGlyph(state)+" "+state) {
+				t.Errorf("help and renderer disagree for %s", state)
+			}
 		}
 		ring := ansi.Strip(strings.Join(uistartup.Ring(m.glyphs(), 40, 10, "loading", 0, uitheme.Current()), "\n"))
 		for _, mark := range []string{m.glyphs().LoaderHead, m.glyphs().LoaderTail, m.glyphs().LoaderRest} {

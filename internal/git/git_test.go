@@ -1920,6 +1920,86 @@ func TestRenameWorktreeBranchLetsAgentKeepWorking(t *testing.T) {
 	}
 }
 
+func TestRenameWorktreeBranchNeverLeavesHeadOnAMissingBranch(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "claude-7a72", "")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	gitIn(t, dir, "config", "branch."+branch+".description", "kept")
+
+	// A reference-transaction hook runs after each ref change lands, which
+	// is exactly where a git command in the worktree would read HEAD.
+	hooks := t.TempDir()
+	trace := filepath.Join(t.TempDir(), "trace")
+	script := "#!/bin/sh\n" +
+		"[ \"$1\" = committed ] || exit 0\n" +
+		"cat >/dev/null\n" +
+		"unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX\n" +
+		"if git -C '" + path + "' rev-parse --verify -q HEAD >/dev/null; then echo ok; else echo missing; fi >> '" + trace + "'\n"
+	if err := os.WriteFile(filepath.Join(hooks, "reference-transaction"), []byte(script), 0o755); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	gitIn(t, dir, "config", "core.hooksPath", hooks)
+
+	newBranch, err := driver.RenameWorktreeBranch(dir, path, branch, "issue 418 feed")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	gitIn(t, dir, "config", "--unset", "core.hooksPath")
+
+	got, err := os.ReadFile(trace)
+	if err != nil {
+		t.Skipf("git ran no reference-transaction hook: %v", err)
+	}
+	if strings.Contains(string(got), "missing") {
+		t.Fatalf("HEAD named a missing branch mid-rename, observed after each ref change:\n%s", got)
+	}
+	head, err := driver.run(path, "symbolic-ref", "--short", "HEAD")
+	if err != nil || head != newBranch {
+		t.Fatalf("HEAD = %q err=%v, want %q", head, err, newBranch)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		t.Fatalf("old branch %s survived the rename", branch)
+	}
+	if desc, err := driver.run(dir, "config", "--get", "branch."+newBranch+".description"); err != nil || desc != "kept" {
+		t.Fatalf("branch config did not follow: %q err=%v", desc, err)
+	}
+	if old, err := driver.configValue(dir, "branch."+branch+".description"); err != nil || old != "" {
+		t.Fatalf("old branch config left behind: %q err=%v", old, err)
+	}
+}
+
+func TestHoldRefsBlocksDeletingEveryHeldRef(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	gitIn(t, dir, "branch", "old")
+	gitIn(t, dir, "branch", "new")
+	tip, err := driver.run(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := driver.holdRefs(dir, tip, "refs/heads/old", "refs/heads/new")
+	if err != nil {
+		t.Fatalf("hold: %v", err)
+	}
+	for _, ref := range []string{"refs/heads/old", "refs/heads/new"} {
+		if _, err := driver.run(dir, "update-ref", "-d", ref); err == nil {
+			t.Errorf("deleted %s while it was held", ref)
+		}
+	}
+	if err := release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := driver.run(dir, "update-ref", "-d", "refs/heads/new"); err != nil {
+		t.Fatalf("delete after release: %v", err)
+	}
+}
+
 func TestRenameWorktreeBranchKeepsOpenFile(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")

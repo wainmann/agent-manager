@@ -282,8 +282,9 @@ func StoredPreview(st *store.Store, driver *tmux.Driver, sessID string) (string,
 
 // refreshOnce polls every live session's pane, derives and stores status,
 // and samples system stats. Liveness and pane pids come from one tmux
-// call, and every process tree from one ps pass with a second scoped to
-// the pane children, so the poll cost stays flat as sessions are added.
+// call, the panes' text from one or two more, and every process tree from
+// one ps pass with a second scoped to the pane children, so the poll cost
+// stays flat as sessions are added.
 // runMu serializes the loop with one-off refreshes issued as tea commands.
 func (p *Runner) Step() Result { return p.step(context.Background()) }
 
@@ -356,9 +357,11 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 	}
 	var livePIDs []int
+	var liveIDs []string
 	for _, sess := range sessions {
 		if !sess.Archived && panes[sess.ID].PID > 0 {
 			livePIDs = append(livePIDs, panes[sess.ID].PID)
+			liveIDs = append(liveIDs, sess.ID)
 		}
 	}
 	trees := sysstat.Trees(livePIDs)
@@ -367,6 +370,20 @@ func (p *Runner) step(ctx context.Context) Result {
 	now := time.Now()
 	elapsed := now.Sub(p.prevTreeAt).Seconds()
 	haveDelta := !p.prevTreeAt.IsZero() && elapsed > 0.05
+	// Where one tmux call reads every pane, the pass reads them all ahead of
+	// the rows, until a send or a delivery: that can take seconds, and a
+	// capture taken before it describes the pane as it was then.
+	readAhead := tmux.CapturesAsList
+	var captured, histories map[string]string
+	var awaiting map[string]int
+	if readAhead {
+		var err error
+		if awaiting, err = p.store.QueuedCounts(); err != nil {
+			return Result{Err: err}
+		}
+		captured = p.tmux.CapturePanes(liveIDs)
+		histories = p.quoteHistories(ctx, sessions, captured)
+	}
 	nextTreeCPU := make(map[int]float64, len(livePIDs))
 
 	preview := ""
@@ -470,8 +487,18 @@ func (p *Runner) step(ctx context.Context) Result {
 			// taken at the start of the pass still names the previous one,
 			// and the quote read next is that conversation's.
 			sess = sessions[i]
-			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
+			// A delivery ends in Enter and an end asked for after the turn
+			// acts on the rest read here, so a row with either pending is
+			// read as it is now, not as it was when the pass began.
+			fresh := !readAhead || len(sess.PendingInputs) > 0 || awaiting[sess.ID] > 0 || sess.AfterTurn != ""
+			pane, readable := captured[sess.ID]
+			if fresh {
+				current, err := p.tmux.CapturePane(sess.ID)
+				pane, readable = current, err == nil
+				delete(histories, sess.ID)
+			}
+			if readable {
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path, histories)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return Result{Err: err}
@@ -508,7 +535,7 @@ func (p *Runner) step(ctx context.Context) Result {
 				// describing the moment before it was typed, so the message
 				// waits for the next capture rather than landing on a pane
 				// that is already starting a turn.
-				if !sent && len(sessions[i].PendingInputs) == 0 {
+				if fresh && !sent && len(sessions[i].PendingInputs) == 0 {
 					delivered, err = p.maybeDeliverInbox(sess, pane, derived, agentAlive)
 					if err != nil {
 						return Result{Err: err}
@@ -527,6 +554,9 @@ func (p *Runner) step(ctx context.Context) Result {
 				}
 				if sess.ID == selectedID {
 					preview = pane
+				}
+				if sent || delivered {
+					readAhead, histories = false, nil
 				}
 			}
 		}

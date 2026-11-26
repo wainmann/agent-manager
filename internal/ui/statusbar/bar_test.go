@@ -95,7 +95,7 @@ func TestLinePaintsWhatItSays(t *testing.T) {
 	}{
 		{Message{Report: "opened /tmp in code", Kind: Success}, tones.Done.Render(testGlyphs().FinishedGlyph + " opened /tmp in code")},
 		{Message{Report: "copied the pane", Kind: Warning}, tones.Warn.Render(testGlyphs().WarningGlyph + " copied the pane")},
-		{Message{Report: "git not found in PATH"}, tones.Fail.Render(testGlyphs().ErroredGlyph + " git not found in PATH")},
+		{Message{Report: "git not found in PATH"}, tones.Fail.Render(testGlyphs().CrossGlyph + " git not found in PATH")},
 	}
 	for _, tc := range cases {
 		if got := Line(tc.msg, testGlyphs(), tones); got != tc.want {

@@ -241,16 +241,21 @@ func (d *Driver) composerCleared(ctx context.Context, target string, drafted fun
 	if err != nil {
 		return false, err
 	}
+	// psmux reports the caret on the row a tool is still painting, which can
+	// read as an empty composer for one frame, so an empty read must hold
+	// for a second poll.
+	emptied := false
 	for {
 		typed, err := drafted()
 		if err != nil {
 			return false, err
 		}
-		if !typed {
+		if !typed && emptied {
 			return true, nil
 		}
+		emptied = !typed
 		now = time.Now()
-		if now.After(deadline) || now.After(last) {
+		if !emptied && (now.After(deadline) || now.After(last)) {
 			return false, nil
 		}
 		timer := time.NewTimer(echoPoll)

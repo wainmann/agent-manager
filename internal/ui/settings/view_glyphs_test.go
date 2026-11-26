@@ -5,7 +5,10 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestCompatibleSettingsKeepEditorTextAndFormatActionKeys(t *testing.T) {
@@ -68,6 +71,39 @@ func TestNavigationSettingsLabelAndOverflowKeepLiteralNames(t *testing.T) {
 		}
 		if !strings.Contains(text, label) {
 			t.Fatalf("settings label missing: %s", text)
+		}
+	}
+}
+
+func TestSymbolsPreviewShowsErrorAndDeadMarks(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	s := openState(testContext())
+	ctx := viewContext()
+	ctx.InnerWidth, ctx.Height = 80, 80
+	for _, tc := range []struct {
+		mode         presentation.GlyphMode
+		label, marks string
+	}{
+		{presentation.GlyphModeAdvanced, "Advanced", "! ✕"},
+		{presentation.GlyphModeBasic, "Compatible", "! x"},
+	} {
+		s.GlyphMode, ctx.GlyphMode = tc.mode, tc.mode
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Palettes[s.ThemeIndex].Errored))
+		found := false
+		for _, row := range strings.Split(s.View(ctx).Body, "\n") {
+			text := ansi.Strip(row)
+			if strings.Contains(text, "symbols") && strings.Contains(text, tc.label) {
+				found = true
+				if !strings.HasSuffix(row, style.Render(tc.marks)) {
+					t.Errorf("%s preview row = %q, want trailing %q", tc.label, row, style.Render(tc.marks))
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s symbols row missing", tc.label)
 		}
 	}
 }

@@ -402,7 +402,7 @@ func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
 		t.Errorf("the review notice leaks a control byte near %q", stray)
 	}
 	m.errBar.text = "rename failed for rev\x1b]0;PWNED\x07iew"
-	if stray := strayControl(m.statusMessage(m.glyphs().ErroredGlyph, m.glyphs().FinishedGlyph, "▲")); stray != "" {
+	if stray := strayControl(m.statusMessage(m.glyphs().CrossGlyph, m.glyphs().FinishedGlyph, "▲")); stray != "" {
 		t.Errorf("the status bar leaks a control byte near %q", stray)
 	}
 }

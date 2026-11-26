@@ -1,6 +1,7 @@
 name: Feature request
 description: Suggest something the manager should do
 type: Feature
+labels: ["needs-triage"]
 body:
   - type: textarea
     id: problem
@@ -32,6 +33,9 @@ body:
         - Config and tool support
         - MCP and agent subcommands
         - Stats and gauges
+        - SSH connections (remote)
+        - Focus mode
+        - tmux and terminals
         - Something else
 
   - type: textarea

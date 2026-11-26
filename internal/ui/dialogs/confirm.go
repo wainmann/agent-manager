@@ -65,7 +65,7 @@ func (c Confirm) Title(mode presentation.GlyphMode) string {
 	}
 	switch c.Action {
 	case ConfirmKill:
-		return g.ErroredGlyph + " Kill " + subject
+		return g.CrossGlyph + " Kill " + subject
 	case ConfirmArchive:
 		return g.ArchiveGlyph + " Archive " + subject
 	case ConfirmRestore:

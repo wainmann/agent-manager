@@ -244,27 +244,29 @@ func (m *Model) queueRemote(request uilink.Call) tea.Cmd {
 	}
 	m.clearErr()
 	m.enqueueEffect(request, 0, false)
+	if request.FromQuick() {
+		m.acceptQuick(request.Submission)
+	}
 	return m.nextEffectCmd()
 }
 
-// remoteRepeat refuses a second enter on a composer or a name field whose
-// prompt, spawn or rename is still on its way to the host, as the local lane
-// refuses one.
+// remoteRepeat refuses a second enter on a New Session form or a name field
+// whose spawn or rename is still on its way to the host, as the local lane
+// refuses one. Quick bar prompts and spawns queue instead.
 func (m *Model) remoteRepeat(request uilink.Call) (string, bool) {
 	refusal, guarded := map[uilink.Op]string{
-		uilink.Type:        "this prompt is already being sent",
 		uilink.Spawn:       "this spawn is already in progress",
 		uilink.Rename:      "this rename is already on its way",
 		uilink.RenameGroup: "this rename is already on its way",
 	}[request.Op]
-	if !guarded {
+	if !guarded || request.FromQuick() {
 		return "", false
 	}
 	for _, job := range append([]*uieffects.Job{m.effects.Remote.Active}, m.effects.Remote.Pending...) {
 		if job == nil {
 			continue
 		}
-		if pending, ok := job.Request.(uilink.Call); ok && pending.Op == request.Op && pending.ComposerGen == request.ComposerGen {
+		if pending, ok := job.Request.(uilink.Call); ok && pending.Op == request.Op && !pending.FromQuick() && pending.ComposerGen == request.ComposerGen {
 			return refusal, true
 		}
 	}
@@ -381,7 +383,7 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 
 func (m *Model) quickRemoteRequest(host, text string) uilink.Call {
 	q := m.quick()
-	return uilink.Call{Host: host, Text: text, Draft: q.Input.Value(), ComposerGen: q.Gen, CloseAfterSend: q.CloseAfterSend}
+	return uilink.Call{Host: host, Text: text, ComposerGen: q.Gen, Submission: q.Submission(), CloseAfterSend: q.CloseAfterSend}
 }
 
 // withRemoteChoice passes the choice as the host's spawn takes it: the

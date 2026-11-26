@@ -7,7 +7,9 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestGlyphHandleGeometry(t *testing.T) {
@@ -161,6 +163,40 @@ func TestNavigationRailOverflowPreservesTargets(t *testing.T) {
 		}
 		if len(lines) != 8 {
 			t.Fatalf("line count=%d", len(lines))
+		}
+	}
+}
+
+func TestSessionStatusMarks(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	for _, profile := range []termenv.Profile{termenv.TrueColor, termenv.Ascii} {
+		lipgloss.SetColorProfile(profile)
+		for _, mode := range []struct {
+			mode                                             presentation.GlyphMode
+			working, starting, waiting, finished, idle, dead string
+		}{
+			{presentation.GlyphModeAdvanced, "◐", "⠋", "◆", "●", "○", "✕"},
+			{presentation.GlyphModeBasic, "*", "|", "?", "+", ".", "x"},
+		} {
+			t.Run(fmt.Sprint(profile)+"/"+string(mode.mode), func(t *testing.T) {
+				palette := theme.Palettes[0]
+				for _, state := range []struct{ name, glyph, color string }{
+					{"working", mode.working, palette.Working},
+					{"starting", mode.starting, palette.Working},
+					{"waiting", mode.waiting, palette.Waiting},
+					{"finished", mode.finished, palette.Finished},
+					{"idle", mode.idle, palette.Idle},
+					{"errored", "!", palette.Errored},
+					{"dead", mode.dead, palette.Errored},
+				} {
+					got := SessionGlyph(palette, mode.mode, Session{Status: state.name}, 0)
+					want := lipgloss.NewStyle().Foreground(lipgloss.Color(state.color)).Render(state.glyph)
+					if got != want || ansi.StringWidth(got) != 1 {
+						t.Errorf("%s mark = %q (width %d), want %q (width 1)", state.name, got, ansi.StringWidth(got), want)
+					}
+				}
+			})
 		}
 	}
 }

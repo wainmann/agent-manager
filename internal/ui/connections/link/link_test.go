@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -93,6 +94,7 @@ type recorder struct {
 	closed   []Asker
 	renamed  []string
 	cleared  int
+	restored []spawn.Submission
 	errs     []string
 	done     []string
 }
@@ -109,7 +111,11 @@ func (r *recorder) CloseAsker(gen int, asker Asker) { r.closed = append(r.closed
 
 func (r *recorder) CloseRename(gen int, name string) { r.renamed = append(r.renamed, name) }
 
-func (r *recorder) ClearAccepted(composerGen int, draft string, closeAfterSend bool) { r.cleared++ }
+func (r *recorder) SettleAccepted(int, uint64, bool) { r.cleared++ }
+
+func (r *recorder) RestoreRefused(_ int, submission spawn.Submission) {
+	r.restored = append(r.restored, submission)
+}
 
 func (r *recorder) ReportErr(text string) { r.errs = append(r.errs, text) }
 
