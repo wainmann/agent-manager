@@ -124,7 +124,7 @@ func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	heldDirs := map[string]bool{}
 	for _, i := range pending {
 		if p.isHeld(sessions[i].ID) {
-			heldDirs[firstLaunchScope(sessions[i])] = true
+			heldDirs[recaptureScope(sessions[i])] = true
 		}
 	}
 	captured := 0
@@ -134,7 +134,7 @@ cands:
 		// A held session still counts toward its scope above, so a peer
 		// relaunched beside it cannot take its new conversation.
 		if p.isHeld(sess.ID) {
-			heldDirs[firstLaunchScope(sess)] = true
+			heldDirs[recaptureScope(sess)] = true
 			continue
 		}
 		// A resumed session cannot use the earliest-write tie-break: in a
@@ -143,7 +143,7 @@ cands:
 		var agentID string
 		var ok bool
 		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
-			if heldDirs[firstLaunchScope(sess)] {
+			if heldDirs[recaptureScope(sess)] {
 				continue
 			}
 			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed, panes[sess.ID].TTY)
@@ -174,7 +174,7 @@ cands:
 		// while LaunchTime() answers CreatedAt and would match nothing.
 		bound, held, err := p.bindUnlessHeld(sess, agentID)
 		if held {
-			heldDirs[firstLaunchScope(sess)] = true
+			heldDirs[recaptureScope(sess)] = true
 			continue
 		}
 		if err != nil {
@@ -224,8 +224,4 @@ func (p *Runner) clearRecaptureSeen(sessID string) {
 	p.mu.Lock()
 	delete(p.recaptureSeen, sessID)
 	p.mu.Unlock()
-}
-
-func firstLaunchScope(sess store.Session) string {
-	return sess.Tool + "\x00" + sess.Cwd
 }

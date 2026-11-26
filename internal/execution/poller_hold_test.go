@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -197,6 +198,54 @@ func TestHeldSessionKeepsItsConversationFromAPeer(t *testing.T) {
 		if got.AgentSessionID != want {
 			t.Fatalf("%s bound %q, want %q", id, got.AgentSessionID, want)
 		}
+	}
+}
+
+// A peer that names the held session's directory through a symlink waits too.
+func TestHeldSessionKeepsItsConversationFromAPeerViaASymlink(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(cwd, link); err != nil {
+		t.Fatal(err)
+	}
+	first := time.Now().Add(-2 * time.Minute)
+	second := first.Add(time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, first)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-B.jsonl"), "B-id", cwd, second)
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: first},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: link, Group: "g", Status: "idle", CreatedAt: second},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sessions []store.Session
+	for _, id := range []string{"sess-A", "sess-B"} {
+		sess, err := st.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions = append(sessions, sess)
+	}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 1}, "sess-B": {PID: 2}}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}, held: map[string]bool{"sess-A": true}}
+	if captured, err := p.captureAgentSessionIDs(sessions, panes); err != nil || captured != 0 {
+		t.Fatalf("held peer: captured %d, err %v; want 0", captured, err)
+	}
+	got, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("peer through a symlink bound %q while the held session waited", got.AgentSessionID)
 	}
 }
 
