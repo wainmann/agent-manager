@@ -158,15 +158,18 @@ func TestSlowLifecycleDoesNotBlockWindowUpdateAndKeepsSnapshotWriter(t *testing.
 	m.archiveSelected()
 	_, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.services.setSnapshot = func(string, string) error { return fmt.Errorf("replacement writer must not run") }
-	// The confirm also starts the pending row's spinner, so the command is
-	// a batch; each of its messages is applied once the archive finishes.
+	// The confirm batches the archive with the pending row's spinner unless
+	// a spinner is already ticking; each message is applied once the
+	// archive finishes.
 	completed := make(chan []tea.Msg, 1)
 	go func() {
-		var msgs []tea.Msg
-		batch, isBatch := command().(tea.BatchMsg)
+		first := command()
+		batch, isBatch := first.(tea.BatchMsg)
 		if !isBatch {
-			t.Error("the confirm should batch the archive with the pending spinner")
+			completed <- []tea.Msg{first}
+			return
 		}
+		var msgs []tea.Msg
 		for _, each := range batch {
 			if each != nil {
 				msgs = append(msgs, each())
