@@ -350,7 +350,8 @@ func (m *Model) selectedLifecycleRow() (sessiondialogs.Row, bool) {
 // runSessionIntent executes what a session key decided: the card it opens, the
 // batch it queues, or the line it reports.
 func (m *Model) runSessionIntent(intent sessiondialogs.Intent) (tea.Model, tea.Cmd) {
-	if intent.Nothing() || m.ledger.lifecycle.AnyPending(intent.Card.Target.Sessions) {
+	target := intent.Card.Target
+	if intent.Nothing() || m.ledger.lifecycle.AnyPending(target.Sessions) || m.ledger.lifecycle.AnyPending(target.Selection.Members) {
 		return m, nil
 	}
 	if intent.Notice != "" {

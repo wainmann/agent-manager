@@ -19,7 +19,13 @@ import (
 // tool that mints its own conversation id.
 func (p *Runner) idMinting(sess store.Session, panes map[string]tmux.Pane) bool {
 	return !sess.Archived && panes[sess.ID].PID != 0 && sess.AgentSessionID == "" &&
-		p.sessionStores[sess.Tool] != ""
+		p.sessionStores[sess.Tool] != "" && !p.isHeld(sess.ID)
+}
+
+func (p *Runner) isHeld(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.held[id]
 }
 
 // startCaptureIfIdle runs id capture off the poll lock. Capturing an

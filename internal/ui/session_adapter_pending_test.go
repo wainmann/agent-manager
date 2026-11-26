@@ -104,3 +104,23 @@ func TestAfterTurnEndLeavesAQueuedActionPending(t *testing.T) {
 		t.Fatalf("an after-turn kill cleared the restart still running, pending = %v", m.ledger.lifecycle.Pending)
 	}
 }
+
+func TestKillWithAPendingDeadChildIsIgnored(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+	agent, _ := m.selected()
+	child := store.Session{ID: newID(), Name: "child-terminal", Tool: shellToolName, Cwd: dir, ParentID: agent.ID, Status: status.Dead}
+	if err := m.services.store.CreateSession(child); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "agent")
+	m.ledger.lifecycle.MarkPending(uilifecycle.Target{Action: uilifecycle.Revive, Sessions: []store.Session{child}})
+	m.killSelected()
+	if confirmOpen(m) {
+		t.Fatal("kill on a row whose dead child has a revive in flight opened a card")
+	}
+}

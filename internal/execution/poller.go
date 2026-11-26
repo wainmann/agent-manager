@@ -359,7 +359,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	var livePIDs []int
 	var liveIDs []string
 	for _, sess := range sessions {
-		if !sess.Archived && panes[sess.ID].PID > 0 {
+		if !sess.Archived && !held[sess.ID] && panes[sess.ID].PID > 0 {
 			livePIDs = append(livePIDs, panes[sess.ID].PID)
 			liveIDs = append(liveIDs, sess.ID)
 		}
