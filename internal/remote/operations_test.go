@@ -447,6 +447,11 @@ func TestTypeThatMayHaveReachedTheAgent(t *testing.T) {
 	if _, err := slow.Type(ctx, ref, "hi"); !MayHaveReached(err) || !strings.Contains(err.Error(), "prompt may have reached the agent") {
 		t.Errorf("a timed-out type = %v, want one that may have reached the agent", err)
 	}
+	cancelled, stop := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, stop)
+	if _, err := slow.Type(cancelled, ref, "hi"); !MayHaveReached(err) {
+		t.Errorf("a cancelled type = %v, want one that may have reached the agent", err)
+	}
 }
 
 // A host built before reads took --styled refuses the flag; its screen is
