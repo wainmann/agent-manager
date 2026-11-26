@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"time"
@@ -28,12 +29,13 @@ func (p *Runner) isHeld(id string) bool {
 	return p.held[id]
 }
 
-// bindUnlessHeld binds under the hold lock, so a hold that began while this
-// pass read the tool's store keeps the bind off until a later pass.
-func (p *Runner) bindUnlessHeld(sess store.Session, agentID string) (bound, held bool, err error) {
+// bindUnlessHeld binds under the hold lock, so a hold that began on any of
+// waitOn while this pass read the tool's store keeps the bind off until a
+// later pass.
+func (p *Runner) bindUnlessHeld(sess store.Session, agentID string, waitOn []string) (bound, held bool, err error) {
 	p.holdMu.Lock()
 	defer p.holdMu.Unlock()
-	if p.held[sess.ID] {
+	if slices.ContainsFunc(waitOn, func(id string) bool { return p.held[id] }) {
 		return false, true, nil
 	}
 	bound, err = p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
@@ -122,6 +124,10 @@ func (p *Runner) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	// A first launch takes the earliest unclaimed conversation in its
 	// directory, which may be a held peer's, so the directory waits out the hold.
 	heldDirs := map[string]bool{}
+	scopePeers := map[string][]string{}
+	for _, sess := range sessions {
+		scopePeers[recaptureScope(sess)] = append(scopePeers[recaptureScope(sess)], sess.ID)
+	}
 	for _, i := range pending {
 		if p.isHeld(sessions[i].ID) {
 			heldDirs[recaptureScope(sessions[i])] = true
@@ -172,7 +178,11 @@ cands:
 		// The raw field, never LaunchTime(): the compare-and-set matches the
 		// stored column, which is zero for a session that never restarted,
 		// while LaunchTime() answers CreatedAt and would match nothing.
-		bound, held, err := p.bindUnlessHeld(sess, agentID)
+		waitOn := []string{sess.ID}
+		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
+			waitOn = scopePeers[recaptureScope(sess)]
+		}
+		bound, held, err := p.bindUnlessHeld(sess, agentID, waitOn)
 		if held {
 			heldDirs[recaptureScope(sess)] = true
 			continue
