@@ -369,10 +369,9 @@ var linkCount atomic.Uint64
 // holder can delete its own name without taking the image from the other.
 // It is one link call, cheap enough for the UI thread.
 func LinkPaste(path string) (string, error) {
-	ext := filepath.Ext(path)
-	stem := strings.TrimSuffix(path, ext)
+	dir, ext := filepath.Dir(path), filepath.Ext(path)
 	for {
-		name := fmt.Sprintf("%s-%d-%d%s", stem, os.Getpid(), linkCount.Add(1), ext)
+		name := filepath.Join(dir, fmt.Sprintf("paste-k%d-%d%s", os.Getpid(), linkCount.Add(1), ext))
 		err := os.Link(path, name)
 		if errors.Is(err, fs.ErrExist) {
 			continue

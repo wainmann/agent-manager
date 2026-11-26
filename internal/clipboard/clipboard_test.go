@@ -934,6 +934,10 @@ func TestLinkPasteSurvivesTheOriginalName(t *testing.T) {
 	if data, err := os.ReadFile(linked); err != nil || string(data) != "png" {
 		t.Fatalf("linked image = %q, %v", data, err)
 	}
+	again, err := LinkPaste(linked)
+	if err != nil || len(filepath.Base(again)) != len(filepath.Base(linked)) {
+		t.Fatalf("relinked name %q grew from %q, err %v", again, linked, err)
+	}
 	if _, err := LinkPaste(original); err == nil {
 		t.Fatal("linking a missing image succeeded")
 	}
