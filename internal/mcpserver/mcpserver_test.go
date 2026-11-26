@@ -106,6 +106,7 @@ type fakeSessionCommands struct {
 	deletedID     string
 	archivedID    string
 	archived      bool
+	listAll       bool
 	movedID       string
 	endedAction   string
 	endCanceled   bool
@@ -114,7 +115,8 @@ type fakeSessionCommands struct {
 	err           error
 }
 
-func (f *fakeSessionCommands) List(string) ([]sessioncmd.Session, error) {
+func (f *fakeSessionCommands) List(_ string, includeArchived bool) ([]sessioncmd.Session, error) {
+	f.listAll = includeArchived
 	return f.listed, f.err
 }
 

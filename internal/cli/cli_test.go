@@ -31,6 +31,7 @@ type fakeSessions struct {
 	timeout   time.Duration
 	messageID int64
 	archived  bool
+	listAll   bool
 	action    string
 	canceled  bool
 	groupPath string
@@ -56,8 +57,9 @@ type fakeSessions struct {
 	callCount int
 }
 
-func (f *fakeSessions) List(sessionID string) ([]sessioncmd.Session, error) {
+func (f *fakeSessions) List(sessionID string, includeArchived bool) ([]sessioncmd.Session, error) {
 	f.callerID = sessionID
+	f.listAll = includeArchived
 	f.callCount++
 	return []sessioncmd.Session{f.session}, f.failWith
 }
@@ -351,6 +353,21 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 				t.Fatalf("a failed call printed a result anyway: %q", out.String())
 			}
 		})
+	}
+}
+
+func TestSessionsAsksForArchivedRowsOnlyWithTheFlag(t *testing.T) {
+	for _, testCase := range []struct {
+		args []string
+		want bool
+	}{{nil, false}, {[]string{"--archived"}, true}} {
+		fake := &fakeSessions{session: sampleSession()}
+		if err := runSessions(&bytes.Buffer{}, fake, testCase.args, "cafe0001"); err != nil {
+			t.Fatalf("sessions %v: %v", testCase.args, err)
+		}
+		if fake.listAll != testCase.want {
+			t.Fatalf("sessions %v asked for archived = %t", testCase.args, fake.listAll)
+		}
 	}
 }
 

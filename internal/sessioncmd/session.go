@@ -125,7 +125,9 @@ func sessionRow(sess store.Session, running, self bool, path string) Session {
 	}
 }
 
-func (s *Sessions) List(sessionID string) ([]Session, error) {
+// List leaves archived rows out unless includeArchived is set: they outnumber
+// the live ones by orders of magnitude and callers poll this list.
+func (s *Sessions) List(sessionID string, includeArchived bool) ([]Session, error) {
 	runtime, err := s.open()
 	if err != nil {
 		return nil, err
@@ -134,7 +136,7 @@ func (s *Sessions) List(sessionID string) ([]Session, error) {
 	if _, err := runtime.optionalCaller(sessionID); err != nil {
 		return nil, err
 	}
-	stored, err := runtime.store.ListSessions(true)
+	stored, err := runtime.store.ListSessions(includeArchived)
 	if err != nil {
 		return nil, err
 	}

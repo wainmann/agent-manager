@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	usageSessions      = "sessions [--json]"
+	usageSessions      = "sessions [--archived] [--json]"
 	usageSnapshot      = "snapshot --json"
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--resume <id>] [--json]"
 	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
@@ -40,7 +40,7 @@ const (
 )
 
 type sessionCommands interface {
-	List(sessionID string) ([]sessioncmd.Session, error)
+	List(sessionID string, includeArchived bool) ([]sessioncmd.Session, error)
 	Snapshot(sessionID string) (sessioncmd.Snapshot, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
@@ -106,7 +106,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 	return section{
 		title: "Agent sessions",
 		commands: []command{
-			{name: "sessions", usage: usageSessions, about: "list every agent session with its id, CLI, group, directory and status; call it before delegating anything", run: bind(open, runSessions)},
+			{name: "sessions", usage: usageSessions, about: "list the agent sessions with their id, CLI, group, directory and status, archived ones only with --archived; call it before delegating anything", run: bind(open, runSessions)},
 			{name: "snapshot", usage: usageSnapshot, about: "print every session, terminal and group on this host, archived ones included, and whether a manager is running here, as one JSON document another manager reads over SSH", run: bind(open, runSnapshot)},
 			{name: "spawn", usage: usageSpawn, about: "start another agent CLI on a task of its own, so independent work runs beside you instead of queued behind you", run: bind(open, runSpawn)},
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(open, runSend)},
@@ -132,11 +132,12 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 
 func runSessions(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageSessions)
+	archived := set.Bool("archived", false, "list archived sessions too")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
 	}
-	listed, err := sessions.List(sessionID)
+	listed, err := sessions.List(sessionID, *archived)
 	if err != nil {
 		return err
 	}

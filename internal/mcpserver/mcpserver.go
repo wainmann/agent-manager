@@ -54,8 +54,6 @@ type readTerminalArgs struct {
 	TerminalID string `json:"terminal_id" jsonschema:"terminal id returned by list_terminals or create_terminal"`
 }
 
-type listSessionsArgs struct{}
-
 type createSessionArgs struct {
 	Name        string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
 	Prompt      string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; an empty task sends only the saved prompt when one is selected, otherwise it starts idle"`
@@ -193,7 +191,7 @@ type issueReporter interface {
 }
 
 type sessionCommands interface {
-	List(sessionID string) ([]sessioncmd.Session, error)
+	List(sessionID string, includeArchived bool) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
 	ExpandSaved(name, text string) (string, error)
@@ -371,18 +369,18 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_sessions",
 		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill, delete or archive. " +
-			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
+			"Lists the agent sessions Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session; archived ones only with include_archived. " +
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
 			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, delete_session, revive_session, archive_session and move_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
-		listed, err := sessions.List(sessionID)
+		listed, err := sessions.List(sessionID, args.IncludeArchived)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
 		}
-		text, output, err := remotes.listSessions(ctx, listed)
+		text, output, err := remotes.listSessions(ctx, listed, args.IncludeArchived)
 		if err != nil {
 			return nil, listSessionsOutput{}, err
 		}

@@ -36,7 +36,7 @@ func TestSnapshotHoldsWhatTheListsHoldPlusArchivedRows(t *testing.T) {
 	if snapshot.Version != SnapshotVersion {
 		t.Fatalf("version = %d", snapshot.Version)
 	}
-	listed, err := h.sessions.List(h.caller.ID)
+	listed, err := h.sessions.List(h.caller.ID, true)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

@@ -269,6 +269,23 @@ func TestListingsPickUpAConnectionAddedWhileServing(t *testing.T) {
 	}
 }
 
+func TestListSessionsLeavesArchivedRemoteRowsOutUnlessAsked(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(string, []string) ([]byte, []byte, error) {
+		snapshot := gpuSnapshot()
+		snapshot.Sessions = append(snapshot.Sessions, sessioncmd.Session{ID: "r2", Name: "filed", Archived: true})
+		return mustJSON(t, snapshot), nil, nil
+	})
+	for _, testCase := range []struct {
+		args map[string]any
+		want bool
+	}{{map[string]any{}, false}, {map[string]any{"include_archived": true}, true}} {
+		text, _ := callText(t, f.session, "list_sessions", testCase.args)
+		if f.local.listAll != testCase.want || strings.Contains(text, "gpu::r2") != testCase.want {
+			t.Fatalf("list_sessions %v: local asked = %t, text:\n%s", testCase.args, f.local.listAll, text)
+		}
+	}
+}
+
 func TestListingsWithNoConnectionsKeepTheirOutput(t *testing.T) {
 	f := newRemoteFixture(t, "cafe", nil)
 	f.connections = nil

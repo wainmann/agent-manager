@@ -275,7 +275,7 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	listed, err := h.sessions.List(h.caller.ID)
+	listed, err := h.sessions.List(h.caller.ID, false)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -294,6 +294,35 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	}
 }
 
+func TestSessionsListLeavesArchivedRowsOutUnlessAsked(t *testing.T) {
+	h := newSessionHarness(t)
+	filed, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "filed"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.SetArchived(filed.ID, true); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	active, err := h.sessions.List(h.caller.ID, false)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(active) != 1 || active[0].ID != h.caller.ID {
+		t.Fatalf("active list = %+v", active)
+	}
+	all, err := h.sessions.List(h.caller.ID, true)
+	if err != nil {
+		t.Fatalf("List with archived: %v", err)
+	}
+	archived := map[string]bool{}
+	for _, sess := range all {
+		archived[sess.ID] = sess.Archived
+	}
+	if len(all) != 2 || archived[h.caller.ID] || !archived[filed.ID] {
+		t.Fatalf("full list = %+v", all)
+	}
+}
+
 func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 	var socket string
 	t.Run("harness", func(t *testing.T) {
@@ -308,7 +337,7 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 }
 func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
 	h := newSessionHarness(t)
-	listed, err := h.sessions.List("")
+	listed, err := h.sessions.List("", false)
 	if err != nil {
 		t.Fatalf("List with no caller: %v", err)
 	}
