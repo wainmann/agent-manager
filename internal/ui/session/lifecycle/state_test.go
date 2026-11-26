@@ -107,11 +107,11 @@ func TestPendingCoversTheTargetUntilCleared(t *testing.T) {
 	if got := PendingWord(state.Pending["b"]); got != "archiving" {
 		t.Fatalf("pending word = %q, want archiving", got)
 	}
-	if !state.AnyPending([]store.Session{session("c"), session("a")}) {
+	if !state.Overlaps(Target{Action: Kill, Sessions: []store.Session{session("c"), session("a")}}) {
 		t.Fatal("a set holding a pending row must read as pending")
 	}
 	state.ClearPending(target)
-	if state.AnyPending(target.Sessions) {
+	if state.Overlaps(target) {
 		t.Fatalf("cleared target still pending: %v", state.Pending)
 	}
 }
@@ -124,5 +124,36 @@ func TestPendingWordNamesEachAction(t *testing.T) {
 		if got := PendingWord(action); got != want {
 			t.Errorf("PendingWord(%v) = %q, want %q", action, got, want)
 		}
+	}
+}
+
+// A run reserves the rows it waits on and an empty group's path, both ways.
+func TestPendingReservesMembersAndGroupPaths(t *testing.T) {
+	t.Parallel()
+	state := State{}
+	kill := Target{Action: Kill, Sessions: []store.Session{session("agent")},
+		Selection: Selection{Kind: SelectSession, RootID: "agent", Members: []store.Session{session("agent"), session("shell")}}}
+	state.MarkPending(kill)
+	if !state.Overlaps(Target{Action: Revive, Sessions: []store.Session{session("shell")}}) {
+		t.Fatal("a revive on a terminal the kill skipped was admitted")
+	}
+	if state.Overlaps(Target{Action: Revive, Sessions: []store.Session{session("other")}}) {
+		t.Fatal("an unrelated row was refused")
+	}
+	state.ClearPending(kill)
+	if state.Overlaps(Target{Action: Revive, Sessions: []store.Session{session("shell")}}) {
+		t.Fatal("the cleared kill still reserves its terminal")
+	}
+
+	web := Target{Action: Remove, Path: "web"}
+	state.MarkPending(web)
+	for path, want := range map[string]bool{"web": true, "web/api": true, "website": false} {
+		if got := state.Overlaps(Target{Action: Remove, Path: path}); got != want {
+			t.Fatalf("delete of %s overlaps = %t, want %t", path, got, want)
+		}
+	}
+	state.ClearPending(web)
+	if state.Overlaps(Target{Action: Remove, Path: "web/api"}) {
+		t.Fatal("the cleared group delete still reserves its path")
 	}
 }

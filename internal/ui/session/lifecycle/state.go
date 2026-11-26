@@ -42,6 +42,10 @@ type State struct {
 	// Pending is the action queued on each row whose run has not completed,
 	// which the row shows and a repeat press on it is refused by.
 	Pending map[string]Action
+	// reserved are the rows and group paths an in-flight run covers beyond
+	// the rows it shows: a kill's skipped dead terminals, an empty group's delete.
+	reservedRows   map[string]bool
+	reservedGroups map[string]bool
 }
 
 // AwaitedRename is the prompt a spawned session carries and the name the
@@ -235,9 +239,17 @@ func sessionGone(sessions []store.Session, id string) bool {
 func (s *State) MarkPending(target Target) {
 	if s.Pending == nil {
 		s.Pending = map[string]Action{}
+		s.reservedRows = map[string]bool{}
+		s.reservedGroups = map[string]bool{}
 	}
 	for _, sess := range target.Sessions {
 		s.Pending[sess.ID] = target.Action
+	}
+	for _, sess := range target.Selection.Members {
+		s.reservedRows[sess.ID] = true
+	}
+	if target.Action == Remove && target.Path != "" {
+		s.reservedGroups[target.Path] = true
 	}
 }
 
@@ -247,13 +259,33 @@ func (s *State) ClearPending(target Target) {
 	for _, sess := range target.Sessions {
 		delete(s.Pending, sess.ID)
 	}
+	for _, sess := range target.Selection.Members {
+		delete(s.reservedRows, sess.ID)
+	}
+	if target.Action == Remove && target.Path != "" {
+		delete(s.reservedGroups, target.Path)
+	}
 }
 
-// AnyPending reports whether an action is still in flight on any of the rows.
-func (s *State) AnyPending(sessions []store.Session) bool {
-	for _, sess := range sessions {
-		if _, pending := s.Pending[sess.ID]; pending {
-			return true
+// Overlaps reports whether a run still in flight covers any row the target
+// holds or waits on, or, for a group delete, a group nested with its path.
+func (s *State) Overlaps(target Target) bool {
+	busy := func(sessions []store.Session) bool {
+		for _, sess := range sessions {
+			if _, pending := s.Pending[sess.ID]; pending || s.reservedRows[sess.ID] {
+				return true
+			}
+		}
+		return false
+	}
+	if busy(target.Sessions) || busy(target.Selection.Members) {
+		return true
+	}
+	if target.Action == Remove && target.Path != "" {
+		for path := range s.reservedGroups {
+			if InSubtree(path, target.Path) || InSubtree(target.Path, path) {
+				return true
+			}
 		}
 	}
 	return false

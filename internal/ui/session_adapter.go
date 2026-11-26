@@ -351,7 +351,7 @@ func (m *Model) selectedLifecycleRow() (sessiondialogs.Row, bool) {
 // batch it queues, or the line it reports.
 func (m *Model) runSessionIntent(intent sessiondialogs.Intent) (tea.Model, tea.Cmd) {
 	target := intent.Card.Target
-	if intent.Nothing() || m.ledger.lifecycle.AnyPending(target.Sessions) || m.ledger.lifecycle.AnyPending(target.Selection.Members) {
+	if intent.Nothing() || m.ledger.lifecycle.Overlaps(target) {
 		return m, nil
 	}
 	if intent.Notice != "" {
