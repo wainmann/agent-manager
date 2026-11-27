@@ -1,7 +1,7 @@
 // Package watch follows one focused pane over a tmux control client: it
 // streams the pane's frames to a Sink, forwards keys over the same client,
-// counts the writes it is owed echoes for, and falls back to polling when
-// the client is lost.
+// counts the forked writes it is owed echoes for, and polls forked captures
+// where a psmux client fails to open.
 package watch
 
 import (
@@ -67,8 +67,8 @@ const paneStateFormat = "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag
 // Watcher keeps one tmux control-mode client on the selected session.
 // tmux pushes an event the moment the pane paints and the capture rides
 // the same pipe, so the focused preview updates event-driven, with no
-// polling interval and no process forks. Where the multiplexer has no
-// usable control client the watcher polls forked captures instead.
+// polling interval and no process forks. Where a psmux client fails to
+// attach or answer the write probe the watcher polls forked captures.
 type Watcher struct {
 	driver *tmux.Driver
 	sink   Sink
@@ -84,16 +84,16 @@ type Watcher struct {
 	control *tmux.Control
 	closed  bool
 	running sync.WaitGroup
-	// polled marks a watcher serving id with forked captures, for a
-	// multiplexer whose control client is not used.
+	// polled marks a watcher serving id with forked captures, for a psmux
+	// session whose control client failed to open.
 	polled bool
 	// failedID/failedAt back off reopening a session whose client just
 	// died. Selection sync retries every poll pass, and without the pause
 	// a dead session's row costs one tmux fork per pass, forever.
 	failedID string
 	failedAt time.Time
-	// queued and landed count the writes to a polled pane in and out, so a
-	// frame can tell whether it shows them all.
+	// queued and landed count the forked writes to the pane in and out, so
+	// a frame can tell whether it shows them all.
 	queued, landed uint64
 	// fast streams a changing pane at the frame budget, for a focused
 	// session; a pane only previewed beside the list keeps the live tick.
@@ -182,7 +182,7 @@ func (w *Watcher) changedGap() time.Duration {
 }
 
 // InputSent tells the watcher a write just reached the pane, so it looks
-// for the echo. A polled watcher hears it from WriteLanded instead.
+// for the echo. A counted write is heard from WriteLanded too.
 func (w *Watcher) InputSent(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -201,24 +201,33 @@ func (w *Watcher) landedLocked(id string) {
 	}
 }
 
-// CountWrite counts one write to pane id that the polled watcher on id
-// should see land before it trusts a frame's caret, reporting whether it
-// was counted; WriteLanded must follow each counted write.
-func (w *Watcher) CountWrite(id string) bool {
+// CountWrite counts one write to pane id that the watcher on id should see
+// land before it trusts a frame's caret, reporting whether it was counted;
+// WriteLanded must follow each counted write. Only forked writes are
+// counted: they land a fork later than the frames streaming meanwhile.
+// forks marks a write that forks even where the client carries writes.
+func (w *Watcher) CountWrite(id string, forks bool) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !w.polled || w.id != id {
+	forked := forks || w.polled || (w.control != nil && !w.control.CarriesWrites())
+	if !forked || w.id != id {
 		return false
 	}
 	w.queued++
 	return true
 }
 
+// WriteLanded wakes the watcher whatever pane it now serves: the counts
+// span panes, so a landing after focus moved decides whether the new pane's
+// frames have caught up.
 func (w *Watcher) WriteLanded(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.landed++
-	w.landedLocked(id)
+	select {
+	case w.input <- struct{}{}:
+	default:
+	}
 }
 
 // CaughtUp reports whether a frame taken once writes of the counted writes
@@ -285,12 +294,14 @@ func (w *Watcher) Forward(command string) (available bool, err error) {
 }
 
 // ForwardBlocks is Forward for a command tmux answers with several reply
-// blocks, which the client has to be told to expect.
+// blocks, which the client has to be told to expect. A client whose server
+// does not answer writes is unavailable for them, though it still serves
+// the pane's frames.
 func (w *Watcher) ForwardBlocks(command string, blocks int) (available bool, err error) {
 	w.mu.Lock()
 	control := w.control
 	w.mu.Unlock()
-	if control == nil {
+	if control == nil || !control.CarriesWrites() {
 		return false, nil
 	}
 	return true, control.SendBlocks(command, blocks)
@@ -383,9 +394,11 @@ func (w *Watcher) RetryNow() {
 
 func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, input chan struct{}) {
 	openCtx, cancelOpen := context.WithTimeout(ctx, controlOpenTimeout)
-	exists := w.driver.ExistsContext(openCtx, id)
+	exists, existsErr := w.driver.SessionExistsContext(openCtx, id)
 	cancelOpen()
-	if !exists {
+	// A has-session that failed, as one past its budget does, does not say
+	// the session is gone: the open decides, and on psmux polls if it fails.
+	if !exists && existsErr == nil {
 		w.clearIfCurrent(id, stop)
 		return
 	}
@@ -436,7 +449,13 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		return
 	}
 	clipboardWrites := control.WatchClipboard(strings.TrimSpace(paneID))
+	// shown is the landed count the last frame was taken with.
+	var shown uint64
 	capture := func() (string, bool) {
+		w.mu.Lock()
+		landed := w.landed
+		w.mu.Unlock()
+		shown = landed
 		callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
 		pane, err := control.CommandContext(callCtx, "capture-pane -p -e -t "+target)
 		cancelCall()
@@ -444,7 +463,7 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			w.report(stop, fmt.Errorf("preview client for %s: %w", id, err))
 			return "", false
 		}
-		msg := Frame{SessionID: id, Preview: MatchExecShape(pane)}
+		msg := Frame{SessionID: id, Preview: MatchExecShape(pane), Writes: landed}
 		// The capture carries no cursor, and a terminal without a visible
 		// cursor gives no sense of where typing lands. Mouse ownership and
 		// history depth ride along so the wheel can route from cached state
@@ -500,7 +519,15 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			continue
 		case <-input:
 			inputUntil = time.Now().Add(frameBudget)
-			continue
+			// A forked write can land after the frame that shows its echo,
+			// and a quiet pane paints nothing more, so that frame would never
+			// catch up.
+			w.mu.Lock()
+			behind := w.landed != shown
+			w.mu.Unlock()
+			if !behind {
+				continue
+			}
 		}
 		// Echo may arrive after a streaming paint or a cursor-only update.
 		captureAt := due()
@@ -537,8 +564,8 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 	}
 }
 
-// poll serves a session whose multiplexer has no usable control client,
-// with forked looks standing in for pushed frames. Each counted write that
+// poll serves a psmux session whose control client failed to open, with
+// forked looks standing in for pushed frames. Each counted write that
 // lands is looked for a display frame later, and again each frame until
 // the pane changes or the frame budget passes; otherwise a changing pane
 // is looked at on the live tick cadence and a still one after

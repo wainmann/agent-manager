@@ -52,6 +52,10 @@ type Control struct {
 	// parser tests have no subprocess and receive an already-closed channel.
 	reaped        chan struct{}
 	cancelProcess context.CancelFunc
+
+	// writes is whether the server answers a write sent over this client;
+	// false sends keys through a forked command while reads still ride here.
+	writes bool
 }
 
 type reply struct {
@@ -85,15 +89,15 @@ func enterGateContext(ctx context.Context, socket string, exclusive bool) (relea
 	}, nil
 }
 
-// ErrControlUnavailable is OpenControl's answer where the multiplexer's
-// control client cannot be relied on. It is a property of the platform,
-// not of one session, so callers poll forked captures instead of retrying.
-var ErrControlUnavailable = errors.New("control mode is not used with " + Binary)
+// ErrControlUnavailable is OpenControl's answer where a control client
+// failed to attach or answer the write probe and the platform serves the
+// session with forked captures instead (pollsWhenControlFails).
+var ErrControlUnavailable = errors.New(Binary + " control client unavailable")
 
 // OpenControl attaches a control-mode client to a live session. Gate
 // acquisition and the greeting are bounded by the same default as other tmux
-// commands. Where the multiplexer's control client cannot be relied
-// on it fails with ErrControlUnavailable.
+// commands. A failure on a platform that polls instead wraps
+// ErrControlUnavailable.
 func (d *Driver) OpenControl(id string) (*Control, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), CommandTimeout)
 	defer cancel()
@@ -102,19 +106,58 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 
 // OpenControlContext attaches a control-mode client and returns once tmux has
 // greeted it. ctx bounds only the open; a returned Control owns its process
-// until Close is called. Where the multiplexer's control client cannot be
-// relied on it fails, and callers poll captures instead.
+// until Close is called. A failure on a platform that polls instead wraps
+// ErrControlUnavailable, an open that ran out its deadline included, unless
+// the caller cancelled ctx.
 func (d *Driver) OpenControlContext(ctx context.Context, id string) (*Control, error) {
-	if err := controlUnavailable(); err != nil {
-		return nil, err
+	control, err := d.openControl(ctx, id)
+	if !pollsWhenControlFails || errors.Is(ctx.Err(), context.Canceled) {
+		return control, err
 	}
+	if err == nil {
+		select {
+		case <-control.done:
+			// Ungreeted: the client exited before tmux spoke.
+			err = fmt.Errorf("control client exited before its greeting: %w", control.Err())
+		default:
+			return control, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: %w", ErrControlUnavailable, err)
+}
+
+func (d *Driver) openControl(ctx context.Context, id string) (*Control, error) {
+	control, err := d.attachControl(ctx, id)
+	if err != nil || !probesControlWrites {
+		return control, err
+	}
+	select {
+	case <-control.done:
+		// An ungreeted client is returned closed, as attachControl does.
+		return control, nil
+	default:
+	}
+	writes, err := control.probeWrites(ctx, PaneTarget(id))
+	if err != nil {
+		closeCtx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		closeErr := control.CloseContext(closeCtx)
+		cancel()
+		return nil, errors.Join(fmt.Errorf("control write probe: %w", err), closeErr)
+	}
+	control.writes = writes
+	return control, nil
+}
+
+// attachControl starts the client and waits for its greeting under the
+// exclusive gate.
+func (d *Driver) attachControl(ctx context.Context, id string) (*Control, error) {
 	release, err := enterGateContext(ctx, d.socket, true)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 	processCtx, cancelProcess := context.WithCancel(context.Background())
-	cmd := d.commandContext(processCtx, "-C", "attach-session", "-t", sessionName(id))
+	cmd := d.commandContext(processCtx, controlFlag, "attach-session", "-t", sessionName(id))
 	configureBoundedCommand(cmd)
 	cmd.WaitDelay = commandTimeout
 	stdin, err := cmd.StdinPipe()
@@ -192,10 +235,82 @@ func newControl(stdin io.WriteCloser, stdout io.Reader) *Control {
 		ready:     make(chan struct{}),
 		done:      make(chan struct{}),
 		reaped:    reaped,
+		writes:    true,
 	}
 	control.writeGate <- struct{}{}
 	go control.readLoop(stdout)
 	return control
+}
+
+// CarriesWrites reports whether a write sent over this client gets an
+// answer. Where it does not, the keys still land but every send would read
+// as possibly lost, so callers fork their writes and keep reads here.
+func (c *Control) CarriesWrites() bool { return c.writes }
+
+// errControlClosed is the exit a client ended by Close reports.
+var errControlClosed = errors.New("control client closed")
+
+// probeMarker ends the write probe; nothing else prints it.
+const probeMarker = "am-probe-writes"
+
+// probeWrites asks the server whether it answers a write: an empty
+// send-keys -H, the form SendKeysHex forwards, which types nothing, then a
+// marker. A server that answers writes replies to both in order; psmux
+// 3.4.0 gives the empty send-keys no block, so the marker's reply comes
+// first and the second waiter is dropped, keeping later replies aligned.
+func (c *Control) probeWrites(ctx context.Context, target string) (bool, error) {
+	if c.cmd != nil {
+		release, err := enterGateContext(ctx, c.socket, false)
+		if err != nil {
+			return false, fmt.Errorf("control command gate: %w", err)
+		}
+		defer release()
+	}
+	waiters, err := c.submitWaiters(ctx, "send-keys -t "+target+" -H\ndisplay-message -p "+probeMarker, 2)
+	if err != nil {
+		return false, err
+	}
+	first, err := c.awaitReply(ctx, waiters[0])
+	if err != nil {
+		return false, err
+	}
+	if first.err == nil && first.text == probeMarker {
+		c.dropWaiter(waiters[1])
+		return false, nil
+	}
+	marker, err := c.awaitReply(ctx, waiters[1])
+	if err != nil {
+		return false, err
+	}
+	if marker.err != nil || marker.text != probeMarker {
+		return false, fmt.Errorf("probe replies out of order: %q then %q", first.text, marker.text)
+	}
+	return first.err == nil, nil
+}
+
+func (c *Control) awaitReply(ctx context.Context, waiter chan reply) (reply, error) {
+	select {
+	case result := <-waiter:
+		return result, nil
+	case <-c.done:
+		return reply{}, errors.New("control client exited")
+	case <-ctx.Done():
+		// The stream's alignment is unknown once a reply is missed.
+		c.abort(ctx.Err())
+		return reply{}, fmt.Errorf("control command: %w", ctx.Err())
+	}
+}
+
+// dropWaiter takes a waiter no block will ever answer off the queue.
+func (c *Control) dropWaiter(waiter chan reply) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, pending := range c.pending {
+		if pending == waiter {
+			c.pending = append(c.pending[:i], c.pending[i+1:]...)
+			return
+		}
+	}
 }
 
 // Events signals whenever the session's panes produce output. Coalesced:
@@ -317,6 +432,15 @@ func (c *Control) SendBlocks(command string, blocks int) error {
 // append rides inside the write gate so waiter order always matches write
 // order, while mu itself is never held across the pipe write.
 func (c *Control) submitContext(ctx context.Context, command string, blocks int) (chan reply, error) {
+	waiters, err := c.submitWaiters(ctx, command, blocks)
+	if err != nil {
+		return nil, err
+	}
+	return waiters[blocks-1], nil
+}
+
+// submitWaiters is submitContext returning every block's waiter, in order.
+func (c *Control) submitWaiters(ctx context.Context, command string, blocks int) ([]chan reply, error) {
 	select {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("control write: %w", ctx.Err())
@@ -345,7 +469,7 @@ func (c *Control) submitContext(ctx context.Context, command string, blocks int)
 	select {
 	case err := <-writeDone:
 		if err == nil {
-			return waiters[blocks-1], nil
+			return waiters, nil
 		}
 		wrapped := fmt.Errorf("control write: %w", err)
 		c.abort(wrapped)
@@ -416,6 +540,9 @@ func (c *Control) CloseContext(ctx context.Context) error {
 		cleanupCancel()
 		return errors.Join(fmt.Errorf("control close: %w", gateErr), reapErr)
 	}
+	if endsControlOnClose && c.cmd != nil {
+		c.abort(errControlClosed)
+	}
 	select {
 	case <-c.reaped:
 		return nil
@@ -483,9 +610,15 @@ func (c *Control) readLoop(stdout io.Reader) {
 	var block []string
 	inBlock := false
 	blockTag := ""
+	first := true
 	var clipboard clipboardScanner
 	for scanner.Scan() {
 		line := scanner.Text()
+		if first {
+			// psmux -CC glues its DCS opener to the greeting; tmux -C sends none.
+			line = strings.TrimPrefix(line, "\x1bP1000p")
+			first = false
+		}
 		switch {
 		case !inBlock && strings.HasPrefix(line, "%begin "):
 			inBlock = true

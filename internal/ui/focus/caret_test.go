@@ -79,7 +79,7 @@ func TestCaretAtInputStart(t *testing.T) {
 	}
 }
 
-// Keys counted to a polled pane land after the frame the mirror holds, so
+// Keys counted to a pane through forked writes land after the frame the mirror holds, so
 // that frame's caret cannot put Left at the prompt head, and another
 // session's mirror or a scrolled-back pane cannot decide it either.
 func TestCaretAtInputStartNeedsACurrentCaughtUpFrame(t *testing.T) {

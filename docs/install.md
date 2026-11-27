@@ -213,7 +213,7 @@ irm https://github.com/wainmann/agent-manager/releases/latest/download/install.p
 
 Differences from macOS and Linux:
 
-- Each session runs on its own psmux server. The manager does not use psmux's control mode, so previews poll the pane rather than streaming it, and a focused session is captured again as each typed key lands. psmux does not report whether a program hides its cursor, so the focused view draws the caret wherever the pane's cursor sits.
+- Each session runs on its own psmux server. A focused session streams over a psmux control client, as on tmux. On psmux 3.4.0 each typed key still starts one `psmux` process, since 3.4.0 does not answer keys sent over the control client; on a psmux build that does, keys ride the client. Mouse reports and extended keys start one `psmux` process each. psmux 3.4.0 does not report whether a program hides its cursor, so the focused view draws the caret wherever the pane's cursor sits.
 - Inside an attached session, the review and editor keys detach through a short PowerShell `run-shell`, so they take a moment longer than on tmux.
 - Command Code (`cmd`) shares its name with `cmd.exe`, so it is not supported natively: it is left out of the tool pickers, and a session asking for it is refused.
 - An agent CLI installed only as a `.cmd` or `.bat` file is refused, since cmd.exe would run a prompt holding `"` as commands. CLIs installed with npm work, because npm adds a `.ps1` beside each `.cmd`.

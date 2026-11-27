@@ -29,10 +29,24 @@ const pinsSplitPane = true
 // firstWindow is the window spec for a session's first window.
 const firstWindow = "^"
 
-// controlUnavailable reports why control mode cannot be used; tmux's can.
-func controlUnavailable() error {
-	return nil
-}
+// pollsWhenControlFails: a tmux session whose client fails gets no pushed
+// frames; the preview tick still captures it.
+const pollsWhenControlFails = false
+
+// controlFlag attaches a control-mode client.
+const controlFlag = "-C"
+
+// probesControlWrites is off: every tmux the manager supports answers a
+// write over its control client.
+const probesControlWrites = false
+
+// endsControlOnClose is off: tmux's client leaves on stdin EOF, and Close
+// waits for that under the gate (tmux#4980).
+const endsControlOnClose = false
+
+// GuardedOverControl: tmux answers a guarded send over the control client
+// with GuardedReplies blocks.
+const GuardedOverControl = true
 
 // sessionMissingExit reports has-session's answer for a session that is
 // gone when it carries no message; tmux always names the missing session.

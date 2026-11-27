@@ -27,7 +27,7 @@ Under `internal/`:
 - `ui/onboarding`: first-run setup, feature-owned surface, live preview, and saved-conversation import.
 - `ui/notices`: the messages panel, its notice list and release-note rendering.
 - `ui/notices/release`: the panel's runtime: release and feed checks, the what's-new greeting recorded in settings, and the self-update.
-- `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback, pushed frames.
+- `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback where a psmux client fails to open, pushed frames.
 - Runtime packages. Each holds one feature's state and the store, tmux, git and network work behind it. It answers a narrow `Root` the root adapts, and never imports `ui`:
   - `ui/settings/persist`: the cached stored values, the writes a save hands the effect lane, and the read-back a partial failure reconciles from.
   - `ui/launchhint/install`: the copy a refused launch shows, and the installer the setup-step card types into a shell tab, the status that shell records, and the launch retried once the binary is on PATH.

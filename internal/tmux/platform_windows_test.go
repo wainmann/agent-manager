@@ -3,6 +3,8 @@
 package tmux
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -343,4 +345,105 @@ func TestParsePsmuxVersion(t *testing.T) {
 			t.Errorf("%s: error %q does not mention %q", tc.name, err, tc.wantErr)
 		}
 	}
+}
+
+// psmux's control client serves the focused preview: it greets, a capture
+// of box-drawn lines past byte 200 comes back whole (psmux#712 left the
+// client silent there before 3.4.0), and the write probe leaves the replies
+// after it aligned whichever answer the server gives.
+func TestPsmuxControlClientServesThePane(t *testing.T) {
+	driver := requireTmux(t)
+	wide := strings.Repeat("─", 90)
+	id := psmuxSession(t, driver, "ctl", "Write-Host ([string][char]0x2500 * 90)", wide)
+	control, err := driver.OpenControl(id)
+	if err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+	pane, err := control.Command("capture-pane -p -t " + PaneTarget(id))
+	if err != nil {
+		t.Fatalf("capture over the control client: %v", err)
+	}
+	if !strings.Contains(pane, wide) {
+		t.Fatalf("capture over the control client lost the wide line:\n%s", pane)
+	}
+	name, err := control.Command(`display-message -p -t ` + PaneTarget(id) + ` "#{session_name}"`)
+	if err != nil || strings.TrimSpace(name) != sessionName(id) {
+		t.Fatalf("session name over the control client = %q (%v), want %s", name, err, sessionName(id))
+	}
+	t.Logf("psmux answers writes over its control client: %v", control.CarriesWrites())
+}
+
+// A psmux client that cannot attach reads as unavailable, so the watcher
+// polls the session instead of leaving it to the preview tick.
+func TestPsmuxControlFailureReadsAsUnavailable(t *testing.T) {
+	driver := requireTmux(t)
+	control, err := driver.OpenControl(prefixedID("ctlgone"))
+	if err == nil {
+		_ = control.Close()
+		t.Fatal("OpenControl on a missing session succeeded")
+	}
+	if !errors.Is(err, ErrControlUnavailable) {
+		t.Fatalf("OpenControl error = %v, want ErrControlUnavailable", err)
+	}
+}
+
+// An open that runs out its deadline reads as unavailable like any other
+// failed open, so the watcher polls; one its caller cancelled does not.
+func TestPsmuxControlOpenTimeoutReadsAsUnavailable(t *testing.T) {
+	driver := requireTmux(t)
+	id := psmuxSession(t, driver, "ctlslow", "Write-Host ready", "ready")
+	// A psmux spawn alone outlasts 20 ms, so the deadline runs out inside
+	// the attach.
+	short, cancelShort := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelShort()
+	control, err := driver.OpenControlContext(short, id)
+	if err == nil {
+		_ = control.Close()
+		t.Skip("psmux greeted within 20 ms")
+	}
+	if !errors.Is(err, ErrControlUnavailable) {
+		t.Fatalf("timed-out open error = %v, want ErrControlUnavailable", err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		attached, err := driver.Display(id, "#{session_attached}")
+		if err == nil && strings.TrimSpace(attached) == "0" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the timed-out client still attached: %q (%v)", strings.TrimSpace(attached), err)
+		}
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	control, err = driver.OpenControlContext(cancelled, id)
+	if err == nil {
+		_ = control.Close()
+		t.Fatal("OpenControlContext after cancel succeeded")
+	}
+	if errors.Is(err, ErrControlUnavailable) {
+		t.Fatalf("cancelled open error = %v, want it not to read as unavailable", err)
+	}
+}
+
+// A key the probe lets ride the control client lands from there, the way the
+// focused view types; where it does not, the forked send-keys the writer
+// falls back to still lands it.
+func TestPsmuxControlWritesFollowTheProbe(t *testing.T) {
+	driver := requireTmux(t)
+	id := psmuxSession(t, driver, "ctlw", "Write-Host ready", "ready")
+	control, err := driver.OpenControl(id)
+	if err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+	typed := []byte("Write-Output ('ctl'+'write')\r")
+	if control.CarriesWrites() {
+		if err := control.Send(SendKeysHex(PaneTarget(id), typed)); err != nil {
+			t.Fatalf("send-keys over the control client: %v", err)
+		}
+	} else if err := driver.SendRawContext(context.Background(), SendKeysHex(PaneTarget(id), typed)); err != nil {
+		t.Fatalf("forked send-keys: %v", err)
+	}
+	waitForPaneLine(t, driver, id, "ctlwrite")
 }

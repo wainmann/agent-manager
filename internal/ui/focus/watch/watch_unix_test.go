@@ -156,6 +156,42 @@ exit 0
 	release()
 }
 
+// A has-session that fails without saying the session is gone, as one that
+// runs out its budget does, does not read as a missing session: the watcher
+// still opens the session's client.
+func TestFocusWatchOpensAfterAnUnansweredHasSession(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "attached")
+	stub := filepath.Join(dir, "tmux")
+	script := fmt.Sprintf(`#!/bin/sh
+case " $* " in
+  *" has-session "*) echo "server busy" >&2; exit 2 ;;
+  *" attach-session "*) : > %s; exit 1 ;;
+esac
+exit 1
+`, tmux.ShellQuote(marker))
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMUX_TMPDIR", dir)
+	driver, err := tmux.NewWithSocket("focus-watch-unanswered")
+	if err != nil {
+		t.Fatal(err)
+	}
+	watch := newTestWatcher(driver, func(any) {})
+	t.Cleanup(watch.Close)
+	watch.SetFocus("fixture")
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the watcher never opened a client after has-session failed")
+		}
+	}
+}
+
 // A polled look is cut short by its watcher's context, so a capture in
 // flight cannot outlive the close that cancelled it.
 func TestFocusWatchLookStopsWithItsContext(t *testing.T) {

@@ -3,6 +3,8 @@ package runtime
 import (
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 )
 
@@ -38,12 +40,31 @@ func TestFrameMessageCarriesEveryPaneFact(t *testing.T) {
 	}
 }
 
+// A paste forks on every platform and a guarded send forks where psmux keeps
+// it off the client, so both are counted whatever the client carries.
+func TestRequestForksFollowTheTransport(t *testing.T) {
+	t.Parallel()
+	guarded := Request{Kind: Mouse, Command: "if-shell", Args: []string{"if-shell"}}
+	for name, tc := range map[string]struct {
+		request Request
+		want    bool
+	}{
+		"paste":   {Request{Kind: Paste, Text: "x"}, true},
+		"keys":    {Request{Kind: Keys, Command: "send-keys"}, false},
+		"guarded": {guarded, !tmux.GuardedOverControl},
+	} {
+		if got := tc.request.Forks(); got != tc.want {
+			t.Errorf("%s: Forks() = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 // A run with no watcher serves nothing, counts no write and reads as caught
 // up, which is what routes a report over the forked transport.
 func TestStateWithoutAWatchIsInert(t *testing.T) {
 	t.Parallel()
 	state := &State{}
-	if state.Ready() || state.Serving("s1") || state.CountWrite("s1") {
+	if state.Ready() || state.Serving("s1") || state.CountWrite(Request{Session: store.Session{ID: "s1"}}) {
 		t.Fatalf("a watcherless state claimed to serve a pane: %+v", state)
 	}
 	if state.Watching() != "" {

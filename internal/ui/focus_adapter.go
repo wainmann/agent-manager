@@ -427,7 +427,7 @@ func (m *Model) applyAckEffect(err error) {
 func (m *Model) dispatchInput(request focusruntime.Request) {
 	request = request.Copied()
 	if request.Kind != focusruntime.Prompt && !request.Counted {
-		request.Counted = m.focus.runtime.CountWrite(request.Session.ID)
+		request.Counted = m.focus.runtime.CountWrite(request)
 	}
 	m.enqueueEffect(focusruntime.InputRequest{Value: request}, 0, false)
 }

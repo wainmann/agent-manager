@@ -129,14 +129,33 @@ const hiddenWindowStatus = "#[default]"
 // window is sized to the preview whole, the panes keeping their shares.
 const pinsSplitPane = false
 
-// controlUnavailable keeps the manager off psmux's control client. Its
-// output thread slices each line at byte 200 for a debug log and panics
-// when that cuts a multibyte character, which an agent's box-drawn UI does
-// on nearly every capture; the client then goes silent while still
-// attached. Previews poll capture-pane instead.
-func controlUnavailable() error {
-	return fmt.Errorf("%w: its client panics on wide pane lines", ErrControlUnavailable)
-}
+// pollsWhenControlFails: a psmux session whose client fails to attach or
+// answer the write probe is served by forked captures, as every psmux
+// session was before 3.4.0 fixed the client's panic on wide lines
+// (psmux#712).
+const pollsWhenControlFails = true
+
+// controlFlag attaches a control-mode client. psmux's -C echoes every
+// command back; -CC answers in the plain block protocol tmux -C speaks.
+const controlFlag = "-CC"
+
+// probesControlWrites: psmux 3.4.0 answers send-keys over a control client
+// with no block for an empty one and "command timed out" for -H or -l, even
+// though the keys land, so a write there reads as possibly lost. Later
+// builds answer every form (psmux 5f397605); which kind a server is, only
+// asking it tells, since those builds still report 3.4.0.
+const probesControlWrites = true
+
+// endsControlOnClose: psmux 3.4.0's client lingers about 2 s after its
+// stdin closes, and Close holds the attach gate the next focused session's
+// client waits on until it is gone. Nothing reads its goodbye, and psmux has
+// no handshake a sudden leave could upset, so Close ends it at once.
+const endsControlOnClose = true
+
+// GuardedOverControl is off: psmux runs an if-shell branch inside the
+// if-shell's own reply block, where tmux answers the two apart, and 3.4.0
+// has no if-shell on a control client at all. Guarded sends fork instead.
+const GuardedOverControl = false
 
 // sessionMissingExit reports has-session's answer for a session that is
 // gone. psmux runs a server per session, so it finds none to ask and exits

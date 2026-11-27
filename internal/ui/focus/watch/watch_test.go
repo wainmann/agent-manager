@@ -709,22 +709,131 @@ func TestFocusWatchSkipsMissingSession(t *testing.T) {
 	}
 }
 
+// framesOf collects the frames pushed for id.
+func framesOf(id string) (chan Frame, func(any)) {
+	frames := make(chan Frame, 1024)
+	return frames, func(msg any) {
+		if frame, ok := msg.(Frame); ok && frame.SessionID == id {
+			select {
+			case frames <- frame:
+			default:
+			}
+		}
+	}
+}
+
+func waitFrame(t *testing.T, frames <-chan Frame, contains string, within time.Duration) time.Duration {
+	t.Helper()
+	start := time.Now()
+	deadline := time.After(within)
+	for {
+		select {
+		case frame := <-frames:
+			if strings.Contains(frame.Preview, contains) {
+				return time.Since(start)
+			}
+		case <-deadline:
+			t.Fatalf("no frame showing %q within %v", contains, within)
+			return 0
+		}
+	}
+}
+
+// requireLandedWriteCaptured lands a counted write on a served pane that no
+// longer paints. The frames already pushed predate it, so the watcher has to
+// capture again for one to catch up.
+func requireLandedWriteCaptured(t *testing.T, watch *Watcher, id string, frames chan Frame) {
+	t.Helper()
+	// A frame captured after the landing would pass without the fix, so the
+	// pane has to stop painting first.
+	for quietBy := time.After(10 * time.Second); ; {
+		select {
+		case <-frames:
+			continue
+		case <-time.After(2 * frameBudget):
+		case <-quietBy:
+			t.Fatal("pane never went quiet")
+		}
+		break
+	}
+	if !watch.CountWrite(id, true) {
+		t.Fatal("a forked write was not counted")
+	}
+	watch.WriteLanded(id)
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case frame := <-frames:
+			if watch.CaughtUp(frame.Writes) {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no caught-up frame within 3s of a write landing on a quiet pane")
+		}
+	}
+}
+
+// A forked write that lands after the pane last painted still gets a frame
+// that shows it, so the caret is trusted again.
+func TestFocusWatchCapturesAWriteLandingOnAQuietPane(t *testing.T) {
+	skipControlMode(t)
+	driver := requireDriver(t)
+	id := "quiet" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	frames, send := framesOf(id)
+	watch := newTestWatcher(driver, send)
+	t.Cleanup(watch.Close)
+	watch.Pace(true)
+	watch.SetFocus(id)
+	if err := driver.SendText(id, `stty -echo; echo $((6*7))ready; exec sleep 10`); err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(t, frames, "42ready", 5*time.Second)
+	requireLandedWriteCaptured(t, watch, id, frames)
+}
+
+// A write that lands after focus moved on still changes whether the next
+// pane's frames show every counted write, so the watcher on that pane hears
+// it land.
+func TestFocusWatchHearsAWriteLandForAPaneFocusLeft(t *testing.T) {
+	watch := newTestWatcher(nil, func(any) {})
+	watch.mu.Lock()
+	watch.id, watch.polled = "s1", true
+	watch.mu.Unlock()
+	if !watch.CountWrite("s1", true) {
+		t.Fatal("a forked write was not counted")
+	}
+	input := make(chan struct{}, 1)
+	watch.mu.Lock()
+	watch.id, watch.input = "s2", input
+	watch.mu.Unlock()
+	watch.WriteLanded("s1")
+	select {
+	case <-input:
+	default:
+		t.Fatal("the watcher on s2 was not woken when the write to s1 landed")
+	}
+}
+
 // Only a write to the pane a watcher polls is counted, and the watcher
 // hears it land: the frame it takes next carries the count, so the caret
 // can be trusted once the frame shows every counted write.
 func TestFocusWatchCountsWritesToThePolledPane(t *testing.T) {
 	watch := newTestWatcher(nil, func(any) {})
-	if watch.CountWrite("s1") {
+	if watch.CountWrite("s1", false) {
 		t.Fatal("a write was counted with no watcher polling the pane")
 	}
 	input := make(chan struct{}, 1)
 	watch.mu.Lock()
 	watch.id, watch.polled, watch.input = "s1", true, input
 	watch.mu.Unlock()
-	if watch.CountWrite("s2") {
+	if watch.CountWrite("s2", false) {
 		t.Fatal("a write to another pane was counted")
 	}
-	if !watch.CountWrite("s1") {
+	if !watch.CountWrite("s1", false) {
 		t.Fatal("a write to the polled pane was not counted")
 	}
 	if watch.CaughtUp(0) {

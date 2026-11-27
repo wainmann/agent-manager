@@ -269,12 +269,14 @@ func requireFocusDriver(t *testing.T) *tmux.Driver {
 	return driver
 }
 
-// skipControlMode skips a test that needs the watcher's control client up:
-// on Windows OpenControl refuses by design and previews poll instead.
+// skipControlMode skips a test that drives tmux's control client: writes
+// over it, a guarded send's two reply blocks, a POSIX shell in the pane.
+// psmux 3.4.0 answers no writes over its client and its panes run
+// PowerShell, so on Windows the watcher's psmux tests stand in.
 func skipControlMode(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("the manager does not use psmux control mode")
+		t.Skip("drives tmux's control client")
 	}
 }
 

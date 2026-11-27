@@ -399,9 +399,6 @@ func TestControlServerExitWakesWaiters(t *testing.T) {
 // Integration: a real control client against the isolated test server.
 // Proves the fork-free capture path and measures paint-to-event latency.
 func TestControlLiveCaptureAndEvents(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the manager does not use psmux control mode")
-	}
 	driver := requireTmux(t)
 	id := "ctl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	if err := driver.Create(id, paneDir(), "", nil, 80, 24); err != nil {
@@ -626,7 +623,7 @@ func TestAttachGateOrdersCallsAroundControlClients(t *testing.T) {
 
 func TestControlCloseTimeoutDoesNotBypassAnActiveHandshake(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the manager does not use psmux control mode")
+		t.Skip("stubs tmux with a POSIX shell script")
 	}
 	driver, _, release := stubTmux(t)
 	release("greet")
@@ -673,7 +670,7 @@ func TestControlCloseTimeoutDoesNotBypassAnActiveHandshake(t *testing.T) {
 
 func TestControlCommandWaitsForAnotherProcessHandshake(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the manager does not use psmux control mode")
+		t.Skip("the cross-process handshake lock guards tmux (tmux#4980); psmux takes none")
 	}
 	driver := requireTmux(t)
 	id := "gatecommand" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -716,7 +713,7 @@ func TestControlCommandWaitsForAnotherProcessHandshake(t *testing.T) {
 
 func TestRepeatedControlCloseWaitsForAnotherProcessHandshake(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the manager does not use psmux control mode")
+		t.Skip("the cross-process handshake lock guards tmux (tmux#4980); psmux takes none")
 	}
 	stdin := &countingWriteCloser{}
 	reaped := make(chan struct{})
