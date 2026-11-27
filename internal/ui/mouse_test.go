@@ -91,6 +91,27 @@ func TestSyncMouseCaptureAsksFocusForEveryMotion(t *testing.T) {
 	}
 }
 
+// Bubble Tea turns the mouse off for every handoff (attach, editor, link
+// page) and leaves it off on return, so the list must ask for it again;
+// with the mouse-mode setting off it stays with the terminal.
+func TestHandoffReturnRearmsListMouse(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	updated, cmd := m.Update(uiterminal.ResumedMsg{})
+	*m = *updated.(*Model)
+	if cmd == nil || !batchContains(cmd(), tea.EnableMouseCellMotion()) {
+		t.Fatal("returning to the list did not re-arm the mouse")
+	}
+
+	m.prefs.mouseDisabled = true
+	m.syncMouseCapture()
+	updated, cmd = m.Update(uiterminal.ResumedMsg{})
+	*m = *updated.(*Model)
+	if cmd != nil && batchContains(cmd(), tea.EnableMouseCellMotion()) {
+		t.Fatal("re-armed the mouse although the setting hands it to the terminal")
+	}
+}
+
 func TestDragReleasePersistsAndExits(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

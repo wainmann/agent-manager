@@ -2,6 +2,7 @@ package ui
 
 import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -59,6 +60,12 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+
+	case uiterminal.ResumedMsg:
+		// The handoff left the mouse off; record that so syncMouseCapture,
+		// run after this Update, turns it back on in the mode it wants.
+		m.mouse.released, m.mouse.hover = true, false
+		return m, nil
 
 	case uirail.AutoScrollTick:
 		return m.applyRailDecision(m.rail.ApplyAutoScroll(msg, m.layout.displayedRail, m.railMouseContext()))

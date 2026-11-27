@@ -653,29 +653,25 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m.handleDiffFileChecked(msg))
 
 	case editorDoneMsg:
-		var resume tea.Cmd
 		if msg.tookScreen {
 			// The terminal comes back from an editor the way it comes back
-			// from an attach: painted in the editor's background, and
-			// without the mouse reporting focus mode armed on the way in.
+			// from an attach: painted in the editor's background. The mouse
+			// is re-armed on uiterminal.ResumedMsg.
 			SyncTerminalColors()
-			if m.focused() {
-				resume = tea.EnableMouseAllMotion
-			}
 		}
 		if msg.err != nil {
 			// Going back into the session would hide the only account of
 			// what went wrong, so a failed editor keeps the list.
 			m.reportErr(msg.err.Error())
-			return routed(m, resume)
+			return routed(m, nil)
 		}
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if target := msg.returnTo; target.resumes(m.gens.foreground, m.screenID(), m.effects.Quitting) {
-			return routed(m, tea.Batch(resume, m.reattach(target.sessionID, m.review.Generation())))
+			return routed(m, m.reattach(target.sessionID, m.review.Generation()))
 		}
-		return routed(m, resume)
+		return routed(m, nil)
 	}
 	return nil, nil, false
 }

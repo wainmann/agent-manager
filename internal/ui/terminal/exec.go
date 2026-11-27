@@ -43,6 +43,11 @@ func pinStdin(cmd *exec.Cmd, stdin *os.File, terminal bool) {
 	}
 }
 
+// ResumedMsg arrives after every handoff Exec makes. Bubble Tea turns mouse
+// reporting off when it releases the terminal and does not turn it back on
+// when it restores it, so the manager re-arms the mouse on this message.
+type ResumedMsg struct{}
+
 // Exec hands the terminal to c with scheme reports off: Bubble Tea releases
 // only the modes it set, so a flip would otherwise reach the child as typed
 // input. The callback runs once the terminal is restored and asks for the
@@ -50,10 +55,11 @@ func pinStdin(cmd *exec.Cmd, stdin *os.File, terminal bool) {
 func Exec(c tea.ExecCommand, fn tea.ExecCallback) tea.Cmd {
 	return tea.Exec(schemeReportsPaused{c}, func(err error) tea.Msg {
 		err = errors.Join(err, RequestSchemeReport())
+		resumed := func() tea.Msg { return ResumedMsg{} }
 		if fn == nil {
-			return nil
+			return resumed()
 		}
-		return fn(err)
+		return tea.BatchMsg{resumed, func() tea.Msg { return fn(err) }}
 	})
 }
 

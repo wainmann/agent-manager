@@ -20,6 +20,7 @@ import (
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -792,7 +793,7 @@ func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainEffects(t)
 
-	updated, cmd := m.Update(editorDoneMsg{tookScreen: true})
+	updated, cmd := m.Update(uiterminal.ResumedMsg{})
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatal("returning from a terminal editor issued no mouse command")
