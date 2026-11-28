@@ -36,7 +36,7 @@ func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
 		Config: cfg, Store: h.store, Driver: h.driver, Hooks: hooks.NewManager(h.sessions.configDir), Snapshot: h.store.SetSnapshot,
 	}}
 	sessions := NewSessionsWithBackend(backend, MCPVocabulary())
-	if _, err := sessions.List(h.caller.ID); err != nil {
+	if _, err := sessions.List(h.caller.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	storeReviewKey(t, h, "alt+g")
@@ -147,10 +147,10 @@ func TestBorrowBackendKeepsItsStoreOpenAndFailsClosed(t *testing.T) {
 			}
 		})
 	}
-	if _, err := cli.List(h.caller.ID); err != nil {
+	if _, err := cli.List(h.caller.ID, false); err != nil {
 		t.Fatalf("first command: %v", err)
 	}
-	if _, err := mcp.List(h.caller.ID); err != nil {
+	if _, err := mcp.List(h.caller.ID, false); err != nil {
 		t.Fatalf("second command reused a closed store: %v", err)
 	}
 	if err := backend.Close(); err != nil {
@@ -159,7 +159,7 @@ func TestBorrowBackendKeepsItsStoreOpenAndFailsClosed(t *testing.T) {
 	if _, err := h.store.ListSessions(true); err != nil {
 		t.Fatalf("closing a borrowed backend closed its store: %v", err)
 	}
-	if _, err := cli.List(h.caller.ID); err == nil || !strings.Contains(err.Error(), "backend is closed") {
+	if _, err := cli.List(h.caller.ID, false); err == nil || !strings.Contains(err.Error(), "backend is closed") {
 		t.Fatalf("command after close = %v", err)
 	}
 }

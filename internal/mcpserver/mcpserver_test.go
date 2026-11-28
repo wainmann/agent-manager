@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +107,7 @@ type fakeSessionCommands struct {
 	deletedID     string
 	archivedID    string
 	archived      bool
+	listAll       bool
 	movedID       string
 	endedAction   string
 	endCanceled   bool
@@ -114,8 +116,12 @@ type fakeSessionCommands struct {
 	err           error
 }
 
-func (f *fakeSessionCommands) List(string) ([]sessioncmd.Session, error) {
-	return f.listed, f.err
+func (f *fakeSessionCommands) List(_ string, includeArchived bool) ([]sessioncmd.Session, error) {
+	f.listAll = includeArchived
+	listed := slices.DeleteFunc(slices.Clone(f.listed), func(sess sessioncmd.Session) bool {
+		return sess.Archived && !includeArchived
+	})
+	return listed, f.err
 }
 
 func (f *fakeSessionCommands) Create(_ string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {

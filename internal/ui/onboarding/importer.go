@@ -161,9 +161,9 @@ func ImportPrompt(request ImportRequest) string {
 	clis := joinNames(request.From)
 	return fmt.Sprintf("Bring my past %s conversations from the last %d days into Agent Manager. "+
 		"Find each conversation %s saved on this machine that was active in the last %d days, reading each CLI's own storage on disk for the conversation id, the directory it ran in and when it was last used. Change nothing there. "+
-		"Call list_sessions and skip every conversation whose id is already listed as an agent_session_id. Skip this conversation too. "+
+		"Call list_sessions with include_archived true and skip every conversation whose id is already listed as an agent_session_id. Skip this conversation too. "+
 		"For each one left, call create_session with tool set to the CLI, resume set to the conversation id, directory set to the folder it ran in, and name set to a short kebab-case title saying what it was about. Leave prompt and worktree unset. "+
-		"From a shell, `agent-manager sessions` lists the sessions and `agent-manager spawn --tool <cli> --directory <dir> --resume <id> --name <name>` brings one in. "+
+		"From a shell, `agent-manager sessions --archived` lists the sessions and `agent-manager spawn --tool <cli> --directory <dir> --resume <id> --name <name>` brings one in. "+
 		"Finish with how many you brought in for each CLI, and every one the manager refused with its reason.",
 		clis, request.Days, clis, request.Days)
 }

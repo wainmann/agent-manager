@@ -184,7 +184,7 @@ func listing[T, R any](hosts []hostRows, local []T, format func([]T) string, rem
 	return text, rows, failures
 }
 
-func (h *remoteHosts) listSessions(ctx context.Context, local []sessioncmd.Session) (string, listSessionsOutput, error) {
+func (h *remoteHosts) listSessions(ctx context.Context, local []sessioncmd.Session, includeArchived bool) (string, listSessionsOutput, error) {
 	hosts, err := h.refresh(ctx)
 	if err != nil {
 		return "", listSessionsOutput{}, err
@@ -192,7 +192,9 @@ func (h *remoteHosts) listSessions(ctx context.Context, local []sessioncmd.Sessi
 	text, rows, failures := listing(hosts, local, sessioncmd.FormatSessionList, func(host hostRows) []sessioncmd.Session {
 		qualified := make([]sessioncmd.Session, 0, len(host.state.Snapshot.Sessions))
 		for _, sess := range host.state.Snapshot.Sessions {
-			qualified = append(qualified, qualifySession(host.name, sess))
+			if includeArchived || !sess.Archived {
+				qualified = append(qualified, qualifySession(host.name, sess))
+			}
 		}
 		return qualified
 	}, func(sess sessioncmd.Session, host string, stale bool) sessionRow {
@@ -322,7 +324,8 @@ func (h *remoteHosts) sender() (string, error) {
 }
 
 func (h *remoteHosts) callerName() (string, error) {
-	listed, err := h.sessions.List(h.sessionID)
+	// An archived agent's pane keeps running, so its own row may be archived.
+	listed, err := h.sessions.List(h.sessionID, true)
 	if err != nil {
 		return "", err
 	}
